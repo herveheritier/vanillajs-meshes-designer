@@ -186,6 +186,12 @@ gridBtn.addEventListener("mousedown", (e) => {
 
 updateGridButtonText()
 
+let exportBtn = document.querySelector('#export')
+exportBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    downloadMesh()
+})
+
 document.addEventListener("contextmenu", (e) => {
     if(e.target.id==='board') e.preventDefault();
 }, false);
@@ -262,6 +268,9 @@ document.addEventListener('keydown',(e) => {
     } else if((e.ctrlKey || e.metaKey) && (e.code==='KeyY' || e.key==='y' || e.key==='Y')) {
         e.preventDefault()
         redo()
+    } else if((e.ctrlKey || e.metaKey) && (e.code==='KeyS' || e.key==='s' || e.key==='S')) {
+        e.preventDefault()
+        downloadMesh()
     }
 })
 
@@ -277,6 +286,16 @@ board.addEventListener('wheel', (e) => {
         rotateSelectedPoints(center, angle)
     }
 }, { passive: false })
+
+board.addEventListener("dragover", (e) => {
+    e.preventDefault()
+})
+board.addEventListener("drop", (e) => {
+    e.preventDefault()
+    if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return
+    let file = e.dataTransfer.files[0]
+    importMeshFromFile(file)
+})
 
 let isWheelRotating = false
 let wheelRotateTimer = undefined
@@ -707,6 +726,87 @@ window.addEventListener('beforeunload', () => {
         localStorage.setItem(STORAGE_KEY, serializeState())
     } catch (e) {}
 })
+
+downloadMesh = () => {
+    try {
+        let blob = new Blob([serializeState()], { type: 'application/json' })
+        let url = URL.createObjectURL(blob)
+        let a = document.createElement('a')
+        a.href = url
+        a.download = 'mesh-' + Date.now() + '.json'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        log('Export OK: ' + a.download)
+    } catch (e) {
+        log('Export fail: ' + e.message)
+    }
+}
+
+importMeshFromText = (text) => {
+    try {
+        let data = JSON.parse(text)
+        if (!data || typeof data !== 'object') {
+            log('Import fail: not a JSON object')
+            return false
+        }
+        let restoredPoints = []
+        if (Array.isArray(data.pointList)) {
+            restoredPoints = data.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
+        }
+        if (Array.isArray(data.tris)) {
+            triangles = data.tris.map(t => {
+                let nt = {}
+                if (t.p1 !== undefined && restoredPoints[t.p1]) nt.p1 = restoredPoints[t.p1]
+                if (t.p2 !== undefined && restoredPoints[t.p2]) nt.p2 = restoredPoints[t.p2]
+                if (t.p3 !== undefined && restoredPoints[t.p3]) nt.p3 = restoredPoints[t.p3]
+                return nt
+            })
+        } else {
+            triangles = []
+        }
+        if (data.activeGrid !== undefined) activeGrid = !!data.activeGrid
+        if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') {
+            GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
+        }
+        historyStack = []
+        redoStack = []
+        selectedPoints = []
+        nearestPoint = undefined
+        nearestLine = undefined
+        grabbedGroup = []
+        currentAction = undefined
+        isSelectingBox = false
+        selectionBoxStart = undefined
+        selectionBoxCurrent = undefined
+        clearTimeout(wheelRotateTimer)
+        wheelRotateTimer = undefined
+        isWheelRotating = false
+        persistState()
+        updateGridButtonText()
+        drawBoard()
+        log('Import OK: ' + triangles.length + ' triangles')
+        return true
+    } catch (e) {
+        log('Import fail: ' + e.message)
+        return false
+    }
+}
+
+importMeshFromFile = (file) => {
+    if (!file) return
+    if (file.type !== 'application/json' && !file.name.match(/\.json$/i)) {
+        log('Import fail: not a JSON file')
+        return
+    }
+    let reader = new FileReader()
+    reader.onload = (e) => {
+        importMeshFromText(String(e.target.result))
+    }
+    reader.onerror = () => log('Import fail: read error')
+    reader.readAsText(file)
+}
 
 doit = () => {
     loadState()
