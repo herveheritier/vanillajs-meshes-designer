@@ -259,7 +259,8 @@ beginGrabbing = (e) => {
                         triangleIndex: i,
                         pointId: `p${j+1}`,
                         startX: p.x,
-                        startY: p.y
+                        startY: p.y,
+                        selectedPointRef: sp
                     })
                 }
             })
@@ -296,6 +297,10 @@ resolveMouseMoveOnBoard = (e) => {
                 targetPos = snapToGrid(targetPos)
             }
             triangles[item.triangleIndex][item.pointId] = targetPos
+            if (item.selectedPointRef) {
+                item.selectedPointRef.x = targetPos.x
+                item.selectedPointRef.y = targetPos.y
+            }
         })
     }
 
