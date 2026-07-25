@@ -98,6 +98,7 @@ undo = () => {
     if (lastMousePos) {
         updateMouseHover(lastMousePos)
     }
+    persistState()
 }
 
 redo = () => {
@@ -112,6 +113,7 @@ redo = () => {
     if (lastMousePos) {
         updateMouseHover(lastMousePos)
     }
+    persistState()
 }
 
 let board = document.querySelector('#board')
@@ -149,6 +151,7 @@ gridBtn.addEventListener("click",(e) => {
     activeGrid = !activeGrid
     updateGridButtonText()
     drawBoard()
+    persistState()
 })
 
 gridBtn.addEventListener("wheel", (e) => {
@@ -161,6 +164,7 @@ gridBtn.addEventListener("wheel", (e) => {
     }
     updateGridButtonText()
     drawBoard()
+    persistState()
 }, { passive: false })
 
 gridBtn.addEventListener("auxclick", (e) => {
@@ -170,6 +174,7 @@ gridBtn.addEventListener("auxclick", (e) => {
         GRID_STEP = DEFAULT_GRID_STEP
         updateGridButtonText()
         drawBoard()
+        persistState()
     }
 })
 
@@ -235,8 +240,19 @@ document.addEventListener('mousedown',(e) => {
 
 document.addEventListener('keydown',(e) => {
     if(e.code==='Backspace') {
-        deleteSelectedPoint()
-    } 
+        if (e.shiftKey) {
+            triangles = []
+            selectedPoints = []
+            historyStack = []
+            redoStack = []
+            nearestPoint = undefined
+            nearestLine = undefined
+            persistState()
+            drawBoard()
+        } else {
+            deleteSelectedPoint()
+        }
+    }
     if((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code==='KeyZ' || e.key==='z' || e.key==='Z')) {
         e.preventDefault()
         redo()
@@ -274,6 +290,7 @@ rotateSelectedPoints = (center, angle) => {
     clearTimeout(wheelRotateTimer)
     wheelRotateTimer = setTimeout(() => {
         isWheelRotating = false
+        persistState()
     }, 400)
 
     const cos = Math.cos(angle)
@@ -325,6 +342,7 @@ deleteSelectedPoint = () => {
     if(lastMousePos) {
         updateMouseHover(lastMousePos)
     }
+    persistState()
 }
 
 log = (message) => {
@@ -375,7 +393,8 @@ beginGrabbing = (e) => {
 
 endGrabbing = (e) => {
     currentAction = ACTION_NONE
-    resolveMouseMoveOnBoard(e) 
+    resolveMouseMoveOnBoard(e)
+    persistState()
 }
 
 resolveMouseMoveOnBoard = (e) => {
@@ -605,6 +624,7 @@ addPoint = (point) => {
     }
     ctx.workIsSaved = 0;
     ctx.workIsBackuped = 0;
+    persistState()
 }
 
 adjacentPoints = (p1,p2,tolerance) => {
@@ -617,4 +637,78 @@ rvx = (x) => {
 
 rvy = (y) => {
     return ( y  - ctx.viewCenter.y + ctx.zoomLevel * ctx.viewCenter.y ) / ctx.zoomLevel
+}
+
+STORAGE_KEY = 'mesh-designer-state'
+let persistTimer = undefined
+
+serializeState = () => {
+    let pointList = []
+    let pointMap = new Map()
+    let tris = triangles.map(t => {
+        let nt = {}
+        ;['p1','p2','p3'].forEach(key => {
+            let p = t[key]
+            if (p) {
+                if (!pointMap.has(p)) {
+                    pointMap.set(p, pointList.length)
+                    pointList.push({ x: p.x, y: p.y })
+                }
+                nt[key] = pointMap.get(p)
+            }
+        })
+        return nt
+    })
+    return JSON.stringify({ tris: tris, pointList: pointList, activeGrid: activeGrid, GRID_STEP: GRID_STEP })
+}
+
+persistState = () => {
+    clearTimeout(persistTimer)
+    persistTimer = setTimeout(() => {
+        try {
+            localStorage.setItem(STORAGE_KEY, serializeState())
+            ctx.workIsSaved = 1
+        } catch (e) {
+            log('Persist fail: ' + e.message)
+        }
+    }, 150)
+}
+
+loadState = () => {
+    let saved = localStorage.getItem(STORAGE_KEY)
+    if (!saved) return
+    try {
+        let data = JSON.parse(saved)
+        if (data.activeGrid !== undefined) activeGrid = !!data.activeGrid
+        if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
+        let restoredPoints = []
+        if (Array.isArray(data.pointList)) {
+            restoredPoints = data.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
+        }
+        if (Array.isArray(data.tris)) {
+            triangles = data.tris.map(t => {
+                let nt = {}
+                if (t.p1 !== undefined && restoredPoints[t.p1]) nt.p1 = restoredPoints[t.p1]
+                if (t.p2 !== undefined && restoredPoints[t.p2]) nt.p2 = restoredPoints[t.p2]
+                if (t.p3 !== undefined && restoredPoints[t.p3]) nt.p3 = restoredPoints[t.p3]
+                return nt
+            })
+        }
+        ctx.workIsSaved = 1
+        updateGridButtonText()
+    } catch (e) {
+        log('Load fail: ' + e.message)
+    }
+}
+
+window.addEventListener('beforeunload', () => {
+    clearTimeout(persistTimer)
+    try {
+        localStorage.setItem(STORAGE_KEY, serializeState())
+    } catch (e) {}
+})
+
+doit = () => {
+    loadState()
+    drawBoard()
 }
