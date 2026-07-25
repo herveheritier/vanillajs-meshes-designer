@@ -249,6 +249,64 @@ document.addEventListener('keydown',(e) => {
     }
 })
 
+board.addEventListener('wheel', (e) => {
+    if (selectedPoints.length >= 2) {
+        e.preventDefault()
+        let boardRect = board.getBoundingClientRect()
+        let center = { x: e.x - boardRect.x, y: e.y - boardRect.y }
+        let angleStep = (5 * Math.PI) / 180
+        let angle = e.deltaY < 0 ? -angleStep : angleStep
+        rotateSelectedPoints(center, angle)
+    }
+}, { passive: false })
+
+let isWheelRotating = false
+let wheelRotateTimer = undefined
+
+rotateSelectedPoints = (center, angle) => {
+    if (selectedPoints.length < 2) return
+    if (!isWheelRotating) {
+        saveState()
+        isWheelRotating = true
+    }
+    clearTimeout(wheelRotateTimer)
+    wheelRotateTimer = setTimeout(() => {
+        isWheelRotating = false
+    }, 400)
+
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+
+    selectedPoints.forEach(sp => {
+        let dx = sp.x - center.x
+        let dy = sp.y - center.y
+        let nx = center.x + dx * cos - dy * sin
+        let ny = center.y + dx * sin + dy * cos
+
+        let target = { x: nx, y: ny }
+        if (activeGrid) {
+            target = snapToGrid(target)
+        }
+
+        triangles.forEach(t => {
+            [t.p1, t.p2, t.p3].forEach(p => {
+                if (p && adjacentPoints(p, sp, 0.01)) {
+                    p.x = target.x
+                    p.y = target.y
+                }
+            })
+        })
+
+        sp.x = target.x
+        sp.y = target.y
+    })
+
+    drawBoard()
+    if (lastMousePos) {
+        updateMouseHover(lastMousePos, snapToGrid(lastMousePos))
+    }
+}
+
 deleteSelectedPoint = () => {
     let targets = selectedPoints.length > 0 ? [...selectedPoints] : (nearestPoint && nearestPoint.point ? [nearestPoint.point] : [])
     if(targets.length === 0) return
