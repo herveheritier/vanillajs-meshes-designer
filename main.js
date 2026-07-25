@@ -249,8 +249,10 @@ document.addEventListener('keydown',(e) => {
     }
 })
 
+let isSelectionDimmed = false
+
 board.addEventListener('wheel', (e) => {
-    if (selectedPoints.length >= 2) {
+    if (selectedPoints.length >= 2 && !isSelectionDimmed) {
         e.preventDefault()
         let boardRect = board.getBoundingClientRect()
         let center = { x: e.x - boardRect.x, y: e.y - boardRect.y }
@@ -264,7 +266,7 @@ let isWheelRotating = false
 let wheelRotateTimer = undefined
 
 rotateSelectedPoints = (center, angle) => {
-    if (selectedPoints.length < 2) return
+    if (selectedPoints.length < 2 || isSelectionDimmed) return
     if (!isWheelRotating) {
         saveState()
         isWheelRotating = true
@@ -412,10 +414,18 @@ resolveMouseMoveOnBoard = (e) => {
 }
 
 updateMouseHover = (cursorPoint, actionPoint = cursorPoint) => {
-    drawBoard()
-    drawMouse(cursorPoint)
     let target = activeGrid ? snapToGrid(actionPoint) : actionPoint
     nearestPoint = findNearestPoint(target)
+
+    if (selectedPoints.length > 0 && nearestPoint && nearestPoint.point && !isPointSelected(nearestPoint.point)) {
+        isSelectionDimmed = true
+    } else {
+        isSelectionDimmed = false
+    }
+
+    drawBoard()
+    drawMouse(cursorPoint)
+
     if(nearestPoint && nearestPoint.point) {
         drawPoint(nearestPoint.point, 5, '#00FF00')
     }

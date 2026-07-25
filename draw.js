@@ -26,9 +26,11 @@ drawBoard = () => {
 
 drawSelectedPoints = () => {
     if (typeof selectedPoints === 'undefined' || !selectedPoints || selectedPoints.length === 0) return
+    let isDimmed = typeof isSelectionDimmed !== 'undefined' && isSelectionDimmed
+    let color = isDimmed ? 'rgba(0, 255, 255, 0.3)' : '#00FFFF'
     selectedPoints.forEach(p => {
         if (!p) return
-        drawPoint(p, 6, '#00FFFF')
+        drawPoint(p, 6, color)
     })
 }
 
