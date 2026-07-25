@@ -3,7 +3,10 @@ const COLOR_AXIS = '#00A000'
 const COLOR_LINES = '#FFFFFF'
 const PATTERN_AXIS = [2,1,3,1]
 const PATTERN_LINES = [2,2]
-const GRID_STEP = 32
+const DEFAULT_GRID_STEP = 32
+let GRID_STEP = DEFAULT_GRID_STEP
+const MIN_GRID_STEP = 8
+const MAX_GRID_STEP = 128
 const ACTION_NONE = undefined
 const ACTION_GRABBING = 1
 let ctx = {
@@ -131,10 +134,54 @@ _ctx.fillStyle = '#000000'
 _ctx.fillRect(0,0,board.width,board.height)
 messageBoard.innerText = '*** CONSOLE ***'
 
-document.querySelector('#grid').addEventListener("click",(e) => {
+updateGridButtonText = () => {
+    let gridBtn = document.querySelector('#grid')
+    if (!gridBtn) return
+    if (activeGrid) {
+        gridBtn.innerText = `# (${GRID_STEP}px)`
+    } else {
+        gridBtn.innerText = `#`
+    }
+}
+
+let gridBtn = document.querySelector('#grid')
+
+gridBtn.addEventListener("click",(e) => {
+    if (e.button !== 0) return
     activeGrid = !activeGrid
+    updateGridButtonText()
     drawBoard()
 })
+
+gridBtn.addEventListener("wheel", (e) => {
+    if (!activeGrid) return
+    e.preventDefault()
+    if (e.deltaY < 0) {
+        GRID_STEP = Math.min(MAX_GRID_STEP, GRID_STEP + 4)
+    } else if (e.deltaY > 0) {
+        GRID_STEP = Math.max(MIN_GRID_STEP, GRID_STEP - 4)
+    }
+    updateGridButtonText()
+    drawBoard()
+}, { passive: false })
+
+gridBtn.addEventListener("auxclick", (e) => {
+    if (e.button === 1) {
+        e.preventDefault()
+        if (!activeGrid) return
+        GRID_STEP = DEFAULT_GRID_STEP
+        updateGridButtonText()
+        drawBoard()
+    }
+})
+
+gridBtn.addEventListener("mousedown", (e) => {
+    if (e.button === 1) {
+        e.preventDefault()
+    }
+})
+
+updateGridButtonText()
 
 document.addEventListener("contextmenu", (e) => {
     if(e.target.id==='board') e.preventDefault();
