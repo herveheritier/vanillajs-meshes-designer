@@ -199,46 +199,47 @@ endGrabbing = (e) => {
 }
 
 resolveMouseMoveOnBoard = (e) => {
-    let point = undefined
+    let mousePos = { 
+        x : e.x-board.getBoundingClientRect().x,
+        y : e.y-board.getBoundingClientRect().y
+    }
+    let actionPoint = snapToGrid(mousePos)
     if(grabbed()) {
-        point = snapToGrid({ 
-            x : e.x-board.getBoundingClientRect().x + relativeGrabbingPosition.dx,
-            y : e.y-board.getBoundingClientRect().y + relativeGrabbingPosition.dy
+        actionPoint = snapToGrid({ 
+            x : mousePos.x + relativeGrabbingPosition.dx,
+            y : mousePos.y + relativeGrabbingPosition.dy
         })
         grabbedPoint.forEach((e,i) => {
-            triangles[e.triangleIndex][e.pointId] = point
-        })
-    } else {
-        point = snapToGrid({ 
-            x : e.x-board.getBoundingClientRect().x,
-            y : e.y-board.getBoundingClientRect().y
+            triangles[e.triangleIndex][e.pointId] = actionPoint
         })
     }
-    lastMousePos = point
-    updateMouseHover(point)
+    lastMousePos = mousePos
+    updateMouseHover(mousePos, actionPoint)
 }
 
-updateMouseHover = (point) => {
+updateMouseHover = (cursorPoint, actionPoint = cursorPoint) => {
     drawBoard()
-    drawMouse(point)
-    nearestPoint = findNearestPoint(point)
+    drawMouse(cursorPoint)
+    let target = activeGrid ? snapToGrid(actionPoint) : actionPoint
+    nearestPoint = findNearestPoint(target)
     if(nearestPoint && nearestPoint.point) {
         drawPoint(nearestPoint.point, 5, '#00FF00')
     }
-    nearestLine = findSelectedLine(point)
+    nearestLine = findSelectedLine(target)
     if(nearestLine && nearestLine.firstPoint && nearestLine.secondPoint) {
         drawLine(nearestLine.firstPoint, nearestLine.secondPoint, [], '#00FF00')
     }
 }
 
 resolveMouseClickOnBoard = (e) =>  {
-    let point = snapToGrid({
+    let mousePos = {
         x : rvx(e.x-board.getBoundingClientRect().x), 
         y : rvy(e.y-board.getBoundingClientRect().y)
-    })
-    addPoint(point)
+    }
+    let pointToAdd = snapToGrid(mousePos)
+    addPoint(pointToAdd)
     drawBoard()
-    drawMouse(point)
+    drawMouse(mousePos)
 }
 
 findNearestPoint = (point) => {
