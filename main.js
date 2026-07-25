@@ -192,6 +192,13 @@ exportBtn.addEventListener('click', (e) => {
     downloadMesh()
 })
 
+let resetBtn = document.querySelector('#reset')
+resetBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    if (!confirm('Réinitialiser le mesh ?')) return
+    resetAll()
+})
+
 document.addEventListener("contextmenu", (e) => {
     if(e.target.id==='board') e.preventDefault();
 }, false);
@@ -247,14 +254,7 @@ document.addEventListener('mousedown',(e) => {
 document.addEventListener('keydown',(e) => {
     if(e.code==='Backspace') {
         if (e.shiftKey) {
-            triangles = []
-            selectedPoints = []
-            historyStack = []
-            redoStack = []
-            nearestPoint = undefined
-            nearestLine = undefined
-            persistState()
-            drawBoard()
+            resetAll()
         } else {
             deleteSelectedPoint()
         }
@@ -806,6 +806,26 @@ importMeshFromFile = (file) => {
     }
     reader.onerror = () => log('Import fail: read error')
     reader.readAsText(file)
+}
+
+resetAll = () => {
+    triangles = []
+    selectedPoints = []
+    historyStack = []
+    redoStack = []
+    nearestPoint = undefined
+    nearestLine = undefined
+    grabbedGroup = []
+    currentAction = undefined
+    isSelectingBox = false
+    selectionBoxStart = undefined
+    selectionBoxCurrent = undefined
+    clearTimeout(wheelRotateTimer)
+    wheelRotateTimer = undefined
+    isWheelRotating = false
+    persistState()
+    drawBoard()
+    log('Reset OK')
 }
 
 doit = () => {
