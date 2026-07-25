@@ -19,6 +19,49 @@ let grabbedPoint = []
 let relativeGrabbingPosition = undefined
 let activeGrid = false
 
+let historyStack = []
+const MAX_HISTORY = 50
+
+cloneTriangles = (triArray) => {
+    let pointMap = new Map()
+    return triArray.map(t => {
+        let nt = {}
+        if (t.p1) {
+            if (!pointMap.has(t.p1)) pointMap.set(t.p1, { x: t.p1.x, y: t.p1.y })
+            nt.p1 = pointMap.get(t.p1)
+        }
+        if (t.p2) {
+            if (!pointMap.has(t.p2)) pointMap.set(t.p2, { x: t.p2.x, y: t.p2.y })
+            nt.p2 = pointMap.get(t.p2)
+        }
+        if (t.p3) {
+            if (!pointMap.has(t.p3)) pointMap.set(t.p3, { x: t.p3.x, y: t.p3.y })
+            nt.p3 = pointMap.get(t.p3)
+        }
+        return nt
+    })
+}
+
+saveState = () => {
+    historyStack.push(cloneTriangles(triangles))
+    if (historyStack.length > MAX_HISTORY) {
+        historyStack.shift()
+    }
+}
+
+undo = () => {
+    if (historyStack.length === 0) return
+    currentAction = ACTION_NONE
+    triangles = historyStack.pop()
+    nearestPoint = undefined
+    nearestLine = undefined
+    drawBoard()
+    if (lastMousePos) {
+        updateMouseHover(lastMousePos)
+    }
+    log("Undo")
+}
+
 let board = document.querySelector('#board')
 let body = document.querySelector('body')
 let messageBoard = document.querySelector('#messageBoard')
@@ -63,11 +106,16 @@ document.addEventListener('keydown',(e) => {
     if(e.code==='Backspace') {
         deleteSelectedPoint()
     } 
+    if((e.ctrlKey || e.metaKey) && (e.code==='KeyZ' || e.key==='z' || e.key==='Z')) {
+        e.preventDefault()
+        undo()
+    }
 })
 
 deleteSelectedPoint = () => {
     if(!nearestPoint || !nearestPoint.point) return
     let target = nearestPoint.point
+    saveState()
     triangles = triangles.filter(t => {
         let hasP1 = t.p1 && adjacentPoints(t.p1, target, 0.01)
         let hasP2 = t.p2 && adjacentPoints(t.p2, target, 0.01)
@@ -98,6 +146,7 @@ beginGrabbing = (e) => {
     grabbedPoint = []
     let np = findNearestPoint(point)
     if(!np || !np.point) return
+    saveState()
     relativeGrabbingPosition = { dx:np.point.x - point.x, dy:np.point.y - point.y }
     grabbedPoint.push(np)
     triangles.forEach( (e,i) => {
@@ -298,6 +347,7 @@ addPoint = (point) => {
         if(triangle.p2!==undefined) if(adjacentPoints(point,triangle.p2,1)) return
         if(triangle.p3!==undefined) if(adjacentPoints(point,triangle.p3,1)) return
     }
+    saveState()
     if (triangles.length===0) {
         triangles.push({p1:point})
     } 
