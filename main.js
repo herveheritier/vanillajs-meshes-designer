@@ -3,6 +3,7 @@ const COLOR_AXIS = '#00A000'
 const COLOR_LINES = '#FFFFFF'
 const PATTERN_AXIS = [2,1,3,1]
 const PATTERN_LINES = [2,2]
+const GRID_STEP = 32
 const ACTION_NONE = undefined
 const ACTION_GRABBING = 1
 let ctx = {
@@ -18,6 +19,14 @@ let currentAction = undefined
 let grabbedPoint = []
 let relativeGrabbingPosition = undefined
 let activeGrid = false
+
+snapToGrid = (point) => {
+    if (!activeGrid || !point) return point
+    return {
+        x: Math.round(point.x / GRID_STEP) * GRID_STEP,
+        y: Math.round(point.y / GRID_STEP) * GRID_STEP
+    }
+}
 
 let historyStack = []
 let redoStack = []
@@ -192,18 +201,18 @@ endGrabbing = (e) => {
 resolveMouseMoveOnBoard = (e) => {
     let point = undefined
     if(grabbed()) {
-        point = { 
+        point = snapToGrid({ 
             x : e.x-board.getBoundingClientRect().x + relativeGrabbingPosition.dx,
             y : e.y-board.getBoundingClientRect().y + relativeGrabbingPosition.dy
-        }
+        })
         grabbedPoint.forEach((e,i) => {
             triangles[e.triangleIndex][e.pointId] = point
         })
     } else {
-        point = { 
+        point = snapToGrid({ 
             x : e.x-board.getBoundingClientRect().x,
             y : e.y-board.getBoundingClientRect().y
-        }
+        })
     }
     lastMousePos = point
     updateMouseHover(point)
@@ -223,13 +232,13 @@ updateMouseHover = (point) => {
 }
 
 resolveMouseClickOnBoard = (e) =>  {
-    let point = {
+    let point = snapToGrid({
         x : rvx(e.x-board.getBoundingClientRect().x), 
         y : rvy(e.y-board.getBoundingClientRect().y)
-    }
+    })
     addPoint(point)
     drawBoard()
-    drawMouse(e.x-board.getBoundingClientRect().x,e.y-board.getBoundingClientRect().y)
+    drawMouse(point)
 }
 
 findNearestPoint = (point) => {

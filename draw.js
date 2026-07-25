@@ -69,7 +69,7 @@ drawLine = (p1,p2,pattern,color) => {
 }
 
 drawGrid = () => {
-    const step = 32
+    const step = typeof GRID_STEP !== 'undefined' ? GRID_STEP : 32
     _ctx.setLineDash([])
     _ctx.strokeStyle = '#333333'
     _ctx.beginPath()
