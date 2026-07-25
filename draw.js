@@ -69,10 +69,17 @@ drawLine = (p1,p2,pattern,color) => {
 }
 
 drawGrid = () => {
-    step = 16
-    for(let x=step;x<_ctx.canvas.width;x+=step) {
-        for(let y=step;y<_ctx.canvas.height;y+=step) {
-            drawLine({x:x,y:y},{x:x+4,y:y+4},[],'#FFFFFF')
-        }
+    const step = 32
+    _ctx.setLineDash([])
+    _ctx.strokeStyle = '#333333'
+    _ctx.beginPath()
+    for (let x = step; x < board.width; x += step) {
+        _ctx.moveTo(x, 0)
+        _ctx.lineTo(x, board.height)
     }
+    for (let y = step; y < board.height; y += step) {
+        _ctx.moveTo(0, y)
+        _ctx.lineTo(board.width, y)
+    }
+    _ctx.stroke()
 }
