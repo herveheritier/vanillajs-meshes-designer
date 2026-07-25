@@ -18,6 +18,32 @@ drawBoard = () => {
     if(activeGrid) drawGrid()
     drawAxis()
     drawShapes()
+    drawSelectedPoints()
+    if (typeof isSelectingBox !== 'undefined' && isSelectingBox && selectionBoxStart && selectionBoxCurrent) {
+        drawSelectionBox(selectionBoxStart, selectionBoxCurrent)
+    }
+}
+
+drawSelectedPoints = () => {
+    if (typeof selectedPoints === 'undefined' || !selectedPoints || selectedPoints.length === 0) return
+    selectedPoints.forEach(p => {
+        if (!p) return
+        drawPoint(p, 6, '#00FFFF')
+    })
+}
+
+drawSelectionBox = (p1, p2) => {
+    if (!p1 || !p2) return
+    let x = Math.min(p1.x, p2.x)
+    let y = Math.min(p1.y, p2.y)
+    let w = Math.abs(p2.x - p1.x)
+    let h = Math.abs(p2.y - p1.y)
+    _ctx.fillStyle = 'rgba(0, 255, 255, 0.15)'
+    _ctx.fillRect(x, y, w, h)
+    _ctx.strokeStyle = '#00FFFF'
+    _ctx.setLineDash([4, 4])
+    _ctx.strokeRect(x, y, w, h)
+    _ctx.setLineDash([])
 }
 
 drawAxis = () => {

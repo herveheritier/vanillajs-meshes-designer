@@ -27,6 +27,29 @@ snapToGrid = (point) => {
         y: Math.round(point.y / GRID_STEP) * GRID_STEP
     }
 }
+let selectedPoints = []
+let isSelectingBox = false
+let selectionBoxStart = undefined
+let selectionBoxCurrent = undefined
+let grabbedGroup = []
+let grabStartMouse = undefined
+
+getAllVertices = () => {
+    let vertices = []
+    triangles.forEach(t => {
+        [t.p1, t.p2, t.p3].forEach(p => {
+            if (p && !vertices.some(v => adjacentPoints(v, p, 0.01))) {
+                vertices.push(p)
+            }
+        })
+    })
+    return vertices
+}
+
+isPointSelected = (p) => {
+    if (!p) return false
+    return selectedPoints.some(sp => adjacentPoints(sp, p, 0.01))
+}
 
 let historyStack = []
 let redoStack = []
@@ -65,6 +88,7 @@ undo = () => {
     currentAction = ACTION_NONE
     redoStack.push(cloneTriangles(triangles))
     triangles = historyStack.pop()
+    selectedPoints = []
     nearestPoint = undefined
     nearestLine = undefined
     drawBoard()
@@ -79,6 +103,7 @@ redo = () => {
     currentAction = ACTION_NONE
     historyStack.push(cloneTriangles(triangles))
     triangles = redoStack.pop()
+    selectedPoints = []
     nearestPoint = undefined
     nearestLine = undefined
     drawBoard()
@@ -121,11 +146,46 @@ document.addEventListener('mousemove',(e) => {
 
 document.addEventListener('mouseup',(e) => {
     if(grabbed()) endGrabbing(e)
-    if(e.target.id==='board' && e.button===0) resolveMouseClickOnBoard(e)
+    if(e.target.id==='board' && e.button===0) {
+        if(isSelectingBox) {
+            let dist = Math.hypot(selectionBoxCurrent.x - selectionBoxStart.x, selectionBoxCurrent.y - selectionBoxStart.y)
+            isSelectingBox = false
+            if(dist < 5) {
+                let mousePos = { x: e.x - board.getBoundingClientRect().x, y: e.y - board.getBoundingClientRect().y }
+                let np = findNearestPoint(mousePos)
+                if(np && np.distance < 15) {
+                    if(!e.shiftKey) {
+                        selectedPoints = [np.point]
+                    } else {
+                        if(isPointSelected(np.point)) {
+                            selectedPoints = selectedPoints.filter(p => !adjacentPoints(p, np.point, 0.01))
+                        } else {
+                            selectedPoints.push(np.point)
+                        }
+                    }
+                } else {
+                    if(!e.shiftKey) {
+                        selectedPoints = []
+                    }
+                    resolveMouseClickOnBoard(e)
+                }
+            }
+            drawBoard()
+        }
+    }
 })
 
 document.addEventListener('mousedown',(e) => {
-    if(e.target.id==='board' && e.button===2) beginGrabbing(e)
+    if(e.target.id==='board') {
+        let mousePos = { x: e.x - board.getBoundingClientRect().x, y: e.y - board.getBoundingClientRect().y }
+        if(e.button===2) {
+            beginGrabbing(e)
+        } else if(e.button===0) {
+            selectionBoxStart = mousePos
+            selectionBoxCurrent = mousePos
+            isSelectingBox = true
+        }
+    }
 })
 
 document.addEventListener('keydown',(e) => {
@@ -145,15 +205,16 @@ document.addEventListener('keydown',(e) => {
 })
 
 deleteSelectedPoint = () => {
-    if(!nearestPoint || !nearestPoint.point) return
-    let target = nearestPoint.point
+    let targets = selectedPoints.length > 0 ? [...selectedPoints] : (nearestPoint && nearestPoint.point ? [nearestPoint.point] : [])
+    if(targets.length === 0) return
     saveState()
     triangles = triangles.filter(t => {
-        let hasP1 = t.p1 && adjacentPoints(t.p1, target, 0.01)
-        let hasP2 = t.p2 && adjacentPoints(t.p2, target, 0.01)
-        let hasP3 = t.p3 && adjacentPoints(t.p3, target, 0.01)
+        let hasP1 = t.p1 && targets.some(target => adjacentPoints(t.p1, target, 0.01))
+        let hasP2 = t.p2 && targets.some(target => adjacentPoints(t.p2, target, 0.01))
+        let hasP3 = t.p3 && targets.some(target => adjacentPoints(t.p3, target, 0.01))
         return !(hasP1 || hasP2 || hasP3)
     })
+    selectedPoints = []
     nearestPoint = undefined
     drawBoard()
     if(lastMousePos) {
@@ -170,31 +231,44 @@ grabbed = () => {
 }
 
 beginGrabbing = (e) => {
-    currentAction = ACTION_GRABBING
-    let point = { 
+    let mousePos = { 
         x : e.x-board.getBoundingClientRect().x,
         y : e.y-board.getBoundingClientRect().y
     }
-    grabbedPoint = []
-    let np = findNearestPoint(point)
+    let np = findNearestPoint(mousePos)
     if(!np || !np.point) return
+
+    currentAction = ACTION_GRABBING
+    grabStartMouse = mousePos
     saveState()
-    relativeGrabbingPosition = { dx:np.point.x - point.x, dy:np.point.y - point.y }
-    grabbedPoint.push(np)
-    triangles.forEach( (e,i) => {
-        if(i<=np.triangleIndex) return
-        [e.p1,e.p2,e.p3].forEach( (p,j) => {
-            if(!p) return
-            let d = Math.hypot(p.x-np.point.x,p.y-np.point.y)
-            if(d < 0.01) grabbedPoint.push({ triangleIndex:i, pointId:`p${j+1}` })
+
+    if(!isPointSelected(np.point)) {
+        if(!e.shiftKey) {
+            selectedPoints = [np.point]
+        } else {
+            selectedPoints.push(np.point)
+        }
+    }
+
+    grabbedGroup = []
+    selectedPoints.forEach(sp => {
+        triangles.forEach( (t,i) => {
+            [t.p1,t.p2,t.p3].forEach( (p,j) => {
+                if(p && adjacentPoints(p, sp, 0.01)) {
+                    grabbedGroup.push({
+                        triangleIndex: i,
+                        pointId: `p${j+1}`,
+                        startX: p.x,
+                        startY: p.y
+                    })
+                }
+            })
         })
     })
 }
 
 endGrabbing = (e) => {
     currentAction = ACTION_NONE
-    // Force the cursor to display after the grabbing; 
-    // otherwise it will only appear after a move.
     resolveMouseMoveOnBoard(e) 
 }
 
@@ -203,18 +277,30 @@ resolveMouseMoveOnBoard = (e) => {
         x : e.x-board.getBoundingClientRect().x,
         y : e.y-board.getBoundingClientRect().y
     }
-    let actionPoint = snapToGrid(mousePos)
-    if(grabbed()) {
-        actionPoint = snapToGrid({ 
-            x : mousePos.x + relativeGrabbingPosition.dx,
-            y : mousePos.y + relativeGrabbingPosition.dy
-        })
-        grabbedPoint.forEach((e,i) => {
-            triangles[e.triangleIndex][e.pointId] = actionPoint
+
+    if(isSelectingBox) {
+        selectionBoxCurrent = mousePos
+        let minX = Math.min(selectionBoxStart.x, selectionBoxCurrent.x)
+        let maxX = Math.max(selectionBoxStart.x, selectionBoxCurrent.x)
+        let minY = Math.min(selectionBoxStart.y, selectionBoxCurrent.y)
+        let maxY = Math.max(selectionBoxStart.y, selectionBoxCurrent.y)
+
+        let allV = getAllVertices()
+        selectedPoints = allV.filter(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
+    } else if(grabbed()) {
+        let dx = mousePos.x - grabStartMouse.x
+        let dy = mousePos.y - grabStartMouse.y
+        grabbedGroup.forEach(item => {
+            let targetPos = { x: item.startX + dx, y: item.startY + dy }
+            if(activeGrid) {
+                targetPos = snapToGrid(targetPos)
+            }
+            triangles[item.triangleIndex][item.pointId] = targetPos
         })
     }
+
     lastMousePos = mousePos
-    updateMouseHover(mousePos, actionPoint)
+    updateMouseHover(mousePos, snapToGrid(mousePos))
 }
 
 updateMouseHover = (cursorPoint, actionPoint = cursorPoint) => {
@@ -414,4 +500,3 @@ rvx = (x) => {
 rvy = (y) => {
     return ( y  - ctx.viewCenter.y + ctx.zoomLevel * ctx.viewCenter.y ) / ctx.zoomLevel
 }
-
