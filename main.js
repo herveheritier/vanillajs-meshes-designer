@@ -119,7 +119,6 @@ document.addEventListener('mousedown',(e) => {
 })
 
 document.addEventListener('keydown',(e) => {
-    log(e.code)
     if(e.code==='Backspace') {
         deleteSelectedPoint()
     } 
@@ -268,7 +267,6 @@ findNextNearestPoint = (nearestPoint) => {
 findNearestLine = (point) => {
     let shortDistance = Number.MAX_VALUE
     let shortPointIndex = -1
-    console.log(point)
     let np = findNearestPoint(point)
     if(!np || !np.triangle) return undefined
     let tt = [
@@ -392,7 +390,6 @@ addPoint = (point) => {
     }
     ctx.workIsSaved = 0;
     ctx.workIsBackuped = 0;
-    log(`${point.x};${point.y}`)
 }
 
 adjacentPoints = (p1,p2,tolerance) => {
