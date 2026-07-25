@@ -98,7 +98,6 @@ undo = () => {
     if (lastMousePos) {
         updateMouseHover(lastMousePos)
     }
-    log("Undo")
 }
 
 redo = () => {
@@ -113,7 +112,6 @@ redo = () => {
     if (lastMousePos) {
         updateMouseHover(lastMousePos)
     }
-    log("Redo")
 }
 
 let board = document.querySelector('#board')
