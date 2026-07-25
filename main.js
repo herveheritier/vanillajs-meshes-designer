@@ -20,6 +20,7 @@ let relativeGrabbingPosition = undefined
 let activeGrid = false
 
 let historyStack = []
+let redoStack = []
 const MAX_HISTORY = 50
 
 cloneTriangles = (triArray) => {
@@ -47,11 +48,13 @@ saveState = () => {
     if (historyStack.length > MAX_HISTORY) {
         historyStack.shift()
     }
+    redoStack = []
 }
 
 undo = () => {
     if (historyStack.length === 0) return
     currentAction = ACTION_NONE
+    redoStack.push(cloneTriangles(triangles))
     triangles = historyStack.pop()
     nearestPoint = undefined
     nearestLine = undefined
@@ -60,6 +63,20 @@ undo = () => {
         updateMouseHover(lastMousePos)
     }
     log("Undo")
+}
+
+redo = () => {
+    if (redoStack.length === 0) return
+    currentAction = ACTION_NONE
+    historyStack.push(cloneTriangles(triangles))
+    triangles = redoStack.pop()
+    nearestPoint = undefined
+    nearestLine = undefined
+    drawBoard()
+    if (lastMousePos) {
+        updateMouseHover(lastMousePos)
+    }
+    log("Redo")
 }
 
 let board = document.querySelector('#board')
@@ -106,9 +123,15 @@ document.addEventListener('keydown',(e) => {
     if(e.code==='Backspace') {
         deleteSelectedPoint()
     } 
-    if((e.ctrlKey || e.metaKey) && (e.code==='KeyZ' || e.key==='z' || e.key==='Z')) {
+    if((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code==='KeyZ' || e.key==='z' || e.key==='Z')) {
+        e.preventDefault()
+        redo()
+    } else if((e.ctrlKey || e.metaKey) && (e.code==='KeyZ' || e.key==='z' || e.key==='Z')) {
         e.preventDefault()
         undo()
+    } else if((e.ctrlKey || e.metaKey) && (e.code==='KeyY' || e.key==='y' || e.key==='Y')) {
+        e.preventDefault()
+        redo()
     }
 })
 
