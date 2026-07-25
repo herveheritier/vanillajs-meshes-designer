@@ -99,6 +99,7 @@ messageBoard.innerText = '*** CONSOLE ***'
 
 document.querySelector('#grid').addEventListener("click",(e) => {
     activeGrid = !activeGrid
+    drawBoard()
 })
 
 document.addEventListener("contextmenu", (e) => {

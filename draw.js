@@ -13,9 +13,9 @@ drawMouse = (p) => {
 }
 
 drawBoard = () => {
-    if(activeGrid) drawGrid()
     _ctx.fillStyle = '#000000'
     _ctx.fillRect(0,0,board.width,board.height)
+    if(activeGrid) drawGrid()
     drawAxis()
     drawShapes()
 }
