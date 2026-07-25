@@ -12,6 +12,8 @@ let ctx = {
 }
 let triangles = []
 let nearestLine = undefined
+let nearestPoint = undefined
+let lastMousePos = undefined
 let currentAction = undefined
 let grabbedPoint = []
 let relativeGrabbingPosition = undefined
@@ -59,12 +61,25 @@ document.addEventListener('mousedown',(e) => {
 document.addEventListener('keydown',(e) => {
     log(e.code)
     if(e.code==='Backspace') {
-        if(triangles.length>0) {
-            triangles.pop()
-            drawBoard()
-        }
+        deleteSelectedPoint()
     } 
 })
+
+deleteSelectedPoint = () => {
+    if(!nearestPoint || !nearestPoint.point) return
+    let target = nearestPoint.point
+    triangles = triangles.filter(t => {
+        let hasP1 = t.p1 && adjacentPoints(t.p1, target, 0.01)
+        let hasP2 = t.p2 && adjacentPoints(t.p2, target, 0.01)
+        let hasP3 = t.p3 && adjacentPoints(t.p3, target, 0.01)
+        return !(hasP1 || hasP2 || hasP3)
+    })
+    nearestPoint = undefined
+    drawBoard()
+    if(lastMousePos) {
+        updateMouseHover(lastMousePos)
+    }
+}
 
 log = (message) => {
     messageBoard.innerText += '\n'+message
@@ -82,11 +97,13 @@ beginGrabbing = (e) => {
     }
     grabbedPoint = []
     let np = findNearestPoint(point)
+    if(!np || !np.point) return
     relativeGrabbingPosition = { dx:np.point.x - point.x, dy:np.point.y - point.y }
     grabbedPoint.push(np)
     triangles.forEach( (e,i) => {
         if(i<=np.triangleIndex) return
         [e.p1,e.p2,e.p3].forEach( (p,j) => {
+            if(!p) return
             let d = Math.hypot(p.x-np.point.x,p.y-np.point.y)
             if(d < 0.01) grabbedPoint.push({ triangleIndex:i, pointId:`p${j+1}` })
         })
@@ -101,7 +118,6 @@ endGrabbing = (e) => {
 }
 
 resolveMouseMoveOnBoard = (e) => {
-    drawBoard()
     let point = undefined
     if(grabbed()) {
         point = { 
@@ -117,11 +133,21 @@ resolveMouseMoveOnBoard = (e) => {
             y : e.y-board.getBoundingClientRect().y
         }
     }
+    lastMousePos = point
+    updateMouseHover(point)
+}
+
+updateMouseHover = (point) => {
+    drawBoard()
     drawMouse(point)
-    drawPoint(findNearestPoint(point).point,5,'#00FF00')
-//    nearestLine = findNearestLine(point)
+    nearestPoint = findNearestPoint(point)
+    if(nearestPoint && nearestPoint.point) {
+        drawPoint(nearestPoint.point, 5, '#00FF00')
+    }
     nearestLine = findSelectedLine(point)
-    drawLine(nearestLine.firstPoint,nearestLine.secondPoint,[],'#00FF00')
+    if(nearestLine && nearestLine.firstPoint && nearestLine.secondPoint) {
+        drawLine(nearestLine.firstPoint, nearestLine.secondPoint, [], '#00FF00')
+    }
 }
 
 resolveMouseClickOnBoard = (e) =>  {
@@ -145,6 +171,7 @@ findNextNearestPoint = (nearestPoint) => {
     triangles.forEach( (e,i) => {
         if(i<=nearestPoint.triangleIndex) return
         [e.p1,e.p2,e.p3].forEach( (p,j) => {
+            if(!p) return
             let d = Math.hypot(p.x-nearestPoint.point.x,p.y-nearestPoint.point.y)
             if(d < shortDistance) {
                 shortIndex = i
@@ -171,7 +198,7 @@ findNearestLine = (point) => {
     let shortPointIndex = -1
     console.log(point)
     let np = findNearestPoint(point)
-    console.log([np.triangle.p1,np.triangle.p2,np.triangle.p3])
+    if(!np || !np.triangle) return undefined
     let tt = [
         { id:"p1", index:0, point:np.triangle.p1 },
         { id:"p2", index:1, point:np.triangle.p2 },
@@ -179,6 +206,7 @@ findNearestLine = (point) => {
     ]
     tt.splice(np.pointIndex,1)
     tt.forEach( (e,j) => {
+            if(!e.point) return
             let d = Math.hypot(e.point.x-point.x,e.point.y-point.y)
             if(d < shortDistance) {
                 shortDistance = d
@@ -204,6 +232,7 @@ findSelectedLine = (point) => {
     let shortTriangleIndex = -1
     let shortLineIndex = -1
     triangles.forEach((t,i) => {
+        if(!t.p1 || !t.p2 || !t.p3) return
         let cop = computeOrthogonalProjection(point,t.p1,t.p2)
         let d = Math.hypot(point.x - cop.x, point.y - cop.y)
         if(d < shortDistance && isInsideSegmentByDot(cop,t.p1,t.p2)) {
@@ -226,6 +255,7 @@ findSelectedLine = (point) => {
             shortLineIndex = 2
         }
     })
+    if(shortTriangleIndex < 0) return undefined
     let firstPointId = ['p1','p2','p3'][shortLineIndex]
     let secondPointId = ['p2','p3','p1'][shortLineIndex]
     return {

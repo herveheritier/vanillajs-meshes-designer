@@ -59,6 +59,7 @@ drawTriangle = (p1,p2,p3) => {
 }
 
 drawLine = (p1,p2,pattern,color) => {
+    if(!p1 || !p2) return
     _ctx.setLineDash(pattern)
     _ctx.strokeStyle = color
     _ctx.beginPath()
