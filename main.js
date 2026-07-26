@@ -212,6 +212,27 @@ resetBtn.addEventListener('click', (e) => {
     resetAll()
 })
 
+selectAllPoints = () => {
+    let result = []
+    getAllVertices().forEach(p => {
+        getPointsAtSamePosition(p).forEach(q => {
+            if (!result.some(r => r === q)) result.push(q)
+        })
+    })
+    selectedPoints = result
+    nearestPoint = undefined
+    drawBoard()
+    if (lastMousePos) {
+        updateMouseHover(lastMousePos)
+    }
+}
+
+let selectAllBtn = document.querySelector('#selectAll')
+selectAllBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    selectAllPoints()
+})
+
 document.addEventListener("contextmenu", (e) => {
     if(e.target.id==='board') e.preventDefault();
 }, false);
