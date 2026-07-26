@@ -77,6 +77,31 @@
                 border-color: rgb(55, 194, 0);
             }
 
+            /* Bouton grille : aligne l'icone SVG et le pas (pas en pixels)
+               sur la meme ligne, en vertical centre. Forcage explicite
+               font-style: normal pour eviter toute apparence italique. */
+            #grid {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+            }
+            #grid #gridText {
+                /* Subdued par defaut (grille inactive) : le pas reste
+                   toujours visible mais en gris attenue. */
+                font-family: monospace;
+                font-size: 11px;
+                line-height: 1;
+                font-style: normal;
+                color: rgba(220, 220, 220, 0.55);
+                pointer-events: none;
+                white-space: nowrap;
+                transition: color 0.12s;
+            }
+            /* Passe en vert accent quand la grille est activee. */
+            #grid.grid-active #gridText {
+                color: rgb(55, 194, 0);
+            }
+
             /* Icones SVG inline dans les boutons du toolbar.
                Stroke-based, currentColor pour heriter des etats. */
             #toolbar button svg {
@@ -229,11 +254,66 @@
                 background-color: rgb(80, 220, 25);
                 border-color: rgb(80, 220, 25);
             }
+
+            /* ========= Modal d'aide raccourcis ========= */
+            #helpModal {
+                position: fixed;
+                inset: 0;
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-family: monospace;
+                color: rgb(220, 220, 220);
+            }
+            #helpModal[hidden] {
+                display: none;
+            }
+            #helpModal .help-list {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin-bottom: 14px;
+            }
+            #helpModal .help-row {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 12px;
+                color: rgba(220, 220, 220, 0.9);
+                line-height: 1.5;
+            }
+            /* Chip "touche" : monospace, encadre, lisible sur fond sombre. */
+            #helpModal .kbd {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 26px;
+                height: 20px;
+                padding: 0 6px;
+                font-family: monospace;
+                font-size: 11px;
+                font-style: normal;
+                color: rgb(220, 220, 220);
+                background-color: #1c1c1c;
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                border-radius: 3px;
+                box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+                white-space: nowrap;
+            }
+            /* Chip special pour libelles longs (ex: "Clic milieu sur grille"). */
+            #helpModal .kbd.wide {
+                min-width: auto;
+                padding: 0 8px;
+            }
+            #helpModal .help-row > span {
+                margin-left: 4px;
+            }
         </style>
     </head>
     <body>
         <div id="toolbar">
-            <button id="grid" title="Afficher / masquer la grille (molette pour ajuster le pas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="2" width="5" height="5"/><rect x="9" y="2" width="5" height="5"/><rect x="2" y="9" width="5" height="5"/><rect x="9" y="9" width="5" height="5"/></svg></button>
+            <button id="grid" title="Afficher / masquer la grille (G, molette pour ajuster le pas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12"/><line x1="6" y1="2" x2="6" y2="14"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="2" y1="10" x2="14" y2="10"/></svg><span id="gridText"></span></button>
             <button id="export" title="Telecharger la scene courante en JSON (Ctrl+S)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v9"/><path d="M5 8l3 3 3-3"/><path d="M2 14h12"/></svg></button>
             <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
             <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
@@ -249,6 +329,26 @@
         <canvas id="board" width="100" height="100"></canvas>
         <div id="messageBoard"></div>
         <div id="coords"></div>
+        <div id="helpModal" hidden>
+            <div class="modal-backdrop" data-help-close></div>
+            <div class="modal-box">
+                <div class="modal-title">Raccourcis clavier</div>
+                <div class="help-list">
+                    <div class="help-row"><kbd class="kbd">Backspace</kbd><span>supprimer le point sélectionne</span></div>
+                    <div class="help-row"><kbd class="kbd">⇧</kbd><kbd class="kbd">Backspace</kbd><span>reinitialiser completement la scene</span></div>
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Z</kbd><span>annuler</span></div>
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">Z</kbd><span>retablir</span></div>
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Y</kbd><span>retablir</span></div>
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">S</kbd><span>telecharger la scene en JSON</span></div>
+                    <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
+                    <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
+                    <div class="help-row"><kbd class="kbd">?</kbd><span>afficher / masquer cette aide</span></div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="helpClose" type="button">Fermer</button>
+                </div>
+            </div>
+        </div>
         <div id="importModal" hidden>
             <div class="modal-backdrop"></div>
             <div class="modal-box">

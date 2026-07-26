@@ -324,23 +324,34 @@ _ctx.fillRect(0,0,board.width,board.height)
 messageBoard.innerText = '*** CONSOLE ***'
 
 updateGridButtonText = () => {
+    let gridText = document.querySelector('#gridText')
     let gridBtn = document.querySelector('#grid')
-    if (!gridBtn) return
-    if (activeGrid) {
-        gridBtn.innerText = `# (${GRID_STEP}px)`
-    } else {
-        gridBtn.innerText = `#`
-    }
+    if (!gridText || !gridBtn) return
+    // Cible uniquement le <span> dedie : ne PAS toucher au bouton
+    // entier avec innerText, sinon l'icone SVG est detruite. Le
+    // caractere '#' precedent avait des barres obliques qui faisaient
+    // paraitre le texte "en italique" en police monospace.
+    // Le pas est affiche en permanence (subdued si inactif, vert si
+    // actif via la classe .grid-active sur le bouton).
+    gridText.textContent = `${GRID_STEP}px`
+    gridBtn.classList.toggle('grid-active', !!activeGrid)
 }
 
 let gridBtn = document.querySelector('#grid')
 
-gridBtn.addEventListener("click",(e) => {
-    if (e.button !== 0) return
+// Toggle la grille (utilise par le clic sur le bouton et par le
+// raccourci clavier 'g'). Centralise la logique pour eviter la
+// divergence entre les deux points d'entree.
+toggleGrid = () => {
     activeGrid = !activeGrid
     updateGridButtonText()
     drawBoard()
     persistState()
+}
+
+gridBtn.addEventListener("click",(e) => {
+    if (e.button !== 0) return
+    toggleGrid()
 })
 
 gridBtn.addEventListener("wheel", (e) => {
@@ -548,6 +559,35 @@ document.addEventListener('keydown',(e) => {
             deleteSelectedPoint()
         }
     }
+    // Toggle la grille avec 'g' / 'G' (sans modifiers autres que Shift,
+    // ignore quand l'utilisateur tape dans un champ, et ignore aussi
+    // si la cible est le bouton #grid lui-meme : apres un clic, le
+    // bouton garde le focus et un 'g' declenche sinon un second
+    // toggle qui annule le premier).
+    let t = e.target
+    let typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+    let inGridBtn = t && typeof t.closest === 'function' && t.closest('#grid')
+    if (!typing && !inGridBtn && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyG') {
+        e.preventDefault()
+        toggleGrid()
+    }
+    // '?' ouvre/ferme le panneau d'aide. Detecte via e.key (locale-
+    // dependant : shift+/ sur US, shift+, sur AZERTY, etc.) et la
+    // touche Help dediee si presente. Memo pour eviter une double
+    // ouverture sur un repeat.
+    let helpModal = document.querySelector('#helpModal')
+    let isHelpOpen = helpModal && !helpModal.hidden
+    let wantsHelp = !typing && (e.key === '?' || e.code === 'Help')
+    if (wantsHelp && !e.repeat) {
+        e.preventDefault()
+        if (isHelpOpen) hideHelp()
+        else showHelp()
+    }
+    // Escape ferme le panneau d'aide s'il est ouvert.
+    if (isHelpOpen && e.code === 'Escape' && !e.repeat) {
+        e.preventDefault()
+        hideHelp()
+    }
     if((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code==='KeyZ' || e.key==='z' || e.key==='Z')) {
         e.preventDefault()
         redo()
@@ -561,6 +601,28 @@ document.addEventListener('keydown',(e) => {
         e.preventDefault()
         downloadMesh()
     }
+})
+
+let helpModal = document.querySelector('#helpModal')
+
+showHelp = () => {
+    if (!helpModal) return
+    helpModal.hidden = false
+}
+
+hideHelp = () => {
+    if (!helpModal) return
+    helpModal.hidden = true
+}
+
+// Bouton "Fermer" + clic sur le backdrop ferment l'aide. Le clic a
+// l'interieur de la .modal-box NE propage pas vers le backdrop
+// (stopPropagation implicite via le check sur data-help-close).
+let helpCloseBtn = document.querySelector('#helpClose')
+if (helpCloseBtn) helpCloseBtn.addEventListener('click', () => hideHelp())
+if (helpModal) helpModal.addEventListener('click', (e) => {
+    let target = e.target
+    if (target && target.dataset && target.dataset.helpClose !== undefined) hideHelp()
 })
 
 let isSelectionDimmed = false
