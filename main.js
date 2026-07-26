@@ -30,6 +30,17 @@ snapToGrid = (point) => {
         y: Math.round(point.y / GRID_STEP) * GRID_STEP
     }
 }
+
+// Le systeme de coordonnees du modele est en convention maths:
+// Y positif vers le haut, origine au centre du canvas
+// (ctx.center.x, ctx.center.y). Les coordonnees capturees depuis les
+// evenements souris (e.clientX/Y relatives au board) sont en coords
+// screen (Y vers le bas, origine top-left). screenToModel fait la
+// conversion.
+screenToModel = (screen) => {
+    if (!screen) return undefined
+    return { x: screen.x, y: ctx.center.y - screen.y }
+}
 let selectedPoints = []
 let isSelectingBox = false
 let selectionBoxStart = undefined
@@ -233,6 +244,30 @@ selectAllBtn.addEventListener('click', (e) => {
     selectAllPoints()
 })
 
+let importAlphabet2Btn = document.querySelector('#importAlphabet2')
+importAlphabet2Btn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    let input = document.querySelector('#importAlphabet2File')
+    if (!input) {
+        input = document.createElement('input')
+        input.type = 'file'
+        input.id = 'importAlphabet2File'
+        input.hidden = true  // cache l'input (sinon il apparait dans la page)
+        // Pas de filtre accept: les fichiers alphabet2 n'ont souvent pas
+        // d'extension (ex: assets/alphabet2). Un filtre MIME/extension
+        // strict masque ces fichiers dans le picker. On laisse le
+        // navigateur montrer TOUS les fichiers, la validation se fait
+        // dans importAlphabet2FromFile.
+        document.body.appendChild(input)
+        input.addEventListener('change', (evt) => {
+            let f = evt.target.files && evt.target.files[0]
+            if (f) importAlphabet2FromFile(f)
+            evt.target.value = ''
+        })
+    }
+    input.click()
+})
+
 document.addEventListener("contextmenu", (e) => {
     if(e.target.id==='board') e.preventDefault();
 }, false);
@@ -248,8 +283,8 @@ document.addEventListener('mouseup',(e) => {
             let dist = Math.hypot(selectionBoxCurrent.x - selectionBoxStart.x, selectionBoxCurrent.y - selectionBoxStart.y)
             isSelectingBox = false
             if(dist < 5) {
-                let mousePos = { x: e.x - board.getBoundingClientRect().x, y: e.y - board.getBoundingClientRect().y }
-                let np = findNearestPoint(mousePos)
+                let mouseScreen = { x: e.x - board.getBoundingClientRect().x, y: e.y - board.getBoundingClientRect().y }
+                let np = findNearestPoint(screenToModel(mouseScreen))
                 if(np && np.distance < 15) {
                     let pointsAtPos = getPointsAtSamePosition(np.point)
                     if(!e.shiftKey) {
@@ -318,7 +353,8 @@ board.addEventListener('wheel', (e) => {
     if (selectedPoints.length >= 2 && !isSelectionDimmed) {
         e.preventDefault()
         let boardRect = board.getBoundingClientRect()
-        let center = { x: e.x - boardRect.x, y: e.y - boardRect.y }
+        // Le centre de rotation est fourni en coords model (Y inverse).
+        let center = { x: e.x - boardRect.x, y: ctx.center.y - (e.y - boardRect.y) }
         let angleStep = (5 * Math.PI) / 180
         let angle = e.deltaY < 0 ? -angleStep : angleStep
         rotateSelectedPoints(center, angle)
@@ -379,7 +415,7 @@ rotateSelectedPoints = (center, angle) => {
 
     drawBoard()
     if (lastMousePos) {
-        updateMouseHover(lastMousePos, snapToGrid(lastMousePos))
+        updateMouseHover(lastMousePos)
     }
 }
 
@@ -416,15 +452,15 @@ grabbed = () => {
 }
 
 beginGrabbing = (e) => {
-    let mousePos = { 
-        x : e.x-board.getBoundingClientRect().x,
-        y : e.y-board.getBoundingClientRect().y
+    let mouseScreen = {
+        x : e.x - board.getBoundingClientRect().x,
+        y : e.y - board.getBoundingClientRect().y
     }
-    let np = findNearestPoint(mousePos)
+    let np = findNearestPoint(screenToModel(mouseScreen))
     if(!np || !np.point) return
 
     currentAction = ACTION_GRABBING
-    grabStartMouse = mousePos
+    grabStartMouse = mouseScreen
     saveState()
 
     if(!isPointSelected(np.point)) {
@@ -463,20 +499,24 @@ endGrabbing = (e) => {
 }
 
 resolveMouseMoveOnBoard = (e) => {
-    let mousePos = { 
-        x : e.x-board.getBoundingClientRect().x,
-        y : e.y-board.getBoundingClientRect().y
+    let mouseScreen = {
+        x : e.x - board.getBoundingClientRect().x,
+        y : e.y - board.getBoundingClientRect().y
     }
 
     if(isSelectingBox) {
-        selectionBoxCurrent = mousePos
-        let minX = Math.min(selectionBoxStart.x, selectionBoxCurrent.x)
-        let maxX = Math.max(selectionBoxStart.x, selectionBoxCurrent.x)
-        let minY = Math.min(selectionBoxStart.y, selectionBoxCurrent.y)
-        let maxY = Math.max(selectionBoxStart.y, selectionBoxCurrent.y)
+        selectionBoxCurrent = mouseScreen
+        let minXS = Math.min(selectionBoxStart.x, selectionBoxCurrent.x)
+        let maxXS = Math.max(selectionBoxStart.x, selectionBoxCurrent.x)
+        // Selection box: les coords sont en screen. Pour filtrer les
+        // vertex en model, on inverse min/max Y.
+        let minYS_screen = Math.min(selectionBoxStart.y, selectionBoxCurrent.y)
+        let maxYS_screen = Math.max(selectionBoxStart.y, selectionBoxCurrent.y)
+        let minYM = Math.min(ctx.center.y - minYS_screen, ctx.center.y - maxYS_screen)
+        let maxYM = Math.max(ctx.center.y - minYS_screen, ctx.center.y - maxYS_screen)
 
         let allV = getAllVertices()
-        let inBox = allV.filter(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
+        let inBox = allV.filter(p => p.x >= minXS && p.x <= maxXS && p.y >= minYM && p.y <= maxYM)
         let expanded = []
         inBox.forEach(p => {
             getPointsAtSamePosition(p).forEach(q => {
@@ -485,8 +525,10 @@ resolveMouseMoveOnBoard = (e) => {
         })
         selectedPoints = expanded
     } else if(grabbed()) {
-        let dx = mousePos.x - grabStartMouse.x
-        let dy = mousePos.y - grabStartMouse.y
+        // dx: meme sens screen/model
+        let dx = mouseScreen.x - grabStartMouse.x
+        // dy_model: inverse du deplacement screen (haut souris = +Y model)
+        let dy = grabStartMouse.y - mouseScreen.y
         grabbedGroup.forEach(item => {
             let targetPos = { x: item.startX + dx, y: item.startY + dy }
             if(activeGrid) {
@@ -500,12 +542,17 @@ resolveMouseMoveOnBoard = (e) => {
         })
     }
 
-    lastMousePos = mousePos
-    updateMouseHover(mousePos, snapToGrid(mousePos))
+    lastMousePos = mouseScreen
+    updateMouseHover(mouseScreen)
 }
 
-updateMouseHover = (cursorPoint, actionPoint = cursorPoint) => {
-    let target = activeGrid ? snapToGrid(actionPoint) : actionPoint
+// Met a jour le hover (point le plus proche, dim de la selection, etc).
+// Le curseur est dessine en screen. Le calcul du nearestPoint/Line
+// se fait en coords model (Y inverse).
+updateMouseHover = (cursorScreen) => {
+    if (!cursorScreen) return
+    let actionModel = screenToModel(cursorScreen)
+    let target = activeGrid ? snapToGrid(actionModel) : actionModel
     nearestPoint = findNearestPoint(target)
 
     if (selectedPoints.length > 0 && nearestPoint && nearestPoint.point && !isPointSelected(nearestPoint.point)) {
@@ -515,26 +562,26 @@ updateMouseHover = (cursorPoint, actionPoint = cursorPoint) => {
     }
 
     drawBoard()
-    drawMouse(cursorPoint)
+    drawMouse(cursorScreen)
 
-    if(nearestPoint && nearestPoint.point) {
+    if (nearestPoint && nearestPoint.point) {
         drawPoint(nearestPoint.point, 5, '#00FF00')
     }
     nearestLine = findSelectedLine(target)
-    if(nearestLine && nearestLine.firstPoint && nearestLine.secondPoint) {
+    if (nearestLine && nearestLine.firstPoint && nearestLine.secondPoint) {
         drawLine(nearestLine.firstPoint, nearestLine.secondPoint, [], '#00FF00')
     }
 }
 
 resolveMouseClickOnBoard = (e) =>  {
-    let mousePos = {
-        x : rvx(e.x-board.getBoundingClientRect().x), 
-        y : rvy(e.y-board.getBoundingClientRect().y)
+    let mouseScreen = {
+        x : e.x - board.getBoundingClientRect().x,
+        y : e.y - board.getBoundingClientRect().y
     }
-    let pointToAdd = snapToGrid(mousePos)
+    let pointToAdd = snapToGrid(screenToModel(mouseScreen))
     addPoint(pointToAdd)
     drawBoard()
-    drawMouse(mousePos)
+    drawMouse(mouseScreen)
 }
 
 findNearestPoint = (point) => {
