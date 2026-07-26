@@ -1,0 +1,7 @@
+# Artefacts generes par l'app (sortie de downloadMesh, etc.)
+temp.json
+*.tmp
+
+# Cache Python (le projet a test_server.py et autres .py)
+__pycache__/
+*.pyc
