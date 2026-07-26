@@ -1187,13 +1187,10 @@ importMeshFromText = (text) => {
         applyImport(parsed, loaded, 'replace')
         return true
     }
-    let stored = getStoredImportMode()
-    if (stored === 'replace' || stored === 'merge') {
-        log('Import mode depuis memoire : ' + stored)
-        applyImport(parsed, loaded, stored)
-        return true
-    }
 
+    // Scene non vide : on ouvre TOUJOURS le modal. Le radio est
+    // pre-selectionne dans showImportModal sur le dernier choix
+    // memorise (defaut 'replace' si premiere fois).
     let currentTriCount = shapes.reduce((a, s) => a + (s && s.triangles ? s.triangles.length : 0), 0)
     let importedTriCount = loaded.reduce((a, s) => a + (s && s.triangles ? s.triangles.length : 0), 0)
     let currentInfo = shapes.length + ' forme' + (shapes.length > 1 ? 's' : '') + ', ' + currentTriCount + ' triangle' + (currentTriCount > 1 ? 's' : '')
@@ -1203,7 +1200,10 @@ importMeshFromText = (text) => {
             log('Import cancelled')
             return
         }
-        if (result.remember) saveStoredImportMode(result.mode)
+        // On enregistre systematiquement le choix pour le pre-selectionner
+        // au prochain import (le modal s'affiche a chaque fois, mais le
+        // radio defaut reflete le dernier choix).
+        saveStoredImportMode(result.mode)
         applyImport(parsed, loaded, result.mode)
     })
     return true
@@ -1262,13 +1262,15 @@ showImportModal = (opts, callback) => {
         info.textContent = 'Scene courante : ' + opts.currentInfo + '\nScene importee : ' + opts.importedInfo
     }
 
-    // Reinitialiser le formulaire a chaque ouverture :
-    //  - radio "replace" coche par defaut
-    //  - checkbox "se souvenir" decochee
-    let rememberCb = document.querySelector('#importRemember')
-    if (rememberCb) rememberCb.checked = false
+    // Pre-selection du radio sur le dernier choix memorise (defaut
+    // 'replace' si pas de memoire ou valeur invalide). Le modal
+    // s'affiche a chaque import (cf. importMeshFromText), c'est donc
+    // le seul mecanisme pour proposer le bon defaut sans demander
+    // explicitement "se souvenir".
+    let previousMode = getStoredImportMode()
+    let defaultMode = (previousMode === 'replace' || previousMode === 'merge') ? previousMode : 'replace'
     let radios = modal.querySelectorAll('input[name="importMode"]')
-    radios.forEach(r => { r.checked = (r.value === 'replace') })
+    radios.forEach(r => { r.checked = (r.value === defaultMode) })
 
     let validateBtn = document.querySelector('#importModalValidate')
     let cancelBtn = document.querySelector('#importModalCancel')
@@ -1284,9 +1286,8 @@ showImportModal = (opts, callback) => {
     let onValidate = () => {
         let radio = modal.querySelector('input[name="importMode"]:checked')
         let mode = (radio && radio.value === 'merge') ? 'merge' : 'replace'
-        let remember = rememberCb ? rememberCb.checked : false
         cleanup()
-        callback({ mode: mode, remember: remember })
+        callback({ mode: mode })
     }
     let onCancel = () => {
         cleanup()
