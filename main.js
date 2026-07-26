@@ -30,6 +30,16 @@ let activeShapeIndex = 0
 // logique d'edition doit passer par cet accessor.
 activeTriangles = () => shapes[activeShapeIndex].triangles
 
+// Helper : la scene est-elle vide (aucun triangle dans aucune forme) ?
+// Sert a eviter un confirm() inutile quand il n'y a rien a ecraser.
+isSceneEmpty = () => {
+    if (!Array.isArray(shapes) || shapes.length === 0) return true
+    for (let i = 0; i < shapes.length; i++) {
+        if (shapes[i] && Array.isArray(shapes[i].triangles) && shapes[i].triangles.length > 0) return false
+    }
+    return true
+}
+
 // Helper : change la forme active proprement. Annule toute action
 // en cours, vide la selection, recalcule le hover et le HUD.
 goToShape = (newIndex) => {
@@ -417,6 +427,30 @@ importAlphabet2Btn.addEventListener('click', (e) => {
         input.addEventListener('change', (evt) => {
             let f = evt.target.files && evt.target.files[0]
             if (f) importAlphabet2FromFile(f)
+            evt.target.value = ''
+        })
+    }
+    input.click()
+})
+
+// Ouvre un picker pour selectionner un fichier .json et l'importer
+// comme scene courante. Meme validation finale que le drop sur canvas :
+// le contenu est passe a importMeshFromFile qui appelle
+// importMeshFromText -> buildShapesFromPayload.
+let importJsonBtn = document.querySelector('#importJson')
+if (importJsonBtn) importJsonBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    let input = document.querySelector('#importJsonFile')
+    if (!input) {
+        input = document.createElement('input')
+        input.type = 'file'
+        input.id = 'importJsonFile'
+        input.accept = 'application/json,.json'
+        input.hidden = true
+        document.body.appendChild(input)
+        input.addEventListener('change', (evt) => {
+            let f = evt.target.files && evt.target.files[0]
+            if (f) importMeshFromFile(f)
             evt.target.value = ''
         })
     }
@@ -1128,23 +1162,166 @@ downloadMesh = () => {
 }
 
 importMeshFromText = (text) => {
+    // 1) Parse + validation du payload d'abord, AVANT tout prompt.
+    //    Si le JSON est mal forme on sort sans rien demander.
+    let parsed = null
+    let loaded = null
     try {
         let data = JSON.parse(text)
         if (!data || typeof data !== 'object') {
             log('Import fail: not a JSON object')
             return false
         }
-        let loaded = buildShapesFromPayload(data)
-        shapes = loaded
-        if (typeof data.activeShapeIndex === 'number' && data.activeShapeIndex >= 0 && data.activeShapeIndex < shapes.length) {
-            activeShapeIndex = data.activeShapeIndex
-        } else {
-            activeShapeIndex = 0
+        parsed = data
+        loaded = buildShapesFromPayload(data)
+    } catch (e) {
+        log('Import fail: ' + e.message)
+        return false
+    }
+
+    // 2) Strategie d'import selon l'etat de la scene.
+    //    - Scene vide : pas de prompt, replace direct.
+    //    - Scene non vide avec preference memorisee : applique sans prompt.
+    //    - Scene non vide sans preference : affiche le modal HTML custom.
+    if (isSceneEmpty()) {
+        applyImport(parsed, loaded, 'replace')
+        return true
+    }
+    let stored = getStoredImportMode()
+    if (stored === 'replace' || stored === 'merge') {
+        log('Import mode depuis memoire : ' + stored)
+        applyImport(parsed, loaded, stored)
+        return true
+    }
+
+    let currentTriCount = shapes.reduce((a, s) => a + (s && s.triangles ? s.triangles.length : 0), 0)
+    let importedTriCount = loaded.reduce((a, s) => a + (s && s.triangles ? s.triangles.length : 0), 0)
+    let currentInfo = shapes.length + ' forme' + (shapes.length > 1 ? 's' : '') + ', ' + currentTriCount + ' triangle' + (currentTriCount > 1 ? 's' : '')
+    let importedInfo = loaded.length + ' forme' + (loaded.length > 1 ? 's' : '') + ', ' + importedTriCount + ' triangle' + (importedTriCount > 1 ? 's' : '')
+    showImportModal({ currentInfo: currentInfo, importedInfo: importedInfo }, (result) => {
+        if (!result) {
+            log('Import cancelled')
+            return
         }
-        if (data.activeGrid !== undefined) activeGrid = !!data.activeGrid
-        if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') {
-            GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
+        if (result.remember) saveStoredImportMode(result.mode)
+        applyImport(parsed, loaded, result.mode)
+    })
+    return true
+}
+
+// ---------- Helpers d'import (modal, stockage, application) ----------
+
+// Cle localStorage pour la preference "mode d'import memorise".
+IMPORT_MODE_STORAGE_KEY = 'mesh-designer-import-mode'
+
+// Lit la preference. Renvoie 'replace' ou 'merge' ou null si absente/invalide.
+getStoredImportMode = () => {
+    try {
+        let v = localStorage.getItem(IMPORT_MODE_STORAGE_KEY)
+        return v === 'replace' || v === 'merge' ? v : null
+    } catch (e) {
+        return null
+    }
+}
+
+// Persiste la preference. Les erreurs (quota, etc) sont ignorees pour
+// ne JAMAIS bloquer l'import.
+saveStoredImportMode = (mode) => {
+    try {
+        if (mode === 'replace' || mode === 'merge') {
+            localStorage.setItem(IMPORT_MODE_STORAGE_KEY, mode)
         }
+    } catch (e) {}
+}
+
+// Garde anti-double-modal : si un modal est deja ouvert, le second
+// appel est ignore et le callback recoit null (= annule).
+let importModalShown = false
+
+// Affiche le modal HTML d'import. opts = { currentInfo, importedInfo }.
+// callback(null) = annule (Escape, backdrop, bouton Annuler).
+// callback({ mode, remember }) = choix valide.
+showImportModal = (opts, callback) => {
+    if (importModalShown) {
+        callback(null)
+        return
+    }
+    let modal = document.querySelector('#importModal')
+    if (!modal) {
+        // Le DOM modal n'existe pas (tests headless, ancien HTML).
+        // On ne fait pas crasher l'import : on retombe sur replace
+        // silencieux comme avant l'introduction du modal.
+        log('Import modal absent, replace par defaut')
+        callback({ mode: 'replace', remember: false })
+        return
+    }
+    importModalShown = true
+
+    let info = document.querySelector('#importModalInfo')
+    if (info) {
+        info.textContent = 'Scene courante : ' + opts.currentInfo + '\nScene importee : ' + opts.importedInfo
+    }
+
+    // Reinitialiser le formulaire a chaque ouverture :
+    //  - radio "replace" coche par defaut
+    //  - checkbox "se souvenir" decochee
+    let rememberCb = document.querySelector('#importRemember')
+    if (rememberCb) rememberCb.checked = false
+    let radios = modal.querySelectorAll('input[name="importMode"]')
+    radios.forEach(r => { r.checked = (r.value === 'replace') })
+
+    let validateBtn = document.querySelector('#importModalValidate')
+    let cancelBtn = document.querySelector('#importModalCancel')
+
+    let cleanup = () => {
+        modal.hidden = true
+        document.removeEventListener('keydown', onKey)
+        modal.removeEventListener('click', onBackdrop)
+        if (validateBtn) validateBtn.removeEventListener('click', onValidate)
+        if (cancelBtn) cancelBtn.removeEventListener('click', onCancel)
+        importModalShown = false
+    }
+    let onValidate = () => {
+        let radio = modal.querySelector('input[name="importMode"]:checked')
+        let mode = (radio && radio.value === 'merge') ? 'merge' : 'replace'
+        let remember = rememberCb ? rememberCb.checked : false
+        cleanup()
+        callback({ mode: mode, remember: remember })
+    }
+    let onCancel = () => {
+        cleanup()
+        callback(null)
+    }
+    let onKey = (e) => {
+        if (e.key === 'Escape') onCancel()
+    }
+    let onBackdrop = (e) => {
+        // Le clic sur le fond (backdrop) doit annuler. Le DOM modal
+        // contient <div class="modal-backdrop"> comme premier enfant,
+        // donc e.target sur la zone sombre est ce div, PAS #importModal.
+        // On accepte les deux cas (clic direct sur le container ou sur
+        // le div backdrop) ; les clics sur .modal-box ou ses enfants ne
+        // correspondent pas a ces classes et ne declenchent rien.
+        if (e.target && (e.target === modal || e.target.classList && e.target.classList.contains('modal-backdrop'))) {
+            onCancel()
+        }
+    }
+
+    if (validateBtn) {
+        validateBtn.addEventListener('click', onValidate)
+        validateBtn.focus()
+    }
+    if (cancelBtn) cancelBtn.addEventListener('click', onCancel)
+    document.addEventListener('keydown', onKey)
+    modal.addEventListener('click', onBackdrop)
+    modal.hidden = false
+}
+
+// Applique le payload importe selon le mode ('replace' ou 'merge').
+// Choix deja fait plus haut ; ici on ne fait QUE l'application
+// (reset d'etat ephemere, mutation de shapes, persist, redraw).
+applyImport = (parsed, loaded, mode) => {
+    let resetEphemeralState = () => {
         historyStack = []
         redoStack = []
         selectedPoints = []
@@ -1158,17 +1335,48 @@ importMeshFromText = (text) => {
         clearTimeout(wheelRotateTimer)
         wheelRotateTimer = undefined
         isWheelRotating = false
+    }
+
+    if (mode === 'merge') {
+        let beforeCount = shapes.length
+        if (parsed.activeGrid !== undefined) activeGrid = !!parsed.activeGrid
+        if (parsed.GRID_STEP !== undefined && typeof parsed.GRID_STEP === 'number') {
+            GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, parsed.GRID_STEP))
+        }
+        loaded.forEach(s => shapes.push(s))
+        activeShapeIndex = beforeCount
+        if (activeShapeIndex < 0 || activeShapeIndex >= shapes.length) {
+            activeShapeIndex = Math.max(0, shapes.length - 1)
+        }
+        resetEphemeralState()
         persistState()
         updateGridButtonText()
         updateShapeHud()
         drawBoard()
         let totalTris = shapes.reduce((acc, s) => acc + s.triangles.length, 0)
-        log('Import OK: ' + shapes.length + ' forme(s), ' + totalTris + ' triangles')
+        log('Import merge OK: +' + loaded.length + ' forme' + (loaded.length > 1 ? 's' : '') + ', ' + shapes.length + ' au total, ' + totalTris + ' triangles')
         return true
-    } catch (e) {
-        log('Import fail: ' + e.message)
-        return false
     }
+
+    // Replace mode
+    shapes = loaded
+    if (typeof parsed.activeShapeIndex === 'number' && parsed.activeShapeIndex >= 0 && parsed.activeShapeIndex < shapes.length) {
+        activeShapeIndex = parsed.activeShapeIndex
+    } else {
+        activeShapeIndex = 0
+    }
+    if (parsed.activeGrid !== undefined) activeGrid = !!parsed.activeGrid
+    if (parsed.GRID_STEP !== undefined && typeof parsed.GRID_STEP === 'number') {
+        GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, parsed.GRID_STEP))
+    }
+    resetEphemeralState()
+    persistState()
+    updateGridButtonText()
+    updateShapeHud()
+    drawBoard()
+    let totalTris = shapes.reduce((acc, s) => acc + s.triangles.length, 0)
+    log('Import OK: ' + shapes.length + ' forme' + (shapes.length > 1 ? 's' : '') + ', ' + totalTris + ' triangle' + (totalTris > 1 ? 's' : ''))
+    return true
 }
 
 importMeshFromFile = (file) => {

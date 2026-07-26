@@ -41,9 +41,14 @@
                 left: 170px;
                 top: 10px;
             }
+            #importJson {
+                position: absolute;
+                left: 210px;
+                top: 10px;
+            }
             #shapeLabel {
                 position: absolute;
-                left: 218px;
+                left: 258px;
                 top: 12px;
                 min-width: 36px;
                 color: rgb(220, 220, 220);
@@ -60,25 +65,25 @@
             }
             #prevShape {
                 position: absolute;
-                left: 210px;
+                left: 250px;
                 top: 10px;
                 z-index: 2;
             }
             #nextShape {
                 position: absolute;
-                left: 268px;
+                left: 308px;
                 top: 10px;
                 z-index: 2;
             }
             #newShape {
                 position: absolute;
-                left: 310px;
+                left: 350px;
                 top: 10px;
                 z-index: 2;
             }
             #deleteShape {
                 position: absolute;
-                left: 350px;
+                left: 390px;
                 top: 10px;
                 z-index: 2;
             }
@@ -98,6 +103,114 @@
                 z-index: 100;
                 white-space: nowrap;
             }
+            /* Modal d'import : remplace la double confirm() native.
+               Selection radio (remplacer / fusionner),
+               checkbox "se souvenir du choix",
+               boutons Valider / Annuler.
+               ESC ou clic sur le backdrop = annuler. */
+            #importModal {
+                position: fixed;
+                inset: 0;
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-family: monospace;
+                color: rgb(220, 220, 220);
+            }
+            #importModal[hidden] {
+                display: none;
+            }
+            #importModal .modal-backdrop {
+                position: absolute;
+                inset: 0;
+                background-color: rgba(0, 0, 0, 0.7);
+            }
+            #importModal .modal-box {
+                position: relative;
+                background-color: #111;
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 4px;
+                padding: 16px 20px;
+                min-width: 380px;
+                max-width: 520px;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+                line-height: 1.4;
+                font-size: 13px;
+            }
+            #importModal .modal-title {
+                font-size: 14px;
+                font-weight: bold;
+                color: rgb(55, 194, 0);
+                margin-bottom: 10px;
+            }
+            #importModal .modal-info {
+                margin-bottom: 14px;
+                font-size: 12px;
+                color: rgba(220, 220, 220, 0.85);
+                white-space: pre-line;
+            }
+            #importModal .modal-options {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin-bottom: 14px;
+            }
+            #importModal .modal-options label {
+                cursor: pointer;
+                display: flex;
+                align-items: flex-start;
+                gap: 8px;
+                padding: 4px 6px;
+                border-radius: 2px;
+            }
+            #importModal .modal-options label:hover {
+                background-color: rgba(255, 255, 255, 0.04);
+            }
+            #importModal .modal-options input[type=radio] {
+                margin-top: 2px;
+                cursor: pointer;
+            }
+            #importModal .modal-remember {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 14px;
+                font-size: 12px;
+                color: rgba(220, 220, 220, 0.8);
+                cursor: pointer;
+                user-select: none;
+            }
+            #importModal .modal-remember input[type=checkbox] {
+                cursor: pointer;
+            }
+            #importModal .modal-buttons {
+                display: flex;
+                justify-content: flex-end;
+                gap: 8px;
+            }
+            #importModal .modal-buttons button {
+                font-family: monospace;
+                font-size: 13px;
+                padding: 5px 14px;
+                cursor: pointer;
+                background-color: #222;
+                color: #eee;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 2px;
+            }
+            #importModal .modal-buttons button:hover {
+                background-color: #2e2e2e;
+            }
+            #importModal #importModalValidate {
+                background-color: rgb(55, 194, 0);
+                color: #111;
+                border-color: rgb(55, 194, 0);
+                font-weight: bold;
+            }
+            #importModal #importModalValidate:hover {
+                background-color: rgb(80, 220, 25);
+            }
         </style>
     </head>
     <body>
@@ -106,6 +219,7 @@
         <button id="reset">↻</button>
         <button id="selectAll">☐</button>
         <button id="importAlphabet2" title="Importer alphabet2">A</button>
+        <button id="importJson" title="Importer une scene JSON">↑</button>
         <button id="prevShape" title="Forme precedente">←</button>
         <span id="shapeLabel">1/1</span>
         <button id="nextShape" title="Forme suivante">→</button>
@@ -114,6 +228,22 @@
         <canvas id="board" width="100" height="100"></canvas>
         <div id="messageBoard"></div>
         <div id="coords"></div>
+        <div id="importModal" hidden>
+            <div class="modal-backdrop"></div>
+            <div class="modal-box">
+                <div class="modal-title">Importer une scène</div>
+                <div id="importModalInfo" class="modal-info">—</div>
+                <div class="modal-options">
+                    <label><input type="radio" name="importMode" value="replace" checked> Remplacer la scène courante</label>
+                    <label><input type="radio" name="importMode" value="merge"> Fusionner (ajouter aux formes existantes)</label>
+                </div>
+                <label class="modal-remember"><input type="checkbox" id="importRemember"> Se souvenir de ce choix pour les prochains imports</label>
+                <div class="modal-buttons">
+                    <button id="importModalCancel" type="button">Annuler</button>
+                    <button id="importModalValidate" type="button">Importer</button>
+                </div>
+            </div>
+        </div>
         <script type="application/javascript" src="./draw.js"></script>
         <script type="application/javascript" src="./convert.js"></script>
         <script type="application/javascript" src="./main.js"></script>
