@@ -389,7 +389,7 @@ updateGridButtonText()
 let exportBtn = document.querySelector('#export')
 exportBtn.addEventListener('click', (e) => {
     if (e.button !== 0) return
-    downloadMesh()
+    saveMesh()
 })
 
 let resetBtn = document.querySelector('#reset')
@@ -419,24 +419,24 @@ selectAllBtn.addEventListener('click', (e) => {
     selectAllPoints()
 })
 
-let importAlphabet2Btn = document.querySelector('#importAlphabet2')
-importAlphabet2Btn.addEventListener('click', (e) => {
+let importMeshesBtn = document.querySelector('#importMeshes')
+importMeshesBtn.addEventListener('click', (e) => {
     if (e.button !== 0) return
-    let input = document.querySelector('#importAlphabet2File')
+    let input = document.querySelector('#importMeshesFile')
     if (!input) {
         input = document.createElement('input')
         input.type = 'file'
-        input.id = 'importAlphabet2File'
+        input.id = 'importMeshesFile'
         input.hidden = true  // cache l'input (sinon il apparait dans la page)
-        // Pas de filtre accept: les fichiers alphabet2 n'ont souvent pas
-        // d'extension (ex: assets/alphabet2). Un filtre MIME/extension
+        // Pas de filtre accept: les fichiers meshes n'ont souvent pas
+        // d'extension (ex: assets/meshes). Un filtre MIME/extension
         // strict masque ces fichiers dans le picker. On laisse le
         // navigateur montrer TOUS les fichiers, la validation se fait
-        // dans importAlphabet2FromFile.
+        // dans importMeshesFromFile.
         document.body.appendChild(input)
         input.addEventListener('change', (evt) => {
             let f = evt.target.files && evt.target.files[0]
-            if (f) importAlphabet2FromFile(f)
+            if (f) importMeshesFromFile(f)
             evt.target.value = ''
         })
     }
@@ -607,7 +607,7 @@ document.addEventListener('keydown',(e) => {
         redo()
     } else if((e.ctrlKey || e.metaKey) && (e.code==='KeyS' || e.key==='s' || e.key==='S')) {
         e.preventDefault()
-        downloadMesh()
+        saveMesh()
     }
 })
 
@@ -1241,7 +1241,7 @@ window.addEventListener('beforeunload', () => {
     } catch (e) {}
 })
 
-downloadMesh = () => {
+saveMesh = () => {
     try {
         let blob = new Blob([serializeState()], { type: 'application/json' })
         let url = URL.createObjectURL(blob)
@@ -1356,7 +1356,7 @@ showImportModal = (opts, callback) => {
 
     let info = document.querySelector('#importModalInfo')
     if (info) {
-        info.textContent = 'Scene courante : ' + opts.currentInfo + '\nScene importee : ' + opts.importedInfo
+        info.textContent = 'Scene en cours : ' + opts.currentInfo + '\nScene a charger : ' + opts.importedInfo
     }
 
     // Pre-selection du radio sur le dernier choix memorise (defaut

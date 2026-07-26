@@ -23,11 +23,12 @@
             }
 
             /* ========= Toolbar principale ========= */
-            /* Une card flottante qui regroupe tous les boutons de l'app.
-               Sections separees par un trait vertical :
-               1) canvas (grille, export, reset, select all)
-               2) import / export fichiers
-               3) navigation entre formes */
+            /* Une card flottante qui regroupe tous les boutons de l'app.                Sections separees par un trait vertical :
+               1) canvas (grille, reset, select all)
+               2) sortie fichier (save = Sauvegarder)
+               3) entree fichier (read = Lire & afficher JSON / meshes)
+               4) navigation entre formes
+               5) aide */
             #toolbar {
                 position: absolute;
                 left: 12px;
@@ -108,6 +109,56 @@
                 display: block;
                 width: 14px;
                 height: 14px;
+            }
+
+            /* ========= Boutons file-op : icone + couleur distinctive ========= */
+            /* Les verbes "telecharger/importer" etaient ambigus et les
+               icones etaient des images miroir l'une de l'autre
+               (fleche bas vs fleche haut) -> risque d'inverser le
+               sens. On distingue maintenant SAVE (vert, icone
+               disquette) de READ (bleu, icone dossier ouvert) par
+               deux signaux concordants : icones de forme totalement
+               differente + couleur de fond. Auparavant un label
+               texte ("Sauvegarder" / "Charger meshes" / "Charger
+               JSON") etait affiche a cote de l'icone ; il a ete
+               retire pour gagner de la place dans la toolbar. Le
+               verbe reste accessible dans le title (tooltip au
+               survol) et le modal d'action. Le verbe "importer" est
+               devenu "charger et afficher" pour mieux decrire ce
+               qui se passe visuellement (lecture du fichier puis
+               affichage sur le canvas). */
+            /* Save : accent vert, pilule verte faible. */
+            #toolbar button.file-op-save {
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border-color: rgba(55, 194, 0, 0.45);
+            }
+            #toolbar button.file-op-save:hover {
+                background-color: rgba(55, 194, 0, 0.22);
+                border-color: rgb(55, 194, 0);
+                color: rgb(80, 220, 25);
+            }
+            #toolbar button.file-op-save:active {
+                background-color: rgba(55, 194, 0, 0.34);
+                border-color: rgb(55, 194, 0);
+                color: rgb(80, 220, 25);
+            }
+            /* Read : accent bleu clair, oppose au vert pour ne jamais
+               confondre entree et sortie. */
+            #toolbar button.file-op-read {
+                color: rgb(140, 200, 230);
+                background-color: rgba(140, 200, 230, 0.07);
+                border-color: rgba(140, 200, 230, 0.42);
+            }
+            #toolbar button.file-op-read:hover {
+                background-color: rgba(140, 200, 230, 0.18);
+                border-color: rgb(140, 200, 230);
+                color: rgb(180, 220, 245);
+            }
+            #toolbar button.file-op-read:active {
+                background-color: rgba(140, 200, 230, 0.30);
+                border-color: rgb(140, 200, 230);
+                color: rgb(190, 225, 245);
             }
 
             /* Separateur fin entre sections (file ops vs shape nav) */
@@ -314,11 +365,13 @@
     <body>
         <div id="toolbar">
             <button id="grid" title="Afficher / masquer la grille (G, molette pour ajuster le pas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12"/><line x1="6" y1="2" x2="6" y2="14"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="2" y1="10" x2="14" y2="10"/></svg><span id="gridText"></span></button>
-            <button id="export" title="Telecharger la scene courante en JSON (Ctrl+S)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v9"/><path d="M5 8l3 3 3-3"/><path d="M2 14h12"/></svg></button>
             <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
             <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
-            <button id="importAlphabet2" title="Importer un fichier alphabet2 (1 ligne = 1 forme)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M5.5 12l2.5-7 2.5 7"/><path d="M6.75 9h2.5"/></svg></button>
-            <button id="importJson" title="Importer une scene JSON (fichier ou drop sur le canvas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11V2"/><path d="M5 5l3-3 3 3"/><path d="M2 14h12"/></svg></button>
+            <span class="toolbar-sep"></span>
+            <button id="export" class="file-op file-op-save" title="Sauvegarder la scene courante en JSON (Ctrl+S)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2v12h12V4l-2-2H2z"/><path d="M11 2v3H5V2"/><rect x="5" y="8" width="6" height="3" fill="currentColor" stroke="none"/></svg></button>
+            <span class="toolbar-sep"></span>
+            <button id="importMeshes" class="file-op file-op-read" title="Charger et afficher un fichier meshes (1 ligne = 1 forme)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M5.5 12l2.5-7 2.5 7"/><path d="M6.75 9h2.5"/></svg></button>
+            <button id="importJson" class="file-op file-op-read" title="Charger et afficher une scene JSON (fichier ou drop sur le canvas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4l1.5-2h3.5l2 2h5.5v8h-12V4z"/></svg></button>
             <span class="toolbar-sep"></span>
             <button id="prevShape" title="Forme precedente"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l-5 5 5 5"/></svg></button>
             <span id="shapeLabel" title="Forme active / nombre total">1/1</span>
@@ -341,7 +394,7 @@
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Z</kbd><span>annuler</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">Z</kbd><span>retablir</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Y</kbd><span>retablir</span></div>
-                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">S</kbd><span>telecharger la scene en JSON</span></div>
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">S</kbd><span>sauvegarder la scene en JSON</span></div>
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd">?</kbd><span>afficher / masquer cette aide</span></div>
@@ -355,7 +408,7 @@
         <div id="importModal" class="modal" hidden>
             <div class="modal-backdrop"></div>
             <div class="modal-box">
-                <div class="modal-title">Importer une scène</div>
+                <div class="modal-title">Charger et afficher une scène</div>
                 <div id="importModalInfo" class="modal-info">—</div>
                 <div class="modal-options">
                     <label><input type="radio" name="importMode" value="replace" checked> Remplacer la scène courante</label>
@@ -363,7 +416,7 @@
                 </div>
                 <div class="modal-buttons">
                     <button id="importModalCancel" type="button">Annuler</button>
-                    <button id="importModalValidate" class="modal-primary" type="button">Importer</button>
+                    <button id="importModalValidate" class="modal-primary" type="button">Charger & afficher</button>
                 </div>
             </div>
         </div>

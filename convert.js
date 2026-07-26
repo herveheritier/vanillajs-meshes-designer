@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------
 // convert.js
 //
-// Convertit des mesh depuis le format "alphabet2" vers le format
+// Convertit des mesh depuis le format "meshes" vers le format
 // JSON reconnu par le mesh-designer (cf. serializeState() dans
 // main.js et importMeshFromText()).
 //
-// Format source "alphabet2" (un mesh par ligne):
+// Format source "meshes" (un mesh par ligne):
 //   "x1,y1;x2,y2;x3,y3;x4,y4;..."
 //   Chaque triplet consecutif forme un triangle. Si la ligne se
 //   termine par 1 ou 2 points, un triangle partiel est emis.
@@ -35,8 +35,8 @@ ensurePointIndex = (pointList, pointIndexByKey, x, y) => {
     return idx
 }
 
-// Convertit UNE ligne alphabet2 en JSON {tris, pointList}.
-convertAlphabet2LineToMesh = (line) => {
+// Convertit UNE ligne meshes en JSON {tris, pointList}.
+convertMeshesLineToMesh = (line) => {
     let tris = []
     let pointList = []
     let pointIndexByKey = new Map()
@@ -75,39 +75,39 @@ convertAlphabet2LineToMesh = (line) => {
 
 // Convertit un texte multi-lignes en tableau de mesh JSON. CHAQUE ligne
 // devient un mesh distinct (mapping "un mesh par ligne" du format
-// alphabet2). NE FUSIONNE PAS, contrairement a une version anterieure.
-convertAlphabet2ToMeshes = (text) => {
+// meshes). NE FUSIONNE PAS, contrairement a une version anterieure.
+convertMeshesToMeshes = (text) => {
     return String(text)
         .split(/\r?\n/)
         .map(line => line.trim())
         .filter(line => line.length > 0)
-        .map(line => convertAlphabet2LineToMesh(line))
+        .map(line => convertMeshesLineToMesh(line))
 }
 
-// Lit un fichier alphabet2, le convertit et passe directement chaque
+// Lit un fichier meshes, le convertit et passe directement chaque
 // ligne comme une FORME distincte a importMeshFromText (definie dans
 // main.js) via le payload multi-shapes du nouveau format.
-importAlphabet2FromFile = (file) => {
+importMeshesFromFile = (file) => {
     if (!file) return
     if (file.size === 0) {
-        log('Import alphabet2 fail: file empty')
+        log('Import meshes fail: file empty')
         return
     }
     let reader = new FileReader()
     reader.onload = (e) => {
         try {
             let text = String(e.target.result)
-            // Heuristique alphabet2: il y a beaucoup de points-virgules
+            // Heuristique meshes: il y a beaucoup de points-virgules
             // (separateurs de coordonnees). Si le fichier n'en a aucun,
             // ce n'est clairement pas le bon format.
             let semicolons = (text.match(/;/g) || []).length
             if (semicolons < 3) {
-                log('Import alphabet2 fail: format inattendu (peu ou pas de ; separateurs)')
+                log('Import meshes fail: format inattendu (peu ou pas de ; separateurs)')
                 return
             }
-            let meshes = convertAlphabet2ToMeshes(text)
+            let meshes = convertMeshesToMeshes(text)
             if (!meshes.length) {
-                log('Import alphabet2 fail: aucun mesh trouve')
+                log('Import meshes fail: aucun mesh trouve')
                 return
             }
             // Chaque ligne = une forme distincte. On envoie un payload
@@ -118,26 +118,26 @@ importAlphabet2FromFile = (file) => {
             importMeshFromText(json)
             let totalTris = meshes.reduce((acc, m) => acc + m.tris.length, 0)
             let totalPts = meshes.reduce((acc, m) => acc + m.pointList.length, 0)
-            log('Import alphabet2 OK: ' + meshes.length + ' forme(s), ' + totalTris + ' triangles, ' + totalPts + ' sommets')
+            log('Import meshes OK: ' + meshes.length + ' forme(s), ' + totalTris + ' triangles, ' + totalPts + ' sommets')
         } catch (err) {
-            log('Import alphabet2 fail: ' + err.message)
+            log('Import meshes fail: ' + err.message)
         }
     }
-    reader.onerror = () => log('Import alphabet2 fail: read error')
+    reader.onerror = () => log('Import meshes fail: read error')
     reader.readAsText(file)
 }
 
 // Point d'entree "auto-import" depuis l'URL: ?autoimport=<base64-urlsafe>.
 // Pratique pour les tests headless (le picker natif n'est pas scriptable).
-// Identique a importAlphabet2FromFile mais prend le texte en argument URL.
-autoImportAlphabet2FromUrl = () => {
+// Identique a importMeshesFromFile mais prend le texte en argument URL.
+autoImportMeshesFromUrl = () => {
     if (typeof window === 'undefined') return
     try {
         let params = new URLSearchParams(window.location.search)
         let encoded = params.get('autoimport')
         if (!encoded) return
         let text = atob(decodeURIComponent(encoded))
-        let meshes = convertAlphabet2ToMeshes(text)
+        let meshes = convertMeshesToMeshes(text)
         if (!meshes.length) {
             log('Autoimport: empty')
             return
@@ -153,5 +153,5 @@ autoImportAlphabet2FromUrl = () => {
 }
 
 if (typeof window !== 'undefined') {
-    window.addEventListener('load', autoImportAlphabet2FromUrl)
+    window.addEventListener('load', autoImportMeshesFromUrl)
 }
