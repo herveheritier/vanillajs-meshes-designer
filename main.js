@@ -1,8 +1,13 @@
 const TAU = 2 * Math.PI
 const COLOR_AXIS = '#00A000'
 const COLOR_LINES = '#FFFFFF'
+// Couleur/dash pour les formes INACTIVES : gris atténue pour signaler
+// "non editable" tout en restant visibles.
+const COLOR_LINES_INACTIVE = '#5A5A5A'
+const POINT_COLOR_INACTIVE = '#7A7800'
 const PATTERN_AXIS = [2,1,3,1]
 const PATTERN_LINES = [2,2]
+const PATTERN_LINES_INACTIVE = [4,4]
 const DEFAULT_GRID_STEP = 32
 let GRID_STEP = DEFAULT_GRID_STEP
 const MIN_GRID_STEP = 8
@@ -14,7 +19,107 @@ let ctx = {
     viewCenter: { x: 50, y: 50 },
     zoomLevel: 1
 }
-let triangles = []
+
+// Scene = liste de formes ; SEULE la forme indexee par activeShapeIndex
+// est editable. shapes[].triangles contient des triangless avec points
+// partages entre triangles d'une meme forme (mais JAMAIS entre formes).
+let shapes = [{ triangles: [] }]
+let activeShapeIndex = 0
+
+// Helper : triangles de la forme active (lecture/ecriture). Toute la
+// logique d'edition doit passer par cet accessor.
+activeTriangles = () => shapes[activeShapeIndex].triangles
+
+// Helper : change la forme active proprement. Annule toute action
+// en cours, vide la selection, recalcule le hover et le HUD.
+goToShape = (newIndex) => {
+    if (!Array.isArray(shapes) || shapes.length === 0) return
+    if (newIndex < 0 || newIndex >= shapes.length) return
+    if (newIndex === activeShapeIndex) return
+    currentAction = ACTION_NONE
+    grabbedGroup = []
+    clearTimeout(wheelRotateTimer)
+    wheelRotateTimer = undefined
+    isWheelRotating = false
+    activeShapeIndex = newIndex
+    selectedPoints = []
+    nearestPoint = undefined
+    nearestLine = undefined
+    isSelectingBox = false
+    selectionBoxStart = undefined
+    selectionBoxCurrent = undefined
+    drawBoard()
+    if (lastMousePos) updateMouseHover(lastMousePos)
+    updateShapeHud()
+}
+
+prevShape = () => {
+    if (shapes.length <= 1) return
+    goToShape((activeShapeIndex - 1 + shapes.length) % shapes.length)
+}
+
+nextShape = () => {
+    if (shapes.length <= 1) return
+    goToShape((activeShapeIndex + 1) % shapes.length)
+}
+
+addShape = () => {
+    saveState()
+    shapes.push({ triangles: [] })
+    goToShape(shapes.length - 1)
+    persistState()
+}
+
+deleteShape = () => {
+    if (shapes.length === 1) {
+        if (!confirm('Supprimer la derniere forme et creer une scene vide ?')) return
+        saveState()
+        shapes = [{ triangles: [] }]
+        activeShapeIndex = 0
+        selectedPoints = []
+        nearestPoint = undefined
+        nearestLine = undefined
+        grabbedGroup = []
+        currentAction = ACTION_NONE
+        isSelectingBox = false
+        selectionBoxStart = undefined
+        selectionBoxCurrent = undefined
+        clearTimeout(wheelRotateTimer)
+        wheelRotateTimer = undefined
+        isWheelRotating = false
+        drawBoard()
+        if (lastMousePos) updateMouseHover(lastMousePos)
+        updateShapeHud()
+        persistState()
+        return
+    }
+    if (!confirm('Supprimer la forme active ?')) return
+    saveState()
+    shapes.splice(activeShapeIndex, 1)
+    if (activeShapeIndex >= shapes.length) activeShapeIndex = shapes.length - 1
+    selectedPoints = []
+    nearestPoint = undefined
+    nearestLine = undefined
+    grabbedGroup = []
+    currentAction = ACTION_NONE
+    isSelectingBox = false
+    selectionBoxStart = undefined
+    selectionBoxCurrent = undefined
+    clearTimeout(wheelRotateTimer)
+    wheelRotateTimer = undefined
+    isWheelRotating = false
+    drawBoard()
+    if (lastMousePos) updateMouseHover(lastMousePos)
+    updateShapeHud()
+    persistState()
+}
+
+updateShapeHud = () => {
+    let label = document.querySelector('#shapeLabel')
+    if (!label) return
+    label.textContent = (activeShapeIndex + 1) + '/' + shapes.length
+}
+
 let nearestLine = undefined
 let nearestPoint = undefined
 let lastMousePos = undefined
@@ -48,9 +153,12 @@ let selectionBoxCurrent = undefined
 let grabbedGroup = []
 let grabStartMouse = undefined
 
+// Toutes les fonctions ci-dessous considerent uniquement les triangles
+// de la FORME ACTIVE pour les operations d'edition/selection.
 getAllVertices = () => {
     let vertices = []
-    triangles.forEach(t => {
+    let tris = activeTriangles()
+    tris.forEach(t => {
         [t.p1, t.p2, t.p3].forEach(p => {
             if (p && !vertices.some(v => adjacentPoints(v, p, 0.01))) {
                 vertices.push(p)
@@ -63,7 +171,8 @@ getAllVertices = () => {
 getPointsAtSamePosition = (p, tolerance = 0.01) => {
     if (!p) return []
     let result = []
-    triangles.forEach(t => {
+    let tris = activeTriangles()
+    tris.forEach(t => {
         [t.p1, t.p2, t.p3].forEach(q => {
             if (q && adjacentPoints(p, q, tolerance) && !result.some(r => r === q)) {
                 result.push(q)
@@ -82,7 +191,10 @@ let historyStack = []
 let redoStack = []
 const MAX_HISTORY = 50
 
-cloneTriangles = (triArray) => {
+// Clone profond d'un tableau de triangless. Preserve le partage des
+// references de point entre triangles d'un meme tableau (un meme
+// point physique reste un seul objet apres clonage).
+cloneTriArray = (triArray) => {
     let pointMap = new Map()
     return triArray.map(t => {
         let nt = {}
@@ -102,8 +214,19 @@ cloneTriangles = (triArray) => {
     })
 }
 
+// Clone toute la scene (toutes les formes + index actif). Chaque forme
+// est clonee avec ses propres points ; AUCUN partage entre formes
+// apres clonage, ce qui empeche une future modification de fuiter
+// entre formes via une reference commune.
+cloneScene = (shapesArray) => {
+    return shapesArray.map(s => ({ triangles: cloneTriArray(s.triangles) }))
+}
+
 saveState = () => {
-    historyStack.push(cloneTriangles(triangles))
+    historyStack.push({
+        shapes: cloneScene(shapes),
+        activeShapeIndex: activeShapeIndex
+    })
     if (historyStack.length > MAX_HISTORY) {
         historyStack.shift()
     }
@@ -113,30 +236,62 @@ saveState = () => {
 undo = () => {
     if (historyStack.length === 0) return
     currentAction = ACTION_NONE
-    redoStack.push(cloneTriangles(triangles))
-    triangles = historyStack.pop()
+    redoStack.push({
+        shapes: cloneScene(shapes),
+        activeShapeIndex: activeShapeIndex
+    })
+    let entry = historyStack.pop()
+    shapes = entry.shapes
+    activeShapeIndex = entry.activeShapeIndex
+    if (activeShapeIndex < 0 || activeShapeIndex >= shapes.length) {
+        activeShapeIndex = 0
+    }
     selectedPoints = []
     nearestPoint = undefined
     nearestLine = undefined
+    isSelectingBox = false
+    selectionBoxStart = undefined
+    selectionBoxCurrent = undefined
+    grabbedGroup = []
+    clearTimeout(wheelRotateTimer)
+    wheelRotateTimer = undefined
+    isWheelRotating = false
     drawBoard()
     if (lastMousePos) {
         updateMouseHover(lastMousePos)
     }
+    updateShapeHud()
     persistState()
 }
 
 redo = () => {
     if (redoStack.length === 0) return
     currentAction = ACTION_NONE
-    historyStack.push(cloneTriangles(triangles))
-    triangles = redoStack.pop()
+    historyStack.push({
+        shapes: cloneScene(shapes),
+        activeShapeIndex: activeShapeIndex
+    })
+    let entry = redoStack.pop()
+    shapes = entry.shapes
+    activeShapeIndex = entry.activeShapeIndex
+    if (activeShapeIndex < 0 || activeShapeIndex >= shapes.length) {
+        activeShapeIndex = 0
+    }
     selectedPoints = []
     nearestPoint = undefined
     nearestLine = undefined
+    isSelectingBox = false
+    selectionBoxStart = undefined
+    selectionBoxCurrent = undefined
+    grabbedGroup = []
+    clearTimeout(wheelRotateTimer)
+    wheelRotateTimer = undefined
+    isWheelRotating = false
     drawBoard()
     if (lastMousePos) {
         updateMouseHover(lastMousePos)
     }
+    updateShapeHud()
     persistState()
 }
 
@@ -268,6 +423,33 @@ importAlphabet2Btn.addEventListener('click', (e) => {
     input.click()
 })
 
+// Wiring de la toolbar de formes (prev / label / next / new / delete).
+// Les listeners sont attaches ici ; les elements eux-memes sont dans
+// main.html. On tolere leur absence (pour tests headless sur ancien HTML).
+let prevShapeBtn = document.querySelector('#prevShape')
+if (prevShapeBtn) prevShapeBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    prevShape()
+})
+
+let nextShapeBtn = document.querySelector('#nextShape')
+if (nextShapeBtn) nextShapeBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    nextShape()
+})
+
+let newShapeBtn = document.querySelector('#newShape')
+if (newShapeBtn) newShapeBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    addShape()
+})
+
+let deleteShapeBtn = document.querySelector('#deleteShape')
+if (deleteShapeBtn) deleteShapeBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    deleteShape()
+})
+
 document.addEventListener("contextmenu", (e) => {
     if(e.target.id==='board') e.preventDefault();
 }, false);
@@ -390,6 +572,8 @@ rotateSelectedPoints = (center, angle) => {
     const cos = Math.cos(angle)
     const sin = Math.sin(angle)
 
+    let activeShapeRef = shapes[activeShapeIndex]
+
     selectedPoints.forEach(sp => {
         let dx = sp.x - center.x
         let dy = sp.y - center.y
@@ -401,7 +585,7 @@ rotateSelectedPoints = (center, angle) => {
             target = snapToGrid(target)
         }
 
-        triangles.forEach(t => {
+        activeShapeRef.triangles.forEach(t => {
             [t.p1, t.p2, t.p3].forEach(p => {
                 if (p && adjacentPoints(p, sp, 0.01)) {
                     p.x = target.x
@@ -429,7 +613,8 @@ deleteSelectedPoint = () => {
     }
     if(targets.length === 0) return
     saveState()
-    triangles = triangles.filter(t => {
+    let activeShapeRef = shapes[activeShapeIndex]
+    activeShapeRef.triangles = activeShapeRef.triangles.filter(t => {
         let hasP1 = t.p1 && targets.some(target => adjacentPoints(t.p1, target, 0.01))
         let hasP2 = t.p2 && targets.some(target => adjacentPoints(t.p2, target, 0.01))
         let hasP3 = t.p3 && targets.some(target => adjacentPoints(t.p3, target, 0.01))
@@ -476,8 +661,9 @@ beginGrabbing = (e) => {
     }
 
     grabbedGroup = []
+    let tris = activeTriangles()
     selectedPoints.forEach(sp => {
-        triangles.forEach( (t,i) => {
+        tris.forEach( (t,i) => {
             [t.p1,t.p2,t.p3].forEach( (p,j) => {
                 if(p && adjacentPoints(p, sp, 0.01)) {
                     grabbedGroup.push({
@@ -518,7 +704,14 @@ resolveMouseMoveOnBoard = (e) => {
         let minXM = minXS - ctx.center.x
         let maxXM = maxXS - ctx.center.x
 
-        let allV = getAllVertices()
+        // Ne selectionne QUE dans la forme active.
+        let activeShapeRef = shapes[activeShapeIndex]
+        let allV = []
+        activeShapeRef.triangles.forEach(t => {
+            [t.p1, t.p2, t.p3].forEach(p => {
+                if (p && !allV.some(v => adjacentPoints(v, p, 0.01))) allV.push(p)
+            })
+        })
         let inBox = allV.filter(p => p.x >= minXM && p.x <= maxXM && p.y >= minYM && p.y <= maxYM)
         let expanded = []
         inBox.forEach(p => {
@@ -532,12 +725,15 @@ resolveMouseMoveOnBoard = (e) => {
         let dx = mouseScreen.x - grabStartMouse.x
         // dy_model: inverse du deplacement screen (haut souris = +Y model)
         let dy = grabStartMouse.y - mouseScreen.y
+        let activeShapeRef = shapes[activeShapeIndex]
         grabbedGroup.forEach(item => {
             let targetPos = { x: item.startX + dx, y: item.startY + dy }
             if(activeGrid) {
                 targetPos = snapToGrid(targetPos)
             }
-            triangles[item.triangleIndex][item.pointId] = targetPos
+            let tri = activeShapeRef.triangles[item.triangleIndex]
+            if (!tri) return  // safety: la forme a pu changer
+            tri[item.pointId] = targetPos
             if (item.selectedPointRef) {
                 item.selectedPointRef.x = targetPos.x
                 item.selectedPointRef.y = targetPos.y
@@ -551,7 +747,7 @@ resolveMouseMoveOnBoard = (e) => {
 
 // Met a jour le hover (point le plus proche, dim de la selection, etc).
 // Le curseur est dessine en screen. Le calcul du nearestPoint/Line
-// se fait en coords model (Y inverse).
+// se fait en coords model (Y inverse), restreint a la forme active.
 updateMouseHover = (cursorScreen) => {
     updateCoordsDisplay(cursorScreen)
     if (!cursorScreen) return
@@ -573,7 +769,7 @@ updateMouseHover = (cursorScreen) => {
     }
     nearestLine = findSelectedLine(target)
     if (nearestLine && nearestLine.firstPoint && nearestLine.secondPoint) {
-        drawLine(nearestLine.firstPoint, nearestLine.secondPoint, [], '#00FF00')
+        drawLine(nearestLine.firstPoint, nearestLine.secondPoint, [], COLOR_LINES_INACTIVE)
     }
 }
 
@@ -614,7 +810,8 @@ findNextNearestPoint = (nearestPoint) => {
     let shortDistance = Number.MAX_VALUE
     let shortIndex = -1
     let shortPointIndex = -1
-    triangles.forEach( (e,i) => {
+    let tris = activeTriangles()
+    tris.forEach( (e,i) => {
         if(i<=nearestPoint.triangleIndex) return
         [e.p1,e.p2,e.p3].forEach( (p,j) => {
             if(!p) return
@@ -628,13 +825,14 @@ findNextNearestPoint = (nearestPoint) => {
     })
     if(shortIndex<0) return undefined
     let pointId = ['p1','p2','p3'][shortPointIndex]
+    let trisRef = activeTriangles()
     result =  { 
         triangleIndex:shortIndex, 
         distance:shortDistance, 
         pointIndex:shortPointIndex,
-        triangle:triangles[shortIndex],
+        triangle:trisRef[shortIndex],
         pointId:pointId,
-        point:triangles[shortIndex][pointId]
+        point:trisRef[shortIndex][pointId]
     }
     return result
 } 
@@ -676,7 +874,8 @@ findSelectedLine = (point) => {
     let shortDistance = Number.MAX_VALUE
     let shortTriangleIndex = -1
     let shortLineIndex = -1
-    triangles.forEach((t,i) => {
+    let tris = activeTriangles()
+    tris.forEach((t,i) => {
         if(!t.p1 || !t.p2 || !t.p3) return
         let cop = computeOrthogonalProjection(point,t.p1,t.p2)
         let d = Math.hypot(point.x - cop.x, point.y - cop.y)
@@ -703,15 +902,16 @@ findSelectedLine = (point) => {
     if(shortTriangleIndex < 0) return undefined
     let firstPointId = ['p1','p2','p3'][shortLineIndex]
     let secondPointId = ['p2','p3','p1'][shortLineIndex]
+    let trisRef = activeTriangles()
     return {
         triangleIndex:shortTriangleIndex, 
         firstPointIndex:[0,1,2][shortLineIndex],
         secondPointIndex:[1,2,0][shortLineIndex],
-        triangle:triangles[shortTriangleIndex],
+        triangle:trisRef[shortTriangleIndex],
         firstPointId:firstPointId,
         secondPointId:secondPointId,
-        firstPoint:triangles[shortTriangleIndex][firstPointId],
-        secondPoint:triangles[shortTriangleIndex][secondPointId]
+        firstPoint:trisRef[shortTriangleIndex][firstPointId],
+        secondPoint:trisRef[shortTriangleIndex][secondPointId]
     }
 }
 
@@ -735,20 +935,24 @@ isInsideSegmentByDot = (p,p1,p2) => {
   return scalarProduct(ahx, ahy, bhx, bhy) <= 0
 }
 
+// Ajoute un point uniquement dans la forme active. Le point est ajoute
+// au dernier triangle en cours de construction, ou cree un nouveau
+// triangle a partir de nearestLine si la forme en a deja 3 complets.
 addPoint = (point) => {
+    let tris = activeTriangles()
     // exclure un point déjà occupé (tolérance : < 1)
-    for (let i = 0; i < triangles.length; i++) {
-        let triangle = triangles[i]
+    for (let i = 0; i < tris.length; i++) {
+        let triangle = tris[i]
         if(adjacentPoints(point,triangle.p1,1)) return
         if(triangle.p2!==undefined) if(adjacentPoints(point,triangle.p2,1)) return
         if(triangle.p3!==undefined) if(adjacentPoints(point,triangle.p3,1)) return
     }
     saveState()
-    if (triangles.length===0) {
-        triangles.push({p1:point})
+    if (tris.length===0) {
+        tris.push({p1:point})
     } 
     else {
-        triangle = triangles.at(-1)
+        triangle = tris.at(-1)
         if(triangle.p2===undefined) {
             triangle.p2 = point
         }
@@ -756,7 +960,7 @@ addPoint = (point) => {
             triangle.p3 = point
         }
         else {
-            triangles.push({
+            tris.push({
                 p1:nearestLine.firstPoint,
                 p2:nearestLine.secondPoint,
                 p3:point
@@ -784,23 +988,34 @@ STORAGE_KEY = 'mesh-designer-state'
 let persistTimer = undefined
 
 serializeState = () => {
-    let pointList = []
-    let pointMap = new Map()
-    let tris = triangles.map(t => {
-        let nt = {}
-        ;['p1','p2','p3'].forEach(key => {
-            let p = t[key]
-            if (p) {
-                if (!pointMap.has(p)) {
-                    pointMap.set(p, pointList.length)
-                    pointList.push({ x: p.x, y: p.y })
+    // Format : { shapes: [{ tris, pointList }...], activeShapeIndex,
+    // activeGrid, GRID_STEP }. Chaque forme possede son propre
+    // pointList : ne JAMAIS fusionner les indices de point entre formes.
+    let serializedShapes = shapes.map(shape => {
+        let pointList = []
+        let pointMap = new Map()
+        let tris = shape.triangles.map(t => {
+            let nt = {}
+            ;['p1','p2','p3'].forEach(key => {
+                let p = t[key]
+                if (p) {
+                    if (!pointMap.has(p)) {
+                        pointMap.set(p, pointList.length)
+                        pointList.push({ x: p.x, y: p.y })
+                    }
+                    nt[key] = pointMap.get(p)
                 }
-                nt[key] = pointMap.get(p)
-            }
+            })
+            return nt
         })
-        return nt
+        return { tris: tris, pointList: pointList }
     })
-    return JSON.stringify({ tris: tris, pointList: pointList, activeGrid: activeGrid, GRID_STEP: GRID_STEP })
+    return JSON.stringify({
+        shapes: serializedShapes,
+        activeShapeIndex: activeShapeIndex,
+        activeGrid: activeGrid,
+        GRID_STEP: GRID_STEP
+    })
 }
 
 persistState = () => {
@@ -815,28 +1030,74 @@ persistState = () => {
     }, 150)
 }
 
+// Reconstruit un tableau de formes a partir d'un payload JSON.
+// Accepte les deux formats :
+//   - nouveau : { shapes: [{ tris, pointList }, ...], activeShapeIndex }
+//   - ancien (compat) : { tris, pointList, activeShapeIndex }
+buildShapesFromPayload = (data) => {
+    if (!data || typeof data !== 'object') return null
+    let result = []
+    if (Array.isArray(data.shapes)) {
+        data.shapes.forEach(shape => {
+            let pts = []
+            if (Array.isArray(shape.pointList)) {
+                pts = shape.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
+            }
+            let ts = []
+            if (Array.isArray(shape.tris)) {
+                shape.tris.forEach(t => {
+                    let nt = {}
+                    if (t.p1 !== undefined && pts[t.p1]) nt.p1 = pts[t.p1]
+                    if (t.p2 !== undefined && pts[t.p2]) nt.p2 = pts[t.p2]
+                    if (t.p3 !== undefined && pts[t.p3]) nt.p3 = pts[t.p3]
+                    return ts.push(nt)
+                })
+            }
+            result.push({ triangles: ts })
+        })
+    } else {
+        // Ancien format : un seul mesh -> une seule forme.
+        let pts = []
+        if (Array.isArray(data.pointList)) {
+            pts = data.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
+        }
+        let ts = []
+        if (Array.isArray(data.tris)) {
+            data.tris.forEach(t => {
+                let nt = {}
+                if (t.p1 !== undefined && pts[t.p1]) nt.p1 = pts[t.p1]
+                if (t.p2 !== undefined && pts[t.p2]) nt.p2 = pts[t.p2]
+                if (t.p3 !== undefined && pts[t.p3]) nt.p3 = pts[t.p3]
+                ts.push(nt)
+            })
+        }
+        result.push({ triangles: ts })
+    }
+    if (result.length === 0) result = [{ triangles: [] }]
+    return result
+}
+
 loadState = () => {
     let saved = localStorage.getItem(STORAGE_KEY)
     if (!saved) return
     try {
         let data = JSON.parse(saved)
         if (data.activeGrid !== undefined) activeGrid = !!data.activeGrid
-        if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
-        let restoredPoints = []
-        if (Array.isArray(data.pointList)) {
-            restoredPoints = data.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
+        if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') {
+            GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
         }
-        if (Array.isArray(data.tris)) {
-            triangles = data.tris.map(t => {
-                let nt = {}
-                if (t.p1 !== undefined && restoredPoints[t.p1]) nt.p1 = restoredPoints[t.p1]
-                if (t.p2 !== undefined && restoredPoints[t.p2]) nt.p2 = restoredPoints[t.p2]
-                if (t.p3 !== undefined && restoredPoints[t.p3]) nt.p3 = restoredPoints[t.p3]
-                return nt
-            })
+        let loaded = buildShapesFromPayload(data)
+        if (loaded) {
+            shapes = loaded
+            if (typeof data.activeShapeIndex === 'number' && data.activeShapeIndex >= 0 && data.activeShapeIndex < shapes.length) {
+                activeShapeIndex = data.activeShapeIndex
+            } else {
+                activeShapeIndex = 0
+            }
         }
         ctx.workIsSaved = 1
         updateGridButtonText()
+        updateShapeHud()
     } catch (e) {
         log('Load fail: ' + e.message)
     }
@@ -873,20 +1134,12 @@ importMeshFromText = (text) => {
             log('Import fail: not a JSON object')
             return false
         }
-        let restoredPoints = []
-        if (Array.isArray(data.pointList)) {
-            restoredPoints = data.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
-        }
-        if (Array.isArray(data.tris)) {
-            triangles = data.tris.map(t => {
-                let nt = {}
-                if (t.p1 !== undefined && restoredPoints[t.p1]) nt.p1 = restoredPoints[t.p1]
-                if (t.p2 !== undefined && restoredPoints[t.p2]) nt.p2 = restoredPoints[t.p2]
-                if (t.p3 !== undefined && restoredPoints[t.p3]) nt.p3 = restoredPoints[t.p3]
-                return nt
-            })
+        let loaded = buildShapesFromPayload(data)
+        shapes = loaded
+        if (typeof data.activeShapeIndex === 'number' && data.activeShapeIndex >= 0 && data.activeShapeIndex < shapes.length) {
+            activeShapeIndex = data.activeShapeIndex
         } else {
-            triangles = []
+            activeShapeIndex = 0
         }
         if (data.activeGrid !== undefined) activeGrid = !!data.activeGrid
         if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') {
@@ -907,8 +1160,10 @@ importMeshFromText = (text) => {
         isWheelRotating = false
         persistState()
         updateGridButtonText()
+        updateShapeHud()
         drawBoard()
-        log('Import OK: ' + triangles.length + ' triangles')
+        let totalTris = shapes.reduce((acc, s) => acc + s.triangles.length, 0)
+        log('Import OK: ' + shapes.length + ' forme(s), ' + totalTris + ' triangles')
         return true
     } catch (e) {
         log('Import fail: ' + e.message)
@@ -931,7 +1186,8 @@ importMeshFromFile = (file) => {
 }
 
 resetAll = () => {
-    triangles = []
+    shapes = [{ triangles: [] }]
+    activeShapeIndex = 0
     selectedPoints = []
     historyStack = []
     redoStack = []
@@ -947,10 +1203,12 @@ resetAll = () => {
     isWheelRotating = false
     persistState()
     drawBoard()
+    updateShapeHud()
     log('Reset OK')
 }
 
 doit = () => {
     loadState()
     drawBoard()
+    updateShapeHud()
 }

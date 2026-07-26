@@ -10,8 +10,8 @@
 //   Chaque triplet consecutif forme un triangle. Si la ligne se
 //   termine par 1 ou 2 points, un triangle partiel est emis.
 //
-// Format JSON cible:
-//   { "tris": [{"p1","p2","p3"}], "pointList": [{"x","y"}] }
+// Format JSON cible (nouveau, multi-formes):
+//   { "shapes": [ {"tris","pointList"}, ... ], "activeShapeIndex" }
 // ---------------------------------------------------------------
 
 // Renvoie { x, y } a partir d'un token "x,y" ou undefined si invalide.
@@ -73,7 +73,9 @@ convertAlphabet2LineToMesh = (line) => {
     return { tris: tris, pointList: pointList }
 }
 
-// Convertit un texte multi-lignes en tableau de mesh JSON.
+// Convertit un texte multi-lignes en tableau de mesh JSON. CHAQUE ligne
+// devient un mesh distinct (mapping "un mesh par ligne" du format
+// alphabet2). NE FUSIONNE PAS, contrairement a une version anterieure.
 convertAlphabet2ToMeshes = (text) => {
     return String(text)
         .split(/\r?\n/)
@@ -82,32 +84,9 @@ convertAlphabet2ToMeshes = (text) => {
         .map(line => convertAlphabet2LineToMesh(line))
 }
 
-// Fusionne plusieurs mesh JSON en un seul, en reconciliant les indices.
-// Entree : tableau de { tris, pointList }.
-// Sortie : { tris, pointList } unique.
-mergeAlphabet2Meshes = (meshes) => {
-    let tris = []
-    let pointList = []
-    meshes.forEach(m => {
-        let offset = pointList.length
-        if (Array.isArray(m.pointList)) {
-            m.pointList.forEach(p => pointList.push({ x: Number(p.x), y: Number(p.y) }))
-        }
-        if (Array.isArray(m.tris)) {
-            m.tris.forEach(t => {
-                let nt = {}
-                if (t.p1 !== undefined) nt.p1 = Number(t.p1) + offset
-                if (t.p2 !== undefined) nt.p2 = Number(t.p2) + offset
-                if (t.p3 !== undefined) nt.p3 = Number(t.p3) + offset
-                tris.push(nt)
-            })
-        }
-    })
-    return { tris: tris, pointList: pointList }
-}
-
-// Lit un fichier alphabet2, le convertit, fusionne les mesh et
-// appelle importMeshFromText (definie dans main.js) avec le JSON final.
+// Lit un fichier alphabet2, le convertit et passe directement chaque
+// ligne comme une FORME distincte a importMeshFromText (definie dans
+// main.js) via le payload multi-shapes du nouveau format.
 importAlphabet2FromFile = (file) => {
     if (!file) return
     if (file.size === 0) {
@@ -131,10 +110,15 @@ importAlphabet2FromFile = (file) => {
                 log('Import alphabet2 fail: aucun mesh trouve')
                 return
             }
-            let merged = mergeAlphabet2Meshes(meshes)
-            let json = JSON.stringify({ tris: merged.tris, pointList: merged.pointList })
+            // Chaque ligne = une forme distincte. On envoie un payload
+            // multi-shapes pour laisser importMeshFromText construire la
+            // scene et choisir un index actif.
+            let shapePayload = meshes.map(m => ({ tris: m.tris, pointList: m.pointList }))
+            let json = JSON.stringify({ shapes: shapePayload, activeShapeIndex: 0 })
             importMeshFromText(json)
-            log('Import alphabet2 OK: ' + meshes.length + ' mesh(es), ' + merged.tris.length + ' triangles, ' + merged.pointList.length + ' sommets')
+            let totalTris = meshes.reduce((acc, m) => acc + m.tris.length, 0)
+            let totalPts = meshes.reduce((acc, m) => acc + m.pointList.length, 0)
+            log('Import alphabet2 OK: ' + meshes.length + ' forme(s), ' + totalTris + ' triangles, ' + totalPts + ' sommets')
         } catch (err) {
             log('Import alphabet2 fail: ' + err.message)
         }
@@ -145,6 +129,7 @@ importAlphabet2FromFile = (file) => {
 
 // Point d'entree "auto-import" depuis l'URL: ?autoimport=<base64-urlsafe>.
 // Pratique pour les tests headless (le picker natif n'est pas scriptable).
+// Identique a importAlphabet2FromFile mais prend le texte en argument URL.
 autoImportAlphabet2FromUrl = () => {
     if (typeof window === 'undefined') return
     try {
@@ -157,10 +142,11 @@ autoImportAlphabet2FromUrl = () => {
             log('Autoimport: empty')
             return
         }
-        let merged = mergeAlphabet2Meshes(meshes)
-        let json = JSON.stringify({ tris: merged.tris, pointList: merged.pointList })
+        let shapePayload = meshes.map(m => ({ tris: m.tris, pointList: m.pointList }))
+        let json = JSON.stringify({ shapes: shapePayload, activeShapeIndex: 0 })
         importMeshFromText(json)
-        log('Autoimport: ' + meshes.length + ' mesh(es), ' + merged.tris.length + ' triangles')
+        let totalTris = meshes.reduce((acc, m) => acc + m.tris.length, 0)
+        log('Autoimport: ' + meshes.length + ' forme(s), ' + totalTris + ' triangles')
     } catch (e) {
         log('Autoimport fail: ' + e.message)
     }

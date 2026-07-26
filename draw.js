@@ -1,4 +1,3 @@
-
 // Le systeme de coordonnees du modele est centre a (ctx.center.x,
 // ctx.center.y) avec X vers la droite et Y vers le haut. Pour le
 // rendu, on translate de ctx.center.x (decalage X) et on inverse
@@ -73,20 +72,38 @@ drawAxis = () => {
     _ctx.stroke()
 }
 
+// Rend toutes les formes. Les inactives sont dessinees EN PREMIER
+// (gris, dash elargi) puis la forme active PAR-DESSUS avec les couleurs
+// d'origine. Cela permet a l'actif de rester toujours lisible meme
+// quand une inactive lui passe devant dans l'ordre du tableau.
 drawShapes = () => {
-    if(triangles.length===0) return
-    triangles.forEach( (e,i,a) => {
-        drawTriangle(e.p1,e.p2,e.p3)
-        drawPoint(e.p1,2,'#FFFF00')
-        drawPoint(e.p2,2,'#FFFF00')
-        drawPoint(e.p3,2,'#FFFF00')
+    if (typeof shapes === 'undefined' || !Array.isArray(shapes) || shapes.length === 0) return
+    for (let i = 0; i < shapes.length; i++) {
+        if (i === activeShapeIndex) continue
+        drawShape(shapes[i], false)
+    }
+    drawShape(shapes[activeShapeIndex], true)
+}
+
+drawShape = (shape, isActive) => {
+    if (!shape || !shape.triangles || shape.triangles.length === 0) return
+    let lineColor = isActive ? COLOR_LINES : COLOR_LINES_INACTIVE
+    let linePattern = isActive ? PATTERN_LINES : PATTERN_LINES_INACTIVE
+    let pointColor = isActive ? '#FFFF00' : POINT_COLOR_INACTIVE
+    shape.triangles.forEach(t => {
+        drawTriangle(t.p1, t.p2, t.p3, linePattern, lineColor)
+        drawPoint(t.p1, 2, pointColor)
+        drawPoint(t.p2, 2, pointColor)
+        drawPoint(t.p3, 2, pointColor)
     })
 }
 
-drawTriangle = (p1,p2,p3) => {
+// pattern et color sont optionnels (compat avec l'ancien code qui
+// appelait drawTriangle(p1,p2,p3) sans param de style).
+drawTriangle = (p1, p2, p3, pattern, color) => {
     if (!p1) return
-    _ctx.setLineDash(PATTERN_LINES)
-    _ctx.strokeStyle = COLOR_LINES
+    _ctx.setLineDash(pattern !== undefined ? pattern : PATTERN_LINES)
+    _ctx.strokeStyle = color !== undefined ? color : COLOR_LINES
     _ctx.beginPath()
     _ctx.moveTo(ctx.center.x + p1.x, ctx.center.y - p1.y)
     if (p2 !== undefined) {
@@ -99,7 +116,7 @@ drawTriangle = (p1,p2,p3) => {
     _ctx.stroke()
 }
 
-drawLine = (p1,p2,pattern,color) => {
+drawLine = (p1, p2, pattern, color) => {
     if (!p1 || !p2) return
     _ctx.setLineDash(pattern)
     _ctx.strokeStyle = color
