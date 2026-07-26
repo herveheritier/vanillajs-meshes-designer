@@ -49,6 +49,19 @@ getAllVertices = () => {
     return vertices
 }
 
+getPointsAtSamePosition = (p, tolerance = 0.01) => {
+    if (!p) return []
+    let result = []
+    triangles.forEach(t => {
+        [t.p1, t.p2, t.p3].forEach(q => {
+            if (q && adjacentPoints(p, q, tolerance) && !result.some(r => r === q)) {
+                result.push(q)
+            }
+        })
+    })
+    return result
+}
+
 isPointSelected = (p) => {
     if (!p) return false
     return selectedPoints.some(sp => adjacentPoints(sp, p, 0.01))
@@ -217,13 +230,17 @@ document.addEventListener('mouseup',(e) => {
                 let mousePos = { x: e.x - board.getBoundingClientRect().x, y: e.y - board.getBoundingClientRect().y }
                 let np = findNearestPoint(mousePos)
                 if(np && np.distance < 15) {
+                    let pointsAtPos = getPointsAtSamePosition(np.point)
                     if(!e.shiftKey) {
-                        selectedPoints = [np.point]
+                        selectedPoints = [...pointsAtPos]
                     } else {
-                        if(isPointSelected(np.point)) {
-                            selectedPoints = selectedPoints.filter(p => !adjacentPoints(p, np.point, 0.01))
+                        let anySelected = pointsAtPos.some(p => isPointSelected(p))
+                        if(anySelected) {
+                            selectedPoints = selectedPoints.filter(sp => !pointsAtPos.some(p => adjacentPoints(sp, p, 0.01)))
                         } else {
-                            selectedPoints.push(np.point)
+                            pointsAtPos.forEach(p => {
+                                if(!isPointSelected(p)) selectedPoints.push(p)
+                            })
                         }
                     }
                 } else {
@@ -346,7 +363,12 @@ rotateSelectedPoints = (center, angle) => {
 }
 
 deleteSelectedPoint = () => {
-    let targets = selectedPoints.length > 0 ? [...selectedPoints] : (nearestPoint && nearestPoint.point ? [nearestPoint.point] : [])
+    let targets = []
+    if (selectedPoints.length > 0) {
+        targets = [...selectedPoints]
+    } else if (nearestPoint && nearestPoint.point) {
+        targets = getPointsAtSamePosition(nearestPoint.point)
+    }
     if(targets.length === 0) return
     saveState()
     triangles = triangles.filter(t => {
@@ -385,10 +407,13 @@ beginGrabbing = (e) => {
     saveState()
 
     if(!isPointSelected(np.point)) {
+        let pointsAtPos = getPointsAtSamePosition(np.point)
         if(!e.shiftKey) {
-            selectedPoints = [np.point]
+            selectedPoints = [...pointsAtPos]
         } else {
-            selectedPoints.push(np.point)
+            pointsAtPos.forEach(p => {
+                if(!isPointSelected(p)) selectedPoints.push(p)
+            })
         }
     }
 
@@ -430,7 +455,14 @@ resolveMouseMoveOnBoard = (e) => {
         let maxY = Math.max(selectionBoxStart.y, selectionBoxCurrent.y)
 
         let allV = getAllVertices()
-        selectedPoints = allV.filter(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
+        let inBox = allV.filter(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
+        let expanded = []
+        inBox.forEach(p => {
+            getPointsAtSamePosition(p).forEach(q => {
+                if(!expanded.some(e => e === q)) expanded.push(q)
+            })
+        })
+        selectedPoints = expanded
     } else if(grabbed()) {
         let dx = mousePos.x - grabStartMouse.x
         let dy = mousePos.y - grabStartMouse.y
