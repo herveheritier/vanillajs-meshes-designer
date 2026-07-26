@@ -15,8 +15,11 @@ const MAX_GRID_STEP = 128
 const ACTION_NONE = undefined
 const ACTION_GRABBING = 1
 let ctx = {
-    center: { x: 50, y: 50 }, 
-    viewCenter: { x: 50, y: 50 },
+    center: { x: 50, y: 50 },
+    // viewCenter est en COORDS MODELE (pas board pixels) : c'est le
+    // point du modele qui apparait au centre du board. Initialement
+    // l'origine (0,0) du modele.
+    viewCenter: { x: 0, y: 0 },
     zoomLevel: 1
 }
 
@@ -146,15 +149,33 @@ snapToGrid = (point) => {
     }
 }
 
-// Le systeme de coordonnees du modele est en convention maths:
-// origine au centre du canvas (ctx.center.x, ctx.center.y), X+ vers
-// la droite, Y+ vers le haut. Les coordonnees capturees depuis les
-// evenements souris (e.clientX/Y relatives au board) sont en coords
-// screen (origine top-left, Y vers le bas). screenToModel fait la
-// conversion.
+// Le systeme de coordonnees du modele est en convention maths :
+// X+ vers la droite, Y+ vers le haut. Les coordonnees capturees
+// depuis les evenements souris sont en coords screen (origine
+// top-left, Y vers le bas).
+//
+// La projection model <-> screen tient compte du zoom et du
+// viewCenter (= le point du modele qui apparait au centre du board) :
+//   s.x = ctx.center.x + (m.x - ctx.viewCenter.x) * ctx.zoomLevel
+//   s.y = ctx.center.y - (m.y - ctx.viewCenter.y) * ctx.zoomLevel
+// Inversee :
+//   m.x = (s.x - ctx.center.x) / ctx.zoomLevel + ctx.viewCenter.x
+//   m.y = ctx.viewCenter.y - (s.y - ctx.center.y) / ctx.zoomLevel
+// Par defaut (zoom=1, viewCenter={0,0}), la projection se reduit a
+// s = m + ctx.center (mappage direct sur le board).
+modelToScreen = (model) => {
+    if (!model) return undefined
+    return {
+        x: ctx.center.x + (model.x - ctx.viewCenter.x) * ctx.zoomLevel,
+        y: ctx.center.y - (model.y - ctx.viewCenter.y) * ctx.zoomLevel
+    }
+}
 screenToModel = (screen) => {
     if (!screen) return undefined
-    return { x: screen.x - ctx.center.x, y: ctx.center.y - screen.y }
+    return {
+        x: (screen.x - ctx.center.x) / ctx.zoomLevel + ctx.viewCenter.x,
+        y: ctx.viewCenter.y - (screen.y - ctx.center.y) / ctx.zoomLevel
+    }
 }
 let selectedPoints = []
 let isSelectingBox = false
@@ -317,7 +338,9 @@ board.height=board.getBoundingClientRect().height
 board.style.cursor = 'none'
 ctx.center.x = board.width / 2
 ctx.center.y = board.height / 2
-ctx.viewCenter = ctx.center
+// viewCenter reste a (0,0) en coords modele ; la wheel handler met a
+// jour viewCenter quand l'utilisateur zoome, pour garder le model
+// point sous le curseur fixe.
 let _ctx =  board.getContext("2d")
 _ctx.fillStyle = '#000000'
 _ctx.fillRect(0,0,board.width,board.height)
@@ -608,6 +631,20 @@ document.addEventListener('keydown',(e) => {
     } else if((e.ctrlKey || e.metaKey) && (e.code==='KeyS' || e.key==='s' || e.key==='S')) {
         e.preventDefault()
         saveMesh()
+    } else if((e.ctrlKey || e.metaKey) && (e.code === 'Digit0' || e.key === '0')) {
+        // Reinitialise le zoom et le viewCenter (100% + origine modele
+        // au centre du board). Memo pour eviter un double-fire sur
+        // repeat clavier. apres le reset, on redessine et on met a
+        // jour le HUD pour que l'indicateur tombe a "1.0x".
+        if (e.repeat) return
+        e.preventDefault()
+        ctx.zoomLevel = 1
+        ctx.viewCenter.x = 0
+        ctx.viewCenter.y = 0
+        drawBoard()
+        if (lastMousePos) updateMouseHover(lastMousePos)
+        updateZoomDisplay()
+        persistState()
     }
 })
 
@@ -662,16 +699,41 @@ if (resetModal) resetModal.addEventListener('click', (e) => {
 
 let isSelectionDimmed = false
 
+// Molette : pivote si 2+ points selectionnes, sinon zoom centre sur
+// le curseur (maintient le model point sous le curseur fixe pendant
+// le changement de zoom). Les bornes empechent de trop s'eloigner.
+const MIN_ZOOM = 0.1
+const MAX_ZOOM = 10
+const ZOOM_STEP_FACTOR = 1.1
 board.addEventListener('wheel', (e) => {
-    if (selectedPoints.length >= 2 && !isSelectionDimmed) {
-        e.preventDefault()
-        let boardRect = board.getBoundingClientRect()
-        // Le centre de rotation est fourni en coords model (X centre,
-        // Y inverse).
-        let center = { x: (e.x - boardRect.x) - ctx.center.x, y: ctx.center.y - (e.y - boardRect.y) }
+    e.preventDefault()
+    let boardRect = board.getBoundingClientRect()
+    let cursorScreen = { x: e.x - boardRect.x, y: e.y - boardRect.y }
+    let canRotate = selectedPoints.length >= 2 && !isSelectionDimmed
+    if (canRotate) {
+        // Ancien comportement : rotation autour du model point sous
+        // le curseur.
+        let center = screenToModel(cursorScreen)
         let angleStep = (5 * Math.PI) / 180
         let angle = e.deltaY < 0 ? -angleStep : angleStep
         rotateSelectedPoints(center, angle)
+    } else {
+        // Zoom centre sur le curseur. Math :
+        //   m_under = (cursorScreen - ctx.center) / oldZoom + viewCenter
+        //   Apres zoom on veut garder m_under sous cursorScreen :
+        //     cursorScreen.x = ctx.center.x + (m_under.x - newVC.x) * newZoom
+        //   => newVC.x = viewCenter.x + (cursorScreen.x - ctx.center.x) * (1/oldZoom - 1/newZoom)
+        let oldZoom = ctx.zoomLevel
+        let factor = e.deltaY < 0 ? ZOOM_STEP_FACTOR : 1 / ZOOM_STEP_FACTOR
+        let newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom * factor))
+        if (newZoom === oldZoom) return
+        ctx.viewCenter.x += (cursorScreen.x - ctx.center.x) * (1 / oldZoom - 1 / newZoom)
+        ctx.viewCenter.y -= (cursorScreen.y - ctx.center.y) * (1 / oldZoom - 1 / newZoom)
+        ctx.zoomLevel = newZoom
+        drawBoard()
+        if (lastMousePos) updateMouseHover(lastMousePos)
+        updateZoomDisplay()
+        persistState()
     }
 }, { passive: false })
 
@@ -824,16 +886,16 @@ resolveMouseMoveOnBoard = (e) => {
 
     if(isSelectingBox) {
         selectionBoxCurrent = mouseScreen
-        let minXS = Math.min(selectionBoxStart.x, selectionBoxCurrent.x)
-        let maxXS = Math.max(selectionBoxStart.x, selectionBoxCurrent.x)
-        // Selection box: les coords sont en screen. Pour filtrer les
-        // vertex en model, on inverse min/max Y et on shifte min/max X.
-        let minYS_screen = Math.min(selectionBoxStart.y, selectionBoxCurrent.y)
-        let maxYS_screen = Math.max(selectionBoxStart.y, selectionBoxCurrent.y)
-        let minYM = Math.min(ctx.center.y - minYS_screen, ctx.center.y - maxYS_screen)
-        let maxYM = Math.max(ctx.center.y - minYS_screen, ctx.center.y - maxYS_screen)
-        let minXM = minXS - ctx.center.x
-        let maxXM = maxXS - ctx.center.x
+        // Les deux coins sont en coords screen ; on les convertit en
+        // coords model (avec zoom et viewCenter) puis on prend min/max
+        // pour avoir le bounding box. La conversion passe par
+        // screenToModel qui inverse Y (Y screen +bas = Y model +haut).
+        let m1 = screenToModel(selectionBoxStart)
+        let m2 = screenToModel(selectionBoxCurrent)
+        let minXM = Math.min(m1.x, m2.x)
+        let maxXM = Math.max(m1.x, m2.x)
+        let minYM = Math.min(m1.y, m2.y)
+        let maxYM = Math.max(m1.y, m2.y)
 
         // Ne selectionne QUE dans la forme active.
         let activeShapeRef = shapes[activeShapeIndex]
@@ -850,12 +912,17 @@ resolveMouseMoveOnBoard = (e) => {
                 if(!expanded.some(e => e === q)) expanded.push(q)
             })
         })
-        selectedPoints = expanded
-    } else if(grabbed()) {
-        // dx: meme sens screen/model
-        let dx = mouseScreen.x - grabStartMouse.x
-        // dy_model: inverse du deplacement screen (haut souris = +Y model)
-        let dy = grabStartMouse.y - mouseScreen.y
+        selectedPoints = expanded    } else if(grabbed()) {
+        // Conversion screen -> model en tenant compte du zoom, puis
+        // delta en coords model. Si on ne divisait pas par zoom, le
+        // drag deplacerait les points en pixels screen au lieu de les
+        // deplacer en unites model (ce qui correspond a l'attente
+        // visuelle : drag de 10 model units = drag de 10*zoom pixels
+        // screen, peu importe le zoom).
+        let curModel = screenToModel(mouseScreen)
+        let startModel = screenToModel(grabStartMouse)
+        let dx = curModel.x - startModel.x
+        let dy = curModel.y - startModel.y
         let activeShapeRef = shapes[activeShapeIndex]
         grabbedGroup.forEach(item => {
             let targetPos = { x: item.startX + dx, y: item.startY + dy }
@@ -920,6 +987,16 @@ updateCoordsDisplay = (cursorScreen) => {
     let cursorTxt = `(${Math.round(m.x)}, ${Math.round(m.y)})`
     let nearestTxt = np ? `(${Math.round(np.x)}, ${Math.round(np.y)})` : '\u2014'
     div.textContent = `curseur ${cursorTxt}  plus proche ${nearestTxt}`
+}
+
+// Affiche le niveau de zoom courant dans le HUD bas-gauche (#zoomDisplay).
+// Une decimale fixe, suffixe "x". Mise a jour appelee : initialisation,
+// restauration d'etat (loadState), et apres chaque tick de molette
+// (dans le wheel handler). textContent pour eviter un reflow.
+updateZoomDisplay = () => {
+    let div = document.querySelector('#zoomDisplay')
+    if (!div) return
+    div.textContent = ctx.zoomLevel.toFixed(1) + 'x'
 }
 
 resolveMouseClickOnBoard = (e) =>  {
@@ -1107,13 +1184,9 @@ adjacentPoints = (p1,p2,tolerance) => {
     return Math.hypot(p1.x - p2.x,p1.y - p2.y) < tolerance
 } 
 
-rvx = (x) => {
-    return ( x - ctx.viewCenter.x + ctx.zoomLevel * ctx.viewCenter.x ) / ctx.zoomLevel
-}
-
-rvy = (y) => {
-    return ( y  - ctx.viewCenter.y + ctx.zoomLevel * ctx.viewCenter.y ) / ctx.zoomLevel
-}
+// Anciennes rvx/rvy retirees : elles etaient incoherentes avec
+// screenToModel (formule d'inversion incorrecte). Tout le code passe
+// desormais par modelToScreen / screenToModel ci-dessus.
 
 STORAGE_KEY = 'mesh-designer-state'
 let persistTimer = undefined
@@ -1145,7 +1218,9 @@ serializeState = () => {
         shapes: serializedShapes,
         activeShapeIndex: activeShapeIndex,
         activeGrid: activeGrid,
-        GRID_STEP: GRID_STEP
+        GRID_STEP: GRID_STEP,
+        zoomLevel: ctx.zoomLevel,
+        viewCenter: { x: ctx.viewCenter.x, y: ctx.viewCenter.y }
     })
 }
 
@@ -1217,6 +1292,18 @@ loadState = () => {
         if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') {
             GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
         }
+        // Zoom et viewCenter : on les restaure avec le meme clamp que
+        // la wheel handler (bornes identiques cote MIN/MAX).
+        if (typeof data.zoomLevel === 'number' && data.zoomLevel > 0) {
+            ctx.zoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, data.zoomLevel))
+        }
+        if (data.viewCenter && typeof data.viewCenter.x === 'number' && typeof data.viewCenter.y === 'number') {
+            ctx.viewCenter.x = data.viewCenter.x
+            ctx.viewCenter.y = data.viewCenter.y
+        }
+        // Mise a jour du HUD zoom apres restauration (sinon l'indicateur
+        // reste a la valeur par defaut affichee dans le HTML initial).
+        updateZoomDisplay()
         let loaded = buildShapesFromPayload(data)
         if (loaded) {
             shapes = loaded
@@ -1517,4 +1604,5 @@ doit = () => {
     loadState()
     drawBoard()
     updateShapeHud()
+    updateZoomDisplay()
 }

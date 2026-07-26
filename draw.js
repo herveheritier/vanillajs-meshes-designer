@@ -3,12 +3,16 @@
 // rendu, on translate de ctx.center.x (decalage X) et on inverse
 // ctx.center.y (Y inverse). Aucun appelant ne doit appeler drawPoint
 // avec des coordonnees screen (utiliser drawMouse ou le draw direct).
+// Rendu via modelToScreen (tient compte du zoom et du viewCenter).
+// Aucun appelant ne doit appeler drawPoint avec des coordonnees screen
+// (utiliser drawMouse ou draw direct).
 drawPoint = (p, radius=3, color='#FFFFFF') => {
     if (!p) return
+    let sp = modelToScreen(p)
     _ctx.setLineDash([])
     _ctx.strokeStyle = color
     _ctx.beginPath()
-    _ctx.arc(ctx.center.x + p.x, ctx.center.y - p.y, radius, 0, TAU)
+    _ctx.arc(sp.x, sp.y, radius, 0, TAU)
     _ctx.stroke()
 }
 
@@ -59,17 +63,28 @@ drawSelectionBox = (p1, p2) => {
     _ctx.setLineDash([])
 }
 
+// L'axe suit l'origine (0,0) du modele, projetée à l'écran via
+// modelToScreen. Si l'origine est hors canvas après un zoom, l'axe
+// n'est pas tracé (un seul stroke pour eviter de casser le motif
+// dash). Les coordonnées model restent la source de vérité.
 drawAxis = () => {
+    let origin = modelToScreen({ x: 0, y: 0 })
+    let w = board.width
+    let h = board.height
     _ctx.setLineDash(PATTERN_AXIS)
     _ctx.strokeStyle = COLOR_AXIS
-    _ctx.beginPath()
-    _ctx.moveTo(0, ctx.center.y)
-    _ctx.lineTo(board.getBoundingClientRect().width, ctx.center.y)
-    _ctx.stroke()
-    _ctx.beginPath()
-    _ctx.moveTo(ctx.center.x, 0)
-    _ctx.lineTo(ctx.center.x, board.getBoundingClientRect().height)
-    _ctx.stroke()
+    if (origin.y >= 0 && origin.y <= h) {
+        _ctx.beginPath()
+        _ctx.moveTo(0, origin.y)
+        _ctx.lineTo(w, origin.y)
+        _ctx.stroke()
+    }
+    if (origin.x >= 0 && origin.x <= w) {
+        _ctx.beginPath()
+        _ctx.moveTo(origin.x, 0)
+        _ctx.lineTo(origin.x, h)
+        _ctx.stroke()
+    }
 }
 
 // Rend toutes les formes. Les inactives sont dessinees EN PREMIER
@@ -102,15 +117,18 @@ drawShape = (shape, isActive) => {
 // appelait drawTriangle(p1,p2,p3) sans param de style).
 drawTriangle = (p1, p2, p3, pattern, color) => {
     if (!p1) return
+    let s1 = modelToScreen(p1)
     _ctx.setLineDash(pattern !== undefined ? pattern : PATTERN_LINES)
     _ctx.strokeStyle = color !== undefined ? color : COLOR_LINES
     _ctx.beginPath()
-    _ctx.moveTo(ctx.center.x + p1.x, ctx.center.y - p1.y)
+    _ctx.moveTo(s1.x, s1.y)
     if (p2 !== undefined) {
-        _ctx.lineTo(ctx.center.x + p2.x, ctx.center.y - p2.y)
+        let s2 = modelToScreen(p2)
+        _ctx.lineTo(s2.x, s2.y)
         if (p3 !== undefined) {
-            _ctx.lineTo(ctx.center.x + p3.x, ctx.center.y - p3.y)
-            _ctx.lineTo(ctx.center.x + p1.x, ctx.center.y - p1.y)
+            let s3 = modelToScreen(p3)
+            _ctx.lineTo(s3.x, s3.y)
+            _ctx.lineTo(s1.x, s1.y)
         }
     }
     _ctx.stroke()
@@ -118,22 +136,29 @@ drawTriangle = (p1, p2, p3, pattern, color) => {
 
 drawLine = (p1, p2, pattern, color) => {
     if (!p1 || !p2) return
+    let s1 = modelToScreen(p1)
+    let s2 = modelToScreen(p2)
     _ctx.setLineDash(pattern)
     _ctx.strokeStyle = color
     _ctx.beginPath()
-    _ctx.moveTo(ctx.center.x + p1.x, ctx.center.y - p1.y)
-    _ctx.lineTo(ctx.center.x + p2.x, ctx.center.y - p2.y)
+    _ctx.moveTo(s1.x, s1.y)
+    _ctx.lineTo(s2.x, s2.y)
     _ctx.stroke()
 }
 
 drawGrid = () => {
-    const step = typeof GRID_STEP !== 'undefined' ? GRID_STEP : 32
-    if (!step || step <= 0) return
+    const baseStep = typeof GRID_STEP !== 'undefined' ? GRID_STEP : 32
+    if (!baseStep || baseStep <= 0) return
+    // L'ecart visible entre deux lignes depend du zoom : ecart =
+    // baseStep * ctx.zoomLevel. Sinon le zoom rendrait les lignes
+    // visuellement figees (zoom in) ou qui se chevauchent (zoom out).
+    // On garde le pattern symetrique autour de ctx.center pour rester
+    // visuellement centre a l'ecran.
+    const step = baseStep * ctx.zoomLevel
     _ctx.setLineDash([])
     _ctx.strokeStyle = '#333333'
     _ctx.beginPath()
-    // Lignes verticales: symetriques autour de ctx.center.x (model x=0
-    // est au centre du canvas apres centrage de l'axe X).
+    // Lignes verticales: symetriques autour de ctx.center.x.
     let maxOffsetX = Math.max(ctx.center.x, board.width - ctx.center.x)
     for (let k = 1; k * step <= maxOffsetX; k++) {
         let xLeft = ctx.center.x - k * step
