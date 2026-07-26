@@ -32,14 +32,14 @@ snapToGrid = (point) => {
 }
 
 // Le systeme de coordonnees du modele est en convention maths:
-// Y positif vers le haut, origine au centre du canvas
-// (ctx.center.x, ctx.center.y). Les coordonnees capturees depuis les
+// origine au centre du canvas (ctx.center.x, ctx.center.y), X+ vers
+// la droite, Y+ vers le haut. Les coordonnees capturees depuis les
 // evenements souris (e.clientX/Y relatives au board) sont en coords
-// screen (Y vers le bas, origine top-left). screenToModel fait la
+// screen (origine top-left, Y vers le bas). screenToModel fait la
 // conversion.
 screenToModel = (screen) => {
     if (!screen) return undefined
-    return { x: screen.x, y: ctx.center.y - screen.y }
+    return { x: screen.x - ctx.center.x, y: ctx.center.y - screen.y }
 }
 let selectedPoints = []
 let isSelectingBox = false
@@ -353,8 +353,9 @@ board.addEventListener('wheel', (e) => {
     if (selectedPoints.length >= 2 && !isSelectionDimmed) {
         e.preventDefault()
         let boardRect = board.getBoundingClientRect()
-        // Le centre de rotation est fourni en coords model (Y inverse).
-        let center = { x: e.x - boardRect.x, y: ctx.center.y - (e.y - boardRect.y) }
+        // Le centre de rotation est fourni en coords model (X centre,
+        // Y inverse).
+        let center = { x: (e.x - boardRect.x) - ctx.center.x, y: ctx.center.y - (e.y - boardRect.y) }
         let angleStep = (5 * Math.PI) / 180
         let angle = e.deltaY < 0 ? -angleStep : angleStep
         rotateSelectedPoints(center, angle)
@@ -509,14 +510,16 @@ resolveMouseMoveOnBoard = (e) => {
         let minXS = Math.min(selectionBoxStart.x, selectionBoxCurrent.x)
         let maxXS = Math.max(selectionBoxStart.x, selectionBoxCurrent.x)
         // Selection box: les coords sont en screen. Pour filtrer les
-        // vertex en model, on inverse min/max Y.
+        // vertex en model, on inverse min/max Y et on shifte min/max X.
         let minYS_screen = Math.min(selectionBoxStart.y, selectionBoxCurrent.y)
         let maxYS_screen = Math.max(selectionBoxStart.y, selectionBoxCurrent.y)
         let minYM = Math.min(ctx.center.y - minYS_screen, ctx.center.y - maxYS_screen)
         let maxYM = Math.max(ctx.center.y - minYS_screen, ctx.center.y - maxYS_screen)
+        let minXM = minXS - ctx.center.x
+        let maxXM = maxXS - ctx.center.x
 
         let allV = getAllVertices()
-        let inBox = allV.filter(p => p.x >= minXS && p.x <= maxXS && p.y >= minYM && p.y <= maxYM)
+        let inBox = allV.filter(p => p.x >= minXM && p.x <= maxXM && p.y >= minYM && p.y <= maxYM)
         let expanded = []
         inBox.forEach(p => {
             getPointsAtSamePosition(p).forEach(q => {
@@ -550,6 +553,7 @@ resolveMouseMoveOnBoard = (e) => {
 // Le curseur est dessine en screen. Le calcul du nearestPoint/Line
 // se fait en coords model (Y inverse).
 updateMouseHover = (cursorScreen) => {
+    updateCoordsDisplay(cursorScreen)
     if (!cursorScreen) return
     let actionModel = screenToModel(cursorScreen)
     let target = activeGrid ? snapToGrid(actionModel) : actionModel
@@ -571,6 +575,24 @@ updateMouseHover = (cursorScreen) => {
     if (nearestLine && nearestLine.firstPoint && nearestLine.secondPoint) {
         drawLine(nearestLine.firstPoint, nearestLine.secondPoint, [], '#00FF00')
     }
+}
+
+// Affiche la position du curseur et du point le plus proche dans le
+// HUD en bas de l'ecran, en coords model (Y inverse, origine au centre).
+// Vide le HUD si pas de curseur. Utilise textContent (pas innerText) pour
+// eviter un reflow a chaque mousemove.
+updateCoordsDisplay = (cursorScreen) => {
+    let div = document.querySelector('#coords')
+    if (!div) return
+    if (!cursorScreen) {
+        div.textContent = ''
+        return
+    }
+    let m = screenToModel(cursorScreen)
+    let np = (nearestPoint && nearestPoint.point) ? nearestPoint.point : null
+    let cursorTxt = `(${Math.round(m.x)}, ${Math.round(m.y)})`
+    let nearestTxt = np ? `(${Math.round(np.x)}, ${Math.round(np.y)})` : '\u2014'
+    div.textContent = `curseur ${cursorTxt}  plus proche ${nearestTxt}`
 }
 
 resolveMouseClickOnBoard = (e) =>  {

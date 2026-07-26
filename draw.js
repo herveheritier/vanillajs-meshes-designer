@@ -1,14 +1,15 @@
 
-// L'axe Y est inverse: les coordonnees stockees ont Y croissant vers le
-// haut (convention maths) et le rendu les mappe vers le bas canvas via
-// ctx.center.y - p.y. Aucun appelant ne doit appeler drawPoint avec des
-// coordonnees screen (utiliser drawMouse ou le draw direct).
+// Le systeme de coordonnees du modele est centre a (ctx.center.x,
+// ctx.center.y) avec X vers la droite et Y vers le haut. Pour le
+// rendu, on translate de ctx.center.x (decalage X) et on inverse
+// ctx.center.y (Y inverse). Aucun appelant ne doit appeler drawPoint
+// avec des coordonnees screen (utiliser drawMouse ou le draw direct).
 drawPoint = (p, radius=3, color='#FFFFFF') => {
     if (!p) return
     _ctx.setLineDash([])
     _ctx.strokeStyle = color
     _ctx.beginPath()
-    _ctx.arc(p.x, ctx.center.y - p.y, radius, 0, TAU)
+    _ctx.arc(ctx.center.x + p.x, ctx.center.y - p.y, radius, 0, TAU)
     _ctx.stroke()
 }
 
@@ -87,12 +88,12 @@ drawTriangle = (p1,p2,p3) => {
     _ctx.setLineDash(PATTERN_LINES)
     _ctx.strokeStyle = COLOR_LINES
     _ctx.beginPath()
-    _ctx.moveTo(p1.x, ctx.center.y - p1.y)
+    _ctx.moveTo(ctx.center.x + p1.x, ctx.center.y - p1.y)
     if (p2 !== undefined) {
-        _ctx.lineTo(p2.x, ctx.center.y - p2.y)
+        _ctx.lineTo(ctx.center.x + p2.x, ctx.center.y - p2.y)
         if (p3 !== undefined) {
-            _ctx.lineTo(p3.x, ctx.center.y - p3.y)
-            _ctx.lineTo(p1.x, ctx.center.y - p1.y)
+            _ctx.lineTo(ctx.center.x + p3.x, ctx.center.y - p3.y)
+            _ctx.lineTo(ctx.center.x + p1.x, ctx.center.y - p1.y)
         }
     }
     _ctx.stroke()
@@ -103,8 +104,8 @@ drawLine = (p1,p2,pattern,color) => {
     _ctx.setLineDash(pattern)
     _ctx.strokeStyle = color
     _ctx.beginPath()
-    _ctx.moveTo(p1.x, ctx.center.y - p1.y)
-    _ctx.lineTo(p2.x, ctx.center.y - p2.y)
+    _ctx.moveTo(ctx.center.x + p1.x, ctx.center.y - p1.y)
+    _ctx.lineTo(ctx.center.x + p2.x, ctx.center.y - p2.y)
     _ctx.stroke()
 }
 
@@ -114,16 +115,24 @@ drawGrid = () => {
     _ctx.setLineDash([])
     _ctx.strokeStyle = '#333333'
     _ctx.beginPath()
-    // Lignes verticales: cot X inchange, on part de x=step jusqu'au bord droit.
-    for (let x = step; x < board.width; x += step) {
-        _ctx.moveTo(x, 0)
-        _ctx.lineTo(x, board.height)
+    // Lignes verticales: symetriques autour de ctx.center.x (model x=0
+    // est au centre du canvas apres centrage de l'axe X).
+    let maxOffsetX = Math.max(ctx.center.x, board.width - ctx.center.x)
+    for (let k = 1; k * step <= maxOffsetX; k++) {
+        let xLeft = ctx.center.x - k * step
+        let xRight = ctx.center.x + k * step
+        if (xLeft >= 0) {
+            _ctx.moveTo(xLeft, 0)
+            _ctx.lineTo(xLeft, board.height)
+        }
+        if (xRight <= board.width) {
+            _ctx.moveTo(xRight, 0)
+            _ctx.lineTo(xRight, board.height)
+        }
     }
-    // Lignes horizontales: symetriques autour de ctx.center.y (model y=0
-    // est au centre du canvas apres inversion Y), pour eviter que la
-    // grille n'apparaisse que dans le demi-plan superieur/screen.
-    let maxOffset = Math.max(ctx.center.y, board.height - ctx.center.y)
-    for (let k = 1; k * step <= maxOffset; k++) {
+    // Lignes horizontales: symetriques autour de ctx.center.y.
+    let maxOffsetY = Math.max(ctx.center.y, board.height - ctx.center.y)
+    for (let k = 1; k * step <= maxOffsetY; k++) {
         let yTop = ctx.center.y - k * step
         let yBottom = ctx.center.y + k * step
         if (yTop >= 0) {
