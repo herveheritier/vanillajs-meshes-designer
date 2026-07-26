@@ -944,17 +944,19 @@ resolveMouseMoveOnBoard = (e) => {
             })
         })
         selectedPoints = expanded    } else if(isPanning) {
-        // Pan du viewCenter (clic-milieu + drag souris). Drag a droite
-        // -> viewCenter.x *decroit* (convention "drag content") : le
-        // contenu suit le curseur, l'origine des axes glisse en sens
-        // inverse. Le delta en unites model est (mouse_screen -
-        // panStartMouse) / zoomLevel, ce qui rend le pan homogene a
-        // toute valeur de zoom (drag de 100 px screen -> 100 model
-        // units a zoom 1, 20 units a zoom 5).
+        // Pan du viewCenter (clic-milieu + drag souris). Convention
+        // "drag content" : le contenu suit le curseur.
+        //   X : drag a droite (dx > 0) -> viewCenter.x *decroit* car
+        //       origin_screen.x = center.x - viewCenter.x * zoom.
+        //   Y : drag en bas (dy > 0) -> viewCenter.y *augmente* car
+        //       origin_screen.y = center.y + viewCenter.y * zoom.
+        // Le delta est divise par zoomLevel pour rendre le pan
+        // homogene : 100 px screen -> 100 unites model a zoom 1,
+        // 20 unites a zoom 5.
         let dx = mouseScreen.x - panStartMouse.x
         let dy = mouseScreen.y - panStartMouse.y
         ctx.viewCenter.x = panStartViewCenter.x - dx / ctx.zoomLevel
-        ctx.viewCenter.y = panStartViewCenter.y - dy / ctx.zoomLevel
+        ctx.viewCenter.y = panStartViewCenter.y + dy / ctx.zoomLevel
         drawBoard()
         if (lastMousePos) updateMouseHover(lastMousePos)
         updateZoomDisplay()
