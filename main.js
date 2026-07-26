@@ -183,6 +183,16 @@ let selectionBoxStart = undefined
 let selectionBoxCurrent = undefined
 let grabbedGroup = []
 let grabStartMouse = undefined
+// Pan : clic-milieu (button===1) sur board + drag souris. Le contenu
+// "suit" le curseur : drag a droite -> viewCenter.x decroit, drag en
+// bas -> viewCenter.y decroit (convention "drag content" comme les
+// apps de dessin). Les deux panStart* sont captures au mousedown,
+// puis chaque mousemove recalcule viewCenter depuis ces valeurs
+// de reference (pas d'accumulation, ce qui rend le pan naturel
+// meme si le mousemove rate des events).
+let isPanning = false
+let panStartMouse = undefined
+let panStartViewCenter = undefined
 
 // Toutes les fonctions ci-dessous considerent uniquement les triangles
 // de la FORME ACTIVE pour les operations d'edition/selection.
@@ -533,6 +543,16 @@ document.addEventListener('mousemove',(e) => {
 
 document.addEventListener('mouseup',(e) => {
     if(grabbed()) endGrabbing(e)
+    // Fin d'un pan clic-milieu. On persist le viewCenter final mem'
+    // si l'utilisateur n'a pas bouge entre mousedown et mouseup (force un
+    // save pour eviter qu'une scene non persistee avant un pan vide
+    // soit perdue apres une fermeture).
+    if(isPanning && e.button===1) {
+        isPanning = false
+        panStartMouse = undefined
+        panStartViewCenter = undefined
+        persistState()
+    }
     if(e.target.id==='board' && e.button===0) {
         if(isSelectingBox) {
             let dist = Math.hypot(selectionBoxCurrent.x - selectionBoxStart.x, selectionBoxCurrent.y - selectionBoxStart.y)
@@ -575,6 +595,17 @@ document.addEventListener('mousedown',(e) => {
             selectionBoxStart = mousePos
             selectionBoxCurrent = mousePos
             isSelectingBox = true
+        } else if(e.button===1) {
+            // Clic-milieu : debut d'un pan du viewCenter. On sauve la
+            // position screen + le viewCenter courant pour les utiliser
+            // comme references dans resolveMouseMoveOnBoard. e.preventDefault
+            // sur le mousedown est inutile car le browser n'a pas de
+            // comportement par defaut sur clic du milieu sur un canvas
+            // (pas de scroll/paste ici), mais on le met par precaution
+            // et pour eviter une potentielle selection native.
+            isPanning = true
+            panStartMouse = mousePos
+            panStartViewCenter = { x: ctx.viewCenter.x, y: ctx.viewCenter.y }
         }
     }
 })
@@ -700,8 +731,8 @@ if (resetModal) resetModal.addEventListener('click', (e) => {
 let isSelectionDimmed = false
 
 // Molette : pivote si 2+ points selectionnes, sinon zoom centre sur
-// le curseur (maintient le model point sous le curseur fixe pendant
-// le changement de zoom). Les bornes empechent de trop s'eloigner.
+// le curseur. Le pan du viewCenter se fait separement, via clic-milieu
+// (button===1) sur le board + drag souris, voir resolveMouseMoveOnBoard.
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 10
 const ZOOM_STEP_FACTOR = 1.1
@@ -912,7 +943,22 @@ resolveMouseMoveOnBoard = (e) => {
                 if(!expanded.some(e => e === q)) expanded.push(q)
             })
         })
-        selectedPoints = expanded    } else if(grabbed()) {
+        selectedPoints = expanded    } else if(isPanning) {
+        // Pan du viewCenter (clic-milieu + drag souris). Drag a droite
+        // -> viewCenter.x *decroit* (convention "drag content") : le
+        // contenu suit le curseur, l'origine des axes glisse en sens
+        // inverse. Le delta en unites model est (mouse_screen -
+        // panStartMouse) / zoomLevel, ce qui rend le pan homogene a
+        // toute valeur de zoom (drag de 100 px screen -> 100 model
+        // units a zoom 1, 20 units a zoom 5).
+        let dx = mouseScreen.x - panStartMouse.x
+        let dy = mouseScreen.y - panStartMouse.y
+        ctx.viewCenter.x = panStartViewCenter.x - dx / ctx.zoomLevel
+        ctx.viewCenter.y = panStartViewCenter.y - dy / ctx.zoomLevel
+        drawBoard()
+        if (lastMousePos) updateMouseHover(lastMousePos)
+        updateZoomDisplay()
+    } else if(grabbed()) {
         // Conversion screen -> model en tenant compte du zoom, puis
         // delta en coords model. Si on ne divisait pas par zoom, le
         // drag deplacerait les points en pixels screen au lieu de les
@@ -989,14 +1035,18 @@ updateCoordsDisplay = (cursorScreen) => {
     div.textContent = `curseur ${cursorTxt}  plus proche ${nearestTxt}`
 }
 
-// Affiche le niveau de zoom courant dans le HUD bas-gauche (#zoomDisplay).
-// Une decimale fixe, suffixe "x". Mise a jour appelee : initialisation,
-// restauration d'etat (loadState), et apres chaque tick de molette
-// (dans le wheel handler). textContent pour eviter un reflow.
+// Affiche le niveau de zoom + la position du viewCenter dans le HUD
+// bas-gauche (#zoomDisplay). Format compact : "1.2x pos(45, -30)".
+// Mise a jour appelee : initialisation, restauration d'etat
+// (loadState), apres chaque tick de molette (pan ou zoom), apres
+// Ctrl+0, et apres chaque commande qui modifie viewCenter (pan).
+// textContent pour eviter un reflow.
 updateZoomDisplay = () => {
     let div = document.querySelector('#zoomDisplay')
     if (!div) return
-    div.textContent = ctx.zoomLevel.toFixed(1) + 'x'
+    let vc = ctx.viewCenter
+    div.textContent = ctx.zoomLevel.toFixed(1) + 'x  pos(' +
+        Math.round(vc.x) + ', ' + Math.round(vc.y) + ')'
 }
 
 resolveMouseClickOnBoard = (e) =>  {
