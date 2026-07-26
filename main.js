@@ -395,8 +395,7 @@ exportBtn.addEventListener('click', (e) => {
 let resetBtn = document.querySelector('#reset')
 resetBtn.addEventListener('click', (e) => {
     if (e.button !== 0) return
-    if (!confirm('Réinitialiser le mesh ?')) return
-    resetAll()
+    showResetModal()
 })
 
 selectAllPoints = () => {
@@ -495,6 +494,12 @@ if (deleteShapeBtn) deleteShapeBtn.addEventListener('click', (e) => {
     deleteShape()
 })
 
+let helpBtn = document.querySelector('#helpBtn')
+if (helpBtn) helpBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    showHelp()
+})
+
 document.addEventListener("contextmenu", (e) => {
     if(e.target.id==='board') e.preventDefault();
 }, false);
@@ -554,7 +559,7 @@ document.addEventListener('mousedown',(e) => {
 document.addEventListener('keydown',(e) => {
     if(e.code==='Backspace') {
         if (e.shiftKey) {
-            resetAll()
+            showResetModal()
         } else {
             deleteSelectedPoint()
         }
@@ -583,10 +588,13 @@ document.addEventListener('keydown',(e) => {
         if (isHelpOpen) hideHelp()
         else showHelp()
     }
-    // Escape ferme le panneau d'aide s'il est ouvert.
-    if (isHelpOpen && e.code === 'Escape' && !e.repeat) {
+    // Escape ferme la modale d'aide OU la modale de reinit si l'une
+    // d'elles est ouverte (priorite a l'aide si les deux le sont).
+    let isResetOpen = resetModal && !resetModal.hidden
+    if (e.code === 'Escape' && !e.repeat && (isHelpOpen || isResetOpen)) {
         e.preventDefault()
-        hideHelp()
+        if (isHelpOpen) hideHelp()
+        if (isResetOpen) hideResetModal()
     }
     if((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code==='KeyZ' || e.key==='z' || e.key==='Z')) {
         e.preventDefault()
@@ -623,6 +631,33 @@ if (helpCloseBtn) helpCloseBtn.addEventListener('click', () => hideHelp())
 if (helpModal) helpModal.addEventListener('click', (e) => {
     let target = e.target
     if (target && target.dataset && target.dataset.helpClose !== undefined) hideHelp()
+})
+
+// Modale de reinitialisation (remplace l'ancien confirm() natif).
+// Meme pattern d'interactions que la modale d'aide : Annuler, le
+// bouton primaire declenche resetAll(), le backdrop ferme, et Escape
+// est gere plus bas dans le keydown listener partage.
+let resetModal = document.querySelector('#resetModal')
+
+showResetModal = () => {
+    if (!resetModal) return
+    resetModal.hidden = false
+}
+hideResetModal = () => {
+    if (!resetModal) return
+    resetModal.hidden = true
+}
+
+let resetModalCancelBtn = document.querySelector('#resetModalCancel')
+if (resetModalCancelBtn) resetModalCancelBtn.addEventListener('click', () => hideResetModal())
+let resetModalValidateBtn = document.querySelector('#resetModalValidate')
+if (resetModalValidateBtn) resetModalValidateBtn.addEventListener('click', () => {
+    hideResetModal()
+    resetAll()
+})
+if (resetModal) resetModal.addEventListener('click', (e) => {
+    let target = e.target
+    if (target && target.dataset && target.dataset.resetClose !== undefined) hideResetModal()
 })
 
 let isSelectionDimmed = false

@@ -158,8 +158,11 @@
                 backdrop-filter: blur(4px);
             }
 
-            /* ========= Modal d'import : remplace la double confirm() native ========= */
-            #importModal {
+            /* ========= Modales (import + aide) : structure partagee ========= */
+            /* Les deux modales partagent le meme overlay, la meme carte,
+               les memes styles de titre/boutons. Les regles specifiques
+               a chaque modale sont scopees dans leur bloc respectif. */
+            .modal {
                 position: fixed;
                 inset: 0;
                 z-index: 1000;
@@ -169,15 +172,15 @@
                 font-family: monospace;
                 color: rgb(220, 220, 220);
             }
-            #importModal[hidden] {
+            .modal[hidden] {
                 display: none;
             }
-            #importModal .modal-backdrop {
+            .modal-backdrop {
                 position: absolute;
                 inset: 0;
                 background-color: rgba(0, 0, 0, 0.7);
             }
-            #importModal .modal-box {
+            .modal-box {
                 position: relative;
                 background-color: #111;
                 border: 1px solid rgba(255, 255, 255, 0.18);
@@ -189,25 +192,25 @@
                 line-height: 1.4;
                 font-size: 13px;
             }
-            #importModal .modal-title {
+            .modal-title {
                 font-size: 14px;
                 font-weight: bold;
                 color: rgb(55, 194, 0);
                 margin-bottom: 10px;
             }
-            #importModal .modal-info {
+            .modal-info {
                 margin-bottom: 14px;
                 font-size: 12px;
                 color: rgba(220, 220, 220, 0.85);
                 white-space: pre-line;
             }
-            #importModal .modal-options {
+            .modal-options {
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
                 margin-bottom: 14px;
             }
-            #importModal .modal-options label {
+            .modal-options label {
                 cursor: pointer;
                 display: flex;
                 align-items: flex-start;
@@ -216,20 +219,20 @@
                 border-radius: 3px;
                 transition: background-color 0.12s;
             }
-            #importModal .modal-options label:hover {
+            .modal-options label:hover {
                 background-color: rgba(255, 255, 255, 0.06);
             }
-            #importModal .modal-options input[type=radio] {
+            .modal-options input[type=radio] {
                 margin-top: 3px;
                 cursor: pointer;
                 accent-color: rgb(55, 194, 0);
             }
-            #importModal .modal-buttons {
+            .modal-buttons {
                 display: flex;
                 justify-content: flex-end;
                 gap: 8px;
             }
-            #importModal .modal-buttons button {
+            .modal-buttons button {
                 font-family: monospace;
                 font-size: 13px;
                 padding: 6px 16px;
@@ -240,42 +243,39 @@
                 border-radius: 3px;
                 transition: background-color 0.12s, border-color 0.12s;
             }
-            #importModal .modal-buttons button:hover {
+            .modal-buttons button:hover {
                 background-color: #2e2e2e;
                 border-color: rgba(255, 255, 255, 0.35);
             }
-            #importModal #importModalValidate {
+            /* Bouton primaire (vert accent) partage via la classe
+               .modal-primary. Scalable : tout nouveau modal declare
+               simplement class='modal-primary' sur son bouton d'action
+               principale sans qu'il faille toucher a la CSS. Les IDs
+               restent pour le ciblage JS (querySelector).
+               Selecteur qualifie par le contexte pour gagner la
+               specificite de `.modal-buttons button` (sinon le bouton
+               reprend le fond gris de base). */
+            .modal-buttons button.modal-primary {
                 background-color: rgb(55, 194, 0);
                 color: #111;
                 border-color: rgb(55, 194, 0);
                 font-weight: bold;
             }
-            #importModal #importModalValidate:hover {
+            .modal-buttons button.modal-primary:hover {
                 background-color: rgb(80, 220, 25);
                 border-color: rgb(80, 220, 25);
             }
 
-            /* ========= Modal d'aide raccourcis ========= */
-            #helpModal {
-                position: fixed;
-                inset: 0;
-                z-index: 1000;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-family: monospace;
-                color: rgb(220, 220, 220);
-            }
-            #helpModal[hidden] {
-                display: none;
-            }
-            #helpModal .help-list {
+            /* ========= Modal d'aide raccourcis : specifique ========= */
+            /* Reprend la classe .modal-box partagee ci-dessus ; seuls
+               les styles de liste de raccourcis sont specifiques. */
+            .help-list {
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
                 margin-bottom: 14px;
             }
-            #helpModal .help-row {
+            .help-row {
                 display: flex;
                 align-items: center;
                 gap: 6px;
@@ -284,7 +284,7 @@
                 line-height: 1.5;
             }
             /* Chip "touche" : monospace, encadre, lisible sur fond sombre. */
-            #helpModal .kbd {
+            .kbd {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
@@ -302,11 +302,11 @@
                 white-space: nowrap;
             }
             /* Chip special pour libelles longs (ex: "Clic milieu sur grille"). */
-            #helpModal .kbd.wide {
+            .kbd.wide {
                 min-width: auto;
                 padding: 0 8px;
             }
-            #helpModal .help-row > span {
+            .help-row > span {
                 margin-left: 4px;
             }
         </style>
@@ -325,17 +325,19 @@
             <button id="nextShape" title="Forme suivante"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
             <button id="newShape" title="Ajouter une nouvelle forme vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>
             <button id="deleteShape" title="Supprimer la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
+            <span class="toolbar-sep"></span>
+            <button id="helpBtn" title="Afficher l'aide (raccourci : ?)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.8 7a2 2 0 014 0c0 1-2 1.5-2 2.5"/>                <circle cx="8" cy="11.5" r="0.6" fill="currentColor" stroke="none"/></svg></button>
         </div>
         <canvas id="board" width="100" height="100"></canvas>
         <div id="messageBoard"></div>
         <div id="coords"></div>
-        <div id="helpModal" hidden>
+        <div id="helpModal" class="modal" hidden>
             <div class="modal-backdrop" data-help-close></div>
             <div class="modal-box">
                 <div class="modal-title">Raccourcis clavier</div>
                 <div class="help-list">
                     <div class="help-row"><kbd class="kbd">Backspace</kbd><span>supprimer le point sélectionne</span></div>
-                    <div class="help-row"><kbd class="kbd">⇧</kbd><kbd class="kbd">Backspace</kbd><span>reinitialiser completement la scene</span></div>
+                    <div class="help-row"><kbd class="kbd">⇧</kbd><kbd class="kbd">Backspace</kbd><span>reinitialiser completement la scene (modale de confirmation)</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Z</kbd><span>annuler</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">Z</kbd><span>retablir</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Y</kbd><span>retablir</span></div>
@@ -343,13 +345,14 @@
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd">?</kbd><span>afficher / masquer cette aide</span></div>
+                    <div class="help-row"><kbd class="kbd wide">Bouton aide</kbd><span>meme action que la touche <kbd class="kbd">?</kbd></span></div>
                 </div>
                 <div class="modal-buttons">
                     <button id="helpClose" type="button">Fermer</button>
                 </div>
             </div>
         </div>
-        <div id="importModal" hidden>
+        <div id="importModal" class="modal" hidden>
             <div class="modal-backdrop"></div>
             <div class="modal-box">
                 <div class="modal-title">Importer une scène</div>
@@ -360,7 +363,18 @@
                 </div>
                 <div class="modal-buttons">
                     <button id="importModalCancel" type="button">Annuler</button>
-                    <button id="importModalValidate" type="button">Importer</button>
+                    <button id="importModalValidate" class="modal-primary" type="button">Importer</button>
+                </div>
+            </div>
+        </div>
+        <div id="resetModal" class="modal" hidden>
+            <div class="modal-backdrop" data-reset-close></div>
+            <div class="modal-box">
+                <div class="modal-title">Réinitialiser la scène</div>
+                <div class="modal-info">Cette action efface toutes les formes et vide l'historique d'annulation. Elle est irréversible.</div>
+                <div class="modal-buttons">
+                    <button id="resetModalCancel" type="button">Annuler</button>
+                    <button id="resetModalValidate" class="modal-primary" type="button">Réinitialiser</button>
                 </div>
             </div>
         </div>
