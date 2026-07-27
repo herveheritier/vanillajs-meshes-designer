@@ -183,6 +183,17 @@ let selectionBoxStart = undefined
 let selectionBoxCurrent = undefined
 let grabbedGroup = []
 let grabStartMouse = undefined
+// Move-all mode : set dans beginGrabbing a !!(e.ctrlKey && e.altKey)
+// puis reset dans endGrabbing. On detecte Ctrl+Alt simultanes
+// (AltGr / Right Alt est transmis comme Ctrl+Alt dans le DOM X11/Wayland)
+// et non Alt seul, parce que les WM (GNOME, KDE, X11, Wayland) peuvent
+// intercepter Alt+drag comme geste de deplacement de fenetre avant
+// que l'evenement n'atteigne le navigateur. Quand true, beginGrabbing
+// repeuple grabbedGroup avec TOUS les points de TOUTES les formes, et
+// resolveMouseMoveOnBoard snap le delta au lieu de chaque point (pour
+// preserver l'uniformite du mouvement entre formes quand la grille
+// est activee).
+let moveAllActive = false
 // Pan : clic-milieu (button===1) sur board + drag souris. Le contenu
 // "suit" le curseur : drag a droite -> viewCenter.x decroit, drag en
 // bas -> viewCenter.y decroit (convention "drag content" comme les
@@ -865,7 +876,77 @@ beginGrabbing = (e) => {
     let mouseScreen = {
         x : e.x - board.getBoundingClientRect().x,
         y : e.y - board.getBoundingClientRect().y
+    }    // Detection AltGr robuste : on accepte (a) le couple DOM
+    // ctrlKey+altKey (cas Linux X11/Wayland classiques) OU (b)
+    // getModifierState('AltGraph') (primitive W3C, fonctionne
+    // meme quand le DOM ne traduit pas AltGr en Ctrl+Alt sur
+    // certaines configs XKB ou ecrans tactiles). Le test
+    // d'existence evite un crash si getModifierState est absent
+    // (vieux navigateurs).
+    const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))
+    moveAllActive = isAltGrDown
+    grabbedGroup = []
+
+
+    // AltGr (Ctrl+Alt, transmis comme tel par le DOM) tenu pendant
+    // le drag = deplacer TOUTES les formes d'un meme delta (quasi-
+    // mode capture au mousedown : le relachement d'AltGr pendant le
+    // drag ne change rien). Mode SCENE-WIDE : pas d'ancre sur un
+    // point, on accepte le grab meme en espace vide (le user n'a
+    // pas besoin de cliquer pile sur un sommet pour demarrer un
+    // move-all). C'est la raison pour laquelle on branche sur
+    // AltGr AVANT le test findNearestPoint : sans ca, un clic droit
+    // dans une zone vide court-circuite tout le drag.
+    if (isAltGrDown) {
+        currentAction = ACTION_GRABBING
+        grabStartMouse = mouseScreen
+        // Vider la selection pour eviter que le surlignage cyan
+        // des points de la forme active laisse croire a
+        // l'utilisateur que seuls ces points bougent. Le message de
+        // log ci-dessous annonce le nombre TOTAL de points (toutes
+        // formes), ce qui doit etre la seule reference visible.
+        selectedPoints = []
+        shapes.forEach((shape, sIndex) => {
+            shape.triangles.forEach((t, tIndex) => {
+                ['p1','p2','p3'].forEach((pid, j) => {
+                    let p = t[pid]
+                    if (!p) return
+                    grabbedGroup.push({
+                        shapeIndex: sIndex,
+                        triangleIndex: tIndex,
+                        pointId: pid,
+                        startX: p.x,
+                        startY: p.y,
+                        selectedPointRef: undefined
+                    })
+                })
+            })
+        })
+        // Scene vide : aucune forme n'a de triangles, donc rien a
+        // deplacer. On annule AVANT saveState pour ne pas polluer
+        // l'historique undo avec une entree vide, et on laisse
+        // l'etat interne coherent (currentAction / grabStartMouse
+        // remis, pas de curseur 'move' signale).
+        if (grabbedGroup.length === 0) {
+            currentAction = undefined
+            grabStartMouse = undefined
+            return
+        }
+        // Snapshot pour undo (cf. fin de grab dans endGrabbing).
+        saveState()
+        log('AltGr detecte - deplacement de ' + shapes.length + ' forme(s) : ' + grabbedGroup.length + ' points')
+        // Curseur OS 'move' pendant le drag en mode 'toutes les
+        // formes'. Le canvas dessine son propre curseur drawMouse,
+        // mais le curseur OS sert de fallback si jamais il redevient
+        // visible (ex: sorties de canvas) et de signal visuel en
+        // backup. Restore dans endGrabbing.
+        board.style.cursor = 'move'
+        return
     }
+
+    // Mode historique (sans Alt) : grab ancre sur le point le plus
+    // proche, ne bouge que la forme active. Si aucun point n'est
+    // proche de la souris, le drag est abandonne (early-return).
     let np = findNearestPoint(screenToModel(mouseScreen))
     if(!np || !np.point) return
 
@@ -884,13 +965,13 @@ beginGrabbing = (e) => {
         }
     }
 
-    grabbedGroup = []
     let tris = activeTriangles()
     selectedPoints.forEach(sp => {
         tris.forEach( (t,i) => {
             [t.p1,t.p2,t.p3].forEach( (p,j) => {
                 if(p && adjacentPoints(p, sp, 0.01)) {
                     grabbedGroup.push({
+                        shapeIndex: activeShapeIndex,
                         triangleIndex: i,
                         pointId: `p${j+1}`,
                         startX: p.x,
@@ -906,6 +987,16 @@ beginGrabbing = (e) => {
 endGrabbing = (e) => {
     currentAction = ACTION_NONE
     resolveMouseMoveOnBoard(e)
+    // Restore le curseur OS : beginGrabbing peut l'avoir passe en
+    // 'move' (Alt tenu = mode toutes les formes). Le canvas est
+    // en 'none' par defaut (curseur custom drawMouse), donc meme
+    // si beginGrabbing ne l'a pas change l'ecriture reste idempotente.
+    board.style.cursor = 'none'
+    // Reset du flag move-all : sans ca un futur grabbing classique
+    // heriterait du flag de la session precedente et snapperait le
+    // delta comme en move-all (comportement buggue). Valeur
+    // ecrasee au prochain beginGrabbing.
+    moveAllActive = false
     persistState()
 }
 
@@ -971,13 +1062,30 @@ resolveMouseMoveOnBoard = (e) => {
         let startModel = screenToModel(grabStartMouse)
         let dx = curModel.x - startModel.x
         let dy = curModel.y - startModel.y
-        let activeShapeRef = shapes[activeShapeIndex]
+        // Mode move-all + grille : on snap le DELTA (pas chaque
+        // point), sinon le snap independant casserait l'uniformite
+        // entre formes (un point a (0,0) et un autre a (1,0)
+        // translate de dx=15 seraient rattaches a des cellules de
+        // grille differentes -> deplacements relatifs incoherents).
+        // Mode actif-only : on garde le snap par-point (coherent car
+        // une seule forme).
+        if (activeGrid && moveAllActive) {
+            let snapped = snapToGrid({ x: dx, y: dy })
+            dx = snapped.x
+            dy = snapped.y
+        }
         grabbedGroup.forEach(item => {
             let targetPos = { x: item.startX + dx, y: item.startY + dy }
-            if(activeGrid) {
+            if(activeGrid && !moveAllActive) {
                 targetPos = snapToGrid(targetPos)
             }
-            let tri = activeShapeRef.triangles[item.triangleIndex]
+            // item.shapeIndex est toujours defini : par defaut egal a
+            // activeShapeIndex (mode historique), ou sIndex de la
+            // forme concernee en mode Alt. On n'utilise plus la
+            // constante activeShapeIndex pour cibler la forme afin
+            // de supporter l'iteration sur plusieurs formes en un
+            // seul appel.
+            let tri = shapes[item.shapeIndex].triangles[item.triangleIndex]
             if (!tri) return  // safety: la forme a pu changer
             tri[item.pointId] = targetPos
             if (item.selectedPointRef) {

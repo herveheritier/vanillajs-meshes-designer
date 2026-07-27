@@ -56,6 +56,7 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
 | **Souris** | |
 | wheel sur canvas | Zoom (centré sur curseur) ou pivote si 2+ points sélectionnés |
 | middle-click + drag canvas | Pan (déplace `viewCenter` dans le sens du drag) |
+| **Ctrl+Alt + clic-droit + drag** canvas (AltGr = Right Alt sur la plupart des claviers) | **Déplacer TOUTES les formes ensemble** (delta uniforme, quasi-mode : relâcher ne change rien en cours de drag) |
 | middle-click sur bouton grille | Réinitialise le pas de la grille |
 
 ## Interface — barre d'outils
