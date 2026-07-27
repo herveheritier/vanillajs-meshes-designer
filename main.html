@@ -103,6 +103,11 @@
                 color: rgb(55, 194, 0);
             }
 
+            /* Passe en vert accent quand la console est visible. */
+            #toggleConsole.console-active {
+                color: rgb(55, 194, 0);
+            }
+
             /* Icones SVG inline dans les boutons du toolbar.
                Stroke-based, currentColor pour heriter des etats. */
             #toolbar button svg {
@@ -404,6 +409,8 @@
             <button id="nextShape" title="Forme suivante"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
             <button id="newShape" title="Ajouter une nouvelle forme vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>
             <button id="deleteShape" title="Supprimer la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
+            <span class="toolbar-sep"></span>
+            <button id="toggleConsole" title="Afficher / masquer la console des messages" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h12v8H7l-3 3v-3H2z"/><line x1="5" y1="6.5" x2="11" y2="6.5"/><line x1="5" y1="9" x2="9" y2="9"/></svg></button>
             <span class="toolbar-sep"></span>
             <button id="helpBtn" title="Afficher l'aide (raccourci : ?)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.8 7a2 2 0 014 0c0 1-2 1.5-2 2.5"/>                <circle cx="8" cy="11.5" r="0.6" fill="currentColor" stroke="none"/></svg></button>
         </div>

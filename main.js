@@ -459,6 +459,43 @@ gridBtn.addEventListener("mousedown", (e) => {
 
 updateGridButtonText()
 
+// Toggle la console des messages (utilise par le clic sur le
+// bouton ; centralise comme toggleGrid). Preference persistee a
+// part de la scene : l'overlay est ephemere, pas lie aux formes.
+let consoleVisible = true
+const CONSOLE_VISIBLE_STORAGE_KEY = 'meshesDesigner.consoleVisible'
+
+// Restauration depuis localStorage au chargement (meme pattern que
+// IMPORT_MODE_STORAGE_KEY : pas de try/catch, les callers tolerent
+// deja l'absence de cle).
+if (localStorage.getItem(CONSOLE_VISIBLE_STORAGE_KEY) === '0') {
+    consoleVisible = false
+}
+
+updateConsoleButton = () => {
+    let btn = document.querySelector('#toggleConsole')
+    if (!btn) return
+    btn.classList.toggle('console-active', !!consoleVisible)
+    btn.setAttribute('aria-pressed', consoleVisible ? 'true' : 'false')
+    if (messageBoard) messageBoard.style.display = consoleVisible ? '' : 'none'
+}
+
+toggleConsole = () => {
+    consoleVisible = !consoleVisible
+    updateConsoleButton()
+    localStorage.setItem(CONSOLE_VISIBLE_STORAGE_KEY, consoleVisible ? '1' : '0')
+}
+
+let consoleBtn = document.querySelector('#toggleConsole')
+if (consoleBtn) consoleBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    toggleConsole()
+})
+
+// Init : applique visuellement la preference restauree (meme
+// quand consoleVisible=true, set style.display='' est idempotent).
+updateConsoleButton()
+
 let exportBtn = document.querySelector('#export')
 exportBtn.addEventListener('click', (e) => {
     if (e.button !== 0) return
