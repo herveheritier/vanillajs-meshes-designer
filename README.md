@@ -12,7 +12,7 @@ python3 test_server.py
 # puis ouvrir http://localhost:8000/main.html dans un navigateur
 ```
 
-Le script `test_server.py` lance un serveur HTTP trivial sur le port 8000 (en thread daemon, avec un délai de 2 s pour permettre Ctrl-C en cas de besoin).
+Le script `test_server.py` lance un serveur HTTP trivial sur le port 8000 (en thread daemon). Il vérifie que le port a bien été bindé et qu'il répond avant d'imprimer `Server is running`, et sort en erreur avec un message explicite si le port est déjà occupé.
 
 ## Workflow type (exemple : un triangle)
 
