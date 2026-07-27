@@ -957,8 +957,8 @@ rotateSceneAroundCursor = (pivotScreen, angle) => {
     // (cf. commit a2a4365 pour le passage de rotation en coords
     // modele a rotation en coords ecran, qui elimine le drift
     // cumule.)
-    ctx.rotationPivot.x = cursorScreen.x
-    ctx.rotationPivot.y = cursorScreen.y
+    ctx.rotationPivot.x = pivotScreen.x
+    ctx.rotationPivot.y = pivotScreen.y
     // Modulo borne pour eviter que ctx.rotation derive vers
     // l'infini sur les longs gestes. `(r % TAU + TAU) % TAU`
     // garde la valeur dans [0, TAU) y compris quand angle est
