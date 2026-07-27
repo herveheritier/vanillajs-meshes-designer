@@ -103,6 +103,18 @@
                 color: rgb(55, 194, 0);
             }
 
+            /* Bouton console : meme accent vert quand la console est
+               visible. On cible le SVG (pas de span texte sur ce
+               bouton) et la couleur de fond comme les autres boutons
+               « actifs » (grid, shape label). */
+            #console.console-active svg {
+                stroke: rgb(55, 194, 0);
+            }
+            #console.console-active {
+                background-color: rgba(55, 194, 0, 0.10);
+                border-color: rgba(55, 194, 0, 0.35);
+            }
+
             /* Icones SVG inline dans les boutons du toolbar.
                Stroke-based, currentColor pour heriter des etats. */
             #toolbar button svg {
@@ -391,6 +403,7 @@
     <body>
         <div id="toolbar">
             <button id="grid" title="Afficher / masquer la grille (G, molette pour ajuster le pas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12"/><line x1="6" y1="2" x2="6" y2="14"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="2" y1="10" x2="14" y2="10"/></svg><span id="gridText"></span></button>
+            <button id="console" title="Afficher / masquer la console (C, raccourci)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2h12v9H8l-3 3v-3H2z"/><line x1="4" y1="5.5" x2="10" y2="5.5"/><line x1="4" y1="8" x2="12" y2="8"/></svg></button>
             <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
             <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
             <span class="toolbar-sep"></span>
@@ -465,6 +478,16 @@
         </div>
         <script type="application/javascript" src="./draw.js"></script>
         <script type="application/javascript" src="./convert.js"></script>
+        <script type="application/javascript" src="./constants.js"></script>
+        <script type="application/javascript" src="./state.js"></script>
+        <script type="application/javascript" src="./geometry.js"></script>
+        <script type="application/javascript" src="./history.js"></script>
+        <script type="application/javascript" src="./shapes.js"></script>
+        <script type="application/javascript" src="./scene_ops.js"></script>
+        <script type="application/javascript" src="./hud.js"></script>
+        <script type="application/javascript" src="./modals.js"></script>
+        <script type="application/javascript" src="./import_export.js"></script>
+        <script type="application/javascript" src="./events.js"></script>
         <script type="application/javascript" src="./main.js"></script>
         <script>doit()</script>
     </body>

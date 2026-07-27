@@ -52,6 +52,7 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
 | `Ctrl+S` | Sauvegarder la scène en JSON |
 | `Ctrl+0` | Réinitialiser le zoom (100 %, recentré sur l'origine) |
 | `G` | Afficher / masquer la grille |
+| `C` | Afficher / masquer la console (overlay `#messageBoard`) |
 | `?` | Afficher / masquer l'aide |
 | **Souris** | |
 | wheel sur canvas | Zoom (centré sur curseur) ou pivote si 2+ points sélectionnés |
@@ -125,26 +126,64 @@ Un drop direct d'un fichier JSON sur le canvas déclenche aussi l'import.
 
 ## Organisation du code
 
+`main.js` (anciennement ~2000 lignes monolithique) a été éclaté en plusieurs fichiers pour rester navigable. Tous les modules sont du **vanilla JavaScript** partagé sur le scope global via `<script>` séquentiels (pas d'`import`/`export` ESM, pas de bundler). Chaque module déclare ses fonctions en global (`foo = () => {}`) ou en `let`/`const` lexical global au top-level du script.
+
+### Ordre de chargement (`main.html`)
+
+L'ordre ci-dessous est important à cause du TDZ sur les `let` au top-level : tout symbole consommé doit venir d'un script **précédent**. Les fonctions peuvent référencer librement les symboles « en aval » **dans leur corps** (résolution tardive à l'appel).
+
+```
+draw.js          → primitives de rendu (points, lignes, triangles, axes, grille)
+convert.js       → parseur meshes + auto-import URL
+constants.js     → TAU, couleurs, patterns, limites zoom/grid, clés localStorage
+state.js         → let shared state (ctx, shapes, selection, pan/grab state) + goToShape/prev/next/add/delete
+geometry.js      → modelToScreen/screenToModel, snapToGrid, helpers (addPoint, computeOrthogonalProjection…)
+history.js       → cloneTriArray/scene, saveState, undo, redo
+shapes.js        → accesseurs forme active (getAllVertices, getPointsAtSamePosition) + findNearestX + updateShapeHud
+scene_ops.js     → mutations des vertices (rotateEachShapeAroundPivot, rotateSelectedPoints, deleteSelectedPoint, migration legacy)
+hud.js           → log, toggleGrid, updateMouseHover, updateCoordsDisplay, updateZoomDisplay
+modals.js        → showHelp/Hide, showResetModal/Hide, resetAll, getStoredImportMode/saveStoredImportMode
+import_export.js → serializeState, persistState, buildShapesFromPayload, loadState, saveMesh, importMeshFromText, showImportModal, applyImport, importMeshFromFile
+events.js        → tous les addEventListener (bouton, board, document, window) + queries/initialisation DOM
+main.js          → thin entry : `doit = () => { loadState(); drawBoard(); updateShapeHud(); updateZoomDisplay(); }`
+                  → invoqué inline (`<script>doit()</script>`) après tous les modules
+```
+
+### Rôle par fichier
+
 | Fichier | Rôle |
 |---|---|
-| `main.html` | Layout, CSS (toolbar, HUD, modales), déclaration des boutons et du modal d'aide, monte les scripts. |
-| `main.js` | Logique applicative : état (`ctx`, `shapes`, sélection, zoom, `viewCenter`), événements souris / clavier, dessin, undo, persistance, import / export. |
+| `main.html` | Layout, CSS (toolbar, HUD, modales), déclaration des boutons et du modal d'aide, monte les scripts dans le bon ordre. |
+| `main.js` | Point d'entrée : ne contient que `doit()` (boot). Toute la logique a été déplacée dans les modules ci-dessous. |
 | `draw.js` | Primitives de rendu (points, lignes, triangles, axes, grille). Toutes les coordonnées passent par `modelToScreen()` pour tenir compte du zoom et du `viewCenter`. |
 | `convert.js` | Parseur du format « meshes » → JSON multi-formes + import par fichier + auto-import via `?autoimport=<base64-urlsafe>` (pratique pour tests headless). |
+| `constants.js` | Constantes globales : couleurs, patterns de dash, limites zoom/grid/history/rotation, clés localStorage. Charge en premier car tout le monde y lit. |
+| `state.js` | `let` partagés (viewport `ctx`, scene `shapes`/`activeShapeIndex`, sélection, état pan/grab, timers wheel-rotate, `pendingRotation` pour la migration legacy) + navigation entre formes (`goToShape`, `prevShape`, `nextShape`, `addShape`, `deleteShape`). |
+| `geometry.js` | Projection model↔screen (`modelToScreen`/`screenToModel`), `snapToGrid`, et helpers de géométrie pure (`adjacentPoints`, `computeOrthogonalProjection`, `scalarProduct`, `isInsideSegmentByDot`, `addPoint`). |
+| `history.js` | Undo/redo : `cloneTriArray` (preserve sharing intra-forme), `cloneScene`, `saveState`, `undo`, `redo`. |
+| `shapes.js` | Accesseurs forme active (`getAllVertices`, `getPointsAtSamePosition`, `isPointSelected`, `selectAllPoints`) + recherche géométrique (`findNearestPoint`, `findNearestLine`, `findSelectedLine`) + `updateShapeHud`. |
+| `scene_ops.js` | Les seules fonctions qui mutent les coordonnées des vertices partagés : rotation héritée via `pendingRotation`, rotation de scène via AltGr + molette, rotation des points sélectionnés, suppression d'un point. Chaque opération fait `saveState()` au premier tick d'un geste et `persistState()` après la fin du geste (debounce 400 ms). |
+| `hud.js` | Affichages : `log` (console overlay `#messageBoard`), grille (`toggleGrid`, `updateGridButtonText`), hover in-canvas (`updateMouseHover`), `updateCoordsDisplay`, `updateZoomDisplay`. |
+| `modals.js` | `showHelp`/`hideHelp`, `showResetModal`/`hideResetModal`, `resetAll` (vide la scène + reset du viewport), et les helpers de persistance du mode d'import (`getStoredImportMode`/`saveStoredImportMode`). |
+| `import_export.js` | Pipeline import/export : `serializeState`, `persistState` (debounce 400 ms), `buildShapesFromPayload`, `loadState` (avec migration legacy viewport-rotation), `saveMesh`, `importMeshFromText`, `showImportModal`, `applyImport`, `importMeshFromFile` (drop ou picker fichier). |
+| `events.js` | Cage de tous les `addEventListener` (bouton toolbar, board wheel/dragover/drop, document mousedown/mouseup/mousemove/keydown/contextmenu, modale backdrop, `beforeunload`). Contient aussi les queries DOM runtime (`let board = …`, `let _ctx = …`, `let helpModal = …`, `let resetModal = …`). Charge avant `main.js` qui définit `doit`. |
 
-### Conventions
+### Conventions préservées
 
 - **Y inversé** : `modelToScreen.y` inverse l'axe Y (un `model.y` plus grand s'affiche plus haut sur le canvas, comme dans un repère mathématique). Garder cette convention à l'esprit quand on touche au panning.
-- **`ctx`** : `{ center: { x: 50, y: 50 }, viewCenter: { x: 0, y: 0 }, zoomLevel: 1 }`. `center` est la position en pixels du centre du repère modèle sur le canvas ; `viewCenter` est le point du modèle présentement centré ; `zoomLevel` est un multiplicateur.
+- **`ctx`** : `{ center, viewCenter, zoomLevel, rotationTracking }`. `center` est la position en pixels du centre du repère modèle sur le canvas ; `viewCenter` est le point du modèle présentement centré ; `zoomLevel` est un multiplicateur ; `rotationTracking` est un compteur HUD-only d'angle cumulé (voir AltGr + molette).
 - **Pas de framework** : pas de bundler, pas de transpileur. Le serveur de dev est juste un `http.server` Python.
+- **Style de déclaration** : on mélange `let foo = …` (pour les variables que d'autres fichiers lisent au runtime) et `foo = () => {}` / `foo = …` (assignation implicite = global property, éviterait le TDZ). Cette dualité est préservée du code original ; les futurs développements peuvent choisir librement.
 
 ## Astuces de développement
 
 - Lancer le serveur en arrière-plan et recharger la page suffit pour itérer sur `main.js` / `draw.js` / `convert.js` (pas de HMR).
 - Pour tester un import meshes sans picker (headless / script) :
   `http://localhost:8000/main.html?autoimport=<texte-base64-URL-safe>`
-- Vérifier la syntaxe après modifications :
-  `node --check main.js && node --check draw.js && node --check convert.js`
+- Vérifier la syntaxe après modifications (couvre les 12 modules après le split) :
+  `for f in *.js; do node --check "$f" || break; done`
+- Exécuter les smoke tests unitaires (23 tests sur `geometry.js` + `history.js` purely, sans DOM) :
+  `node test.js`
 - La persistance `localStorage` survit au rechargement — utile de l'effacer depuis les devtools entre deux tests (`Clear storage`).
 
 ## Licence
