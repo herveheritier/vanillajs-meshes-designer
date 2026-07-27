@@ -63,21 +63,22 @@ drawSelectionBox = (p1, p2) => {
     _ctx.setLineDash([])
 }
 
-// L'axe suit l'origine (0,0) du modele en coords SCREEN. Crucial :
-// on utilise ici une projection SANS rotation, pas modelToScreen.
-// Avec le geste AltGr + molette, la scene entiere tourne autour
-// du curseur : si on deleguait a modelToScreen, l'origine (0,0)
-// projetée bougerait sur l'ecran (parce que la rotation tourne
-// autour du curseur, pas de l'origine), et les axes suivraient
-// ce mouvement. Or les axes representent le REPERE modele lui-
-// meme, qui doit rester fixe ; seul le contenu (triangles, groupes
-// de points) tourne. On calcule donc la position screen de (0,0)
-// "comme si la rotation etait zero" (formule directe de l'ancien
-// modelToScreen). Resultat : les axes sont ancres sur l'ecran
-// independamment de ctx.rotation, et l'utilisateur peut faire
-// tourner la scene sans perdre le repere. Si l'origine est hors
-// canvas après un zoom, l'axe n'est pas tracé (un seul stroke pour
-// eviter de casser le motif dash).
+// L'axe suit l'origine (0,0) du modele en coords SCREEN. On utilise
+// ici une projection directe (camera transform : zoom + viewCenter
+// + center) plutot que modelToScreen. Numeriquement, depuis la
+// suppression de la rotation de viewport, les deux donnent le meme
+// resultat pour le point (0,0) ; mais la formule directe reste plus
+// explicite ("l'axe depend uniquement du viewport") et protege
+// contre tout couplage futur si modelToScreen evolue (filtres,
+// snapping, etc).
+//
+// Avec le geste AltGr + molette, la "rotation de scene" mute les
+// vertices de chaque forme (cf. rotateEachShapeAroundPivot dans
+// main.js) ; les axes representent le REPERE modele (frame de
+// reference fixe), donc ils restent ancres sur l'ecran pendant que
+// le contenu tourne autour. Si l'origine est hors canvas apres un
+// zoom, l'axe n'est pas trace (un seul stroke pour eviter de casser
+// le motif dash).
 drawAxis = () => {
     let originScreenX = ctx.center.x + (0 - ctx.viewCenter.x) * ctx.zoomLevel
     let originScreenY = ctx.center.y - (0 - ctx.viewCenter.y) * ctx.zoomLevel
