@@ -36,7 +36,7 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
   - **wheel** : zoom centré sur le curseur (×1.1 par cran, clamp `[0.1, 10]`) ; pivote les points sélectionnés si 2+ sont sélectionnés.
   - **middle-click + drag** : déplace l'origine (pan du `viewCenter`), le contenu suit le curseur (convention « grab content »).
   - **Ctrl+0** : réinitialise le zoom à 100 % et `viewCenter` à l'origine.
-- **HUD bas-gauche** : indicateur de zoom (`1.2x pos(45, -30)`) et coordonnées du curseur en temps réel.
+- **HUD bas-gauche** : indicateur de zoom (`1.2x pos(45, -30)`, plus `rot X°` cumulatif après une AltGr + molette autour du curseur) et coordonnées du curseur en temps réel.
 - **Persistance** : la scène et le zoom/pan sont sauvegardés dans `localStorage` et restaurés au rechargement.
 - **Annuler / Rétablir** : `Ctrl+Z` / `Ctrl+⇧+Z` / `Ctrl+Y`.
 - **Import / Export** : JSON de scène (round-trip exact) ou format texte « meshes » (1 ligne = 1 forme).
@@ -55,6 +55,7 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
 | `?` | Afficher / masquer l'aide |
 | **Souris** | |
 | wheel sur canvas | Zoom (centré sur curseur) ou pivote si 2+ points sélectionnés |
+| **altgr + wheel** sur canvas | **Rotation de chaque forme autour du curseur** (5°/cran, cumulatif, réinitialisable par Ctrl+0). Le pivot est la position de la souris dans la scène (coords modèle sous le curseur, suivi à chaque tick si elle bouge). |
 | middle-click + drag canvas | Pan (déplace `viewCenter` dans le sens du drag) |
 | **Ctrl+Alt + clic-droit + drag** canvas (AltGr = Right Alt sur la plupart des claviers) | **Déplacer TOUTES les formes ensemble** (delta uniforme, quasi-mode : relâcher ne change rien en cours de drag) |
 | middle-click sur bouton grille | Réinitialise le pas de la grille |
