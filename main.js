@@ -20,7 +20,31 @@ let ctx = {
     // point du modele qui apparait au centre du board. Initialement
     // l'origine (0,0) du modele.
     viewCenter: { x: 0, y: 0 },
-    zoomLevel: 1
+    zoomLevel: 1,
+    // Rotation de la scene entiere (radians, sens CCW). 0 = pas de
+    // rotation. Persistee en localStorage avec zoomLevel/viewCenter.
+    // La rotation est appliquee comme transformation de viewport :
+    // les points du modele ne sont jamais re-ecrits, seul
+    // modelToScreen/screenToModel tiennent compte de ctx.rotation
+    // autour de ctx.rotationPivot. Resultat : clic-ajout / hover /
+    // drag / snap-to-grid continuent de fonctionner sans changement
+    // (ils passent par screenToModel et trouvent le bon model coord
+    // automatiquement).
+    rotation: 0,
+    // Pivot de la rotation en COORDS SCREEN (pixels du board, PAS
+    // en model units). Mis a jour a chaque AltGr + wheel tick a
+    // la position screen du curseur. La rotation est appliquee
+    // dans modelToScreen/screenToModel comme une rotation dans
+    // l'espace ECRAN autour de ce pivot : camera transform d'abord
+    // (modele -> screen-pre-rotation), puis R(rotation) dans l'ecran
+    // autour du pivot. Ce choix (vs rotation en coords modele
+    // autour d'un pivot modele) elimine le drift qui s'accumulait
+    // quand on alternait +/- : avec un pivot MODEL, apres chaque
+    // tick le pivot arrivait au centre de l'ecran et le tick
+    // suivant prenait un AUTRE model coord sous le curseur comme
+    // nouveau pivot (= drift). Avec un pivot SCREEN, la position
+    // du curseur reste fixe sous chaque tick, peu importe le sens.
+    rotationPivot: { x: 0, y: 0 }
 }
 
 // Scene = liste de formes ; SEULE la forme indexee par activeShapeIndex
@@ -165,16 +189,66 @@ snapToGrid = (point) => {
 // s = m + ctx.center (mappage direct sur le board).
 modelToScreen = (model) => {
     if (!model) return undefined
+    // Etape 1 : camera transform (modele -> screen-pre-rotation).
+    // Projection classique qui tient compte du zoom et du pan
+    // (viewCenter). A ce stade, pas de rotation.
+    const sx_pre = ctx.center.x + (model.x - ctx.viewCenter.x) * ctx.zoomLevel
+    const sy_pre = ctx.center.y - (model.y - ctx.viewCenter.y) * ctx.zoomLevel
+    // Cas rapide : rotation nulle -> on retourne directement la
+    // position screen-pre-rotation sans appeler Math.cos/sin
+    // (sinon on plombe le hot-path du rendu qui dessine des
+    // dizaines voire centaines de points par drawBoard).
+    if (ctx.rotation === 0) return { x: sx_pre, y: sy_pre }
+    // Etape 2 : rotation CCW d'angle ctx.rotation dans l'espace
+    // ECRAN autour du pivot en pixels de board. Out : position
+    // finale du model point sur le canvas. En travaillant en
+    // espace ecran, on garantit que la position screen du
+    // curseur reste fixe sous chaque tick de AltGr + molette :
+    // si on capture le pivot comme position du curseur, alors
+    // modelToScreen(M_old; new_theta, pivot=curseur_screen) =
+    // curseur_screen. Effet benefique : en alternant +5deg puis
+    // -5deg la scene revient a l'identite (plus de drift).
+    const cosR = Math.cos(ctx.rotation)
+    const sinR = Math.sin(ctx.rotation)
+    const px = ctx.rotationPivot.x
+    const py = ctx.rotationPivot.y
+    const dx = sx_pre - px
+    const dy = sy_pre - py
     return {
-        x: ctx.center.x + (model.x - ctx.viewCenter.x) * ctx.zoomLevel,
-        y: ctx.center.y - (model.y - ctx.viewCenter.y) * ctx.zoomLevel
+        x: px + dx * cosR - dy * sinR,
+        y: py + dx * sinR + dy * cosR
     }
 }
 screenToModel = (screen) => {
     if (!screen) return undefined
+    // Cas rapide sans rotation : on reste sur la formule
+    // symetrique de modelToScreen pour eviter Math.cos/sin quand
+    // ctx.rotation = 0 (un screenToModel rapide = drag/hover
+    // fluides, c'est appele a chaque mousemove).
+    if (ctx.rotation === 0) {
+        return {
+            x: (screen.x - ctx.center.x) / ctx.zoomLevel + ctx.viewCenter.x,
+            y: ctx.viewCenter.y - (screen.y - ctx.center.y) / ctx.zoomLevel
+        }
+    }
+    // Etape 1 : rotation inverse (-ctx.rotation) dans l'espace
+    // ECRAN autour du pivot (le meme pivot que modelToScreen).
+    // On retrouve ainsi la position screen-pre-rotation du point
+    // (avant que la rotation n'ait ete appliquee dans l'ecran).
+    // R(-theta) est l'inverse exact de l'etape 2 de modelToScreen.
+    const cosR = Math.cos(ctx.rotation)
+    const sinR = Math.sin(ctx.rotation)
+    const px = ctx.rotationPivot.x
+    const py = ctx.rotationPivot.y
+    const dx = screen.x - px
+    const dy = screen.y - py
+    const sx_pre = px + dx * cosR + dy * sinR
+    const sy_pre = py - dx * sinR + dy * cosR
+    // Etape 2 : inverse de la camera transform (sx_pre, sy_pre
+    // -> coords modele).
     return {
-        x: (screen.x - ctx.center.x) / ctx.zoomLevel + ctx.viewCenter.x,
-        y: ctx.viewCenter.y - (screen.y - ctx.center.y) / ctx.zoomLevel
+        x: (sx_pre - ctx.center.x) / ctx.zoomLevel + ctx.viewCenter.x,
+        y: ctx.viewCenter.y - (sy_pre - ctx.center.y) / ctx.zoomLevel
     }
 }
 let selectedPoints = []
@@ -674,15 +748,23 @@ document.addEventListener('keydown',(e) => {
         e.preventDefault()
         saveMesh()
     } else if((e.ctrlKey || e.metaKey) && (e.code === 'Digit0' || e.key === '0')) {
-        // Reinitialise le zoom et le viewCenter (100% + origine modele
-        // au centre du board). Memo pour eviter un double-fire sur
-        // repeat clavier. apres le reset, on redessine et on met a
-        // jour le HUD pour que l'indicateur tombe a "1.0x".
+        // Reinitialise le zoom, le viewCenter et la rotation de la
+        // scene (100% + origine modele au centre, scene non
+        // rotatee). Memo pour eviter un double-fire sur repeat
+        // clavier. apres le reset, on redessine et on met a jour le
+        // HUD pour que l'indicateur tombe a "1.0x rot 0".
         if (e.repeat) return
         e.preventDefault()
         ctx.zoomLevel = 1
         ctx.viewCenter.x = 0
         ctx.viewCenter.y = 0
+        ctx.rotation = 0
+        // rotationPivot en coords SCREEN : on le place au centre du
+        // canvas (valeur saine quand la rotation est nulle ; le
+        // prochain AltGr+wheel va le reassigner a la position reelle
+        // du curseur).
+        ctx.rotationPivot.x = ctx.center.x
+        ctx.rotationPivot.y = ctx.center.y
         drawBoard()
         if (lastMousePos) updateMouseHover(lastMousePos)
         updateZoomDisplay()
@@ -741,22 +823,40 @@ if (resetModal) resetModal.addEventListener('click', (e) => {
 
 let isSelectionDimmed = false
 
-// Molette : pivote si 2+ points selectionnes, sinon zoom centre sur
-// le curseur. Le pan du viewCenter se fait separement, via clic-milieu
-// (button===1) sur le board + drag souris, voir resolveMouseMoveOnBoard.
+// Molette : trois branches dans l'ordre suivant :
+//   (1) AltGr + molette = rotation de la scene ENTIERE autour du
+//       curseur (chacun des N wheel ticks pivote d'un meme angle) ;
+//   (2) 2+ points selectionnes = rotation des points selectionnes
+//       autour du point sous le curseur (comportement historique) ;
+//   (3) sinon : zoom centre sur le curseur.
+// Le pan du viewCenter se fait separement, via clic-milieu
+// (button===1) sur le board + drag souris, voir
+// resolveMouseMoveOnBoard.
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 10
 const ZOOM_STEP_FACTOR = 1.1
+const ROTATE_STEP = (5 * Math.PI) / 180
 board.addEventListener('wheel', (e) => {
     e.preventDefault()
     let boardRect = board.getBoundingClientRect()
     let cursorScreen = { x: e.x - boardRect.x, y: e.y - boardRect.y }
+    // Detection AltGr : on reutilise la meme primitive robuste que
+    // dans beginGrabbing (Ctrl+Alt OU getModifierState('AltGraph'))
+    // pour eviter les conflits avec le WM qui peuvent intercepter
+    // Alt seul.
+    const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))
+    if (isAltGrDown) {
+        let angle = e.deltaY < 0 ? -ROTATE_STEP : ROTATE_STEP
+        rotateSceneAroundCursor(cursorScreen, angle)
+        return
+    }
     let canRotate = selectedPoints.length >= 2 && !isSelectionDimmed
     if (canRotate) {
         // Ancien comportement : rotation autour du model point sous
-        // le curseur.
+        // le curseur (uniquement les points selectionnes de la forme
+        // active).
         let center = screenToModel(cursorScreen)
-        let angleStep = (5 * Math.PI) / 180
+        let angleStep = ROTATE_STEP
         let angle = e.deltaY < 0 ? -angleStep : angleStep
         rotateSelectedPoints(center, angle)
     } else {
@@ -791,6 +891,58 @@ board.addEventListener("drop", (e) => {
 
 let isWheelRotating = false
 let wheelRotateTimer = undefined
+
+// Scene rotation par AltGr + wheel. Meme pattern que
+// rotateSelectedPoints : saveState au premier tick d'un geste
+// (avec timer 400ms pour la persistance), selectedPoints vide pour
+// eviter que le surlignage cyan ne trompe l'utilisateur sur ce qui
+// bouge. Le pivot est capture a CHAQUE tick (le model coord sous
+// le curseur PRE-rotation) ; comme c'est le pivot, le curseur
+// reste visuellement fixe apres chaque tick (propriete classique
+// d'une rotation 2D autour d'un point). ctx.rotation est cumule et
+// module par 2*PI pour eviter toute derive de precision sur les
+// longs gestes.
+let isSceneRotating = false
+let sceneRotateTimer = undefined
+
+rotateSceneAroundCursor = (cursorScreen, angle) => {
+    // Le pivot de rotation est en COORDS SCREEN (pixels de board)
+    // egal a la position du curseur sur ce tick. modelToScreen
+    // applique la rotation dans l'espace ecran autour de ce
+    // pivot : la position screen du curseur reste donc
+    // visuellement fixe apres chaque tick. Sans ca, en
+    // capturant un pivot MODEL via screenToModel(pre-rotation),
+    // la projection du pivot atterrissait au CENTRE de l'ecran
+    // apres le tick et le cursor 'perdait' son ancrage : le tick
+    // suivant prenait alors un AUTRE model coord sous le curseur
+    // comme nouveau pivot, ce qui causait le drift cumule
+    // (accelere par les sens alternes +/-).
+    ctx.rotationPivot.x = cursorScreen.x
+    ctx.rotationPivot.y = cursorScreen.y
+    // Modulo borne pour eviter que ctx.rotation derive vers
+    // l'infini sur les longs gestes. `(r % TAU + TAU) % TAU`
+    // garde la valeur dans [0, TAU) y compris quand angle est
+    // negatif (le simple `% TAU` peut renvoyer un resultat
+    // negatif pour les angles negatifs).
+    ctx.rotation = ((ctx.rotation + angle) % TAU + TAU) % TAU
+    if (!isSceneRotating) {
+        saveState()
+        isSceneRotating = true
+        // Vider la selection pour eviter que le surlignage cyan
+        // laisse penser que seuls les points selectionnes
+        // bougent. Comme move-all : toutes les formes suivent.
+        selectedPoints = []
+        log('AltGr + molette detecte - rotation scene autour du curseur (5 deg/tick)')
+    }
+    clearTimeout(sceneRotateTimer)
+    sceneRotateTimer = setTimeout(() => {
+        isSceneRotating = false
+        persistState()
+    }, 400)
+    drawBoard()
+    if (lastMousePos) updateMouseHover(lastMousePos)
+    updateZoomDisplay()
+}
 
 rotateSelectedPoints = (center, angle) => {
     if (selectedPoints.length < 2 || isSelectionDimmed) return
@@ -1145,18 +1297,32 @@ updateCoordsDisplay = (cursorScreen) => {
     div.textContent = `curseur ${cursorTxt}  plus proche ${nearestTxt}`
 }
 
-// Affiche le niveau de zoom + la position du viewCenter dans le HUD
-// bas-gauche (#zoomDisplay). Format compact : "1.2x pos(45, -30)".
+// Affiche le niveau de zoom + la position du viewCenter + la
+// rotation de la scene dans le HUD bas-gauche (#zoomDisplay).
+// Format compact : "1.2x pos(45, -30)" ; quand la scene est
+// pivotee, on ajoute "  rot 45°" pour donner un feedback visuel
+// immediat (sinon l'utilisateur n'a aucun moyen de savoir qu'il a
+// fait tourner la scene si le coin haut-gauche revient pile au
+// meme endroit apres rotation).
 // Mise a jour appelee : initialisation, restauration d'etat
-// (loadState), apres chaque tick de molette (pan ou zoom), apres
-// Ctrl+0, et apres chaque commande qui modifie viewCenter (pan).
+// (loadState), apres chaque tick de molette (pan, zoom, AltGr +
+// scene rotation), apres Ctrl+0, et apres chaque commande qui
+// modifie viewCenter (pan).
 // textContent pour eviter un reflow.
 updateZoomDisplay = () => {
     let div = document.querySelector('#zoomDisplay')
     if (!div) return
     let vc = ctx.viewCenter
-    div.textContent = ctx.zoomLevel.toFixed(1) + 'x  pos(' +
+    let text = ctx.zoomLevel.toFixed(1) + 'x  pos(' +
         Math.round(vc.x) + ', ' + Math.round(vc.y) + ')'
+    if (ctx.rotation !== 0) {
+        // Affichage en degres plutot qu'en radians pour la
+        // lisibilite (les utilisateurs pensent en degres). Le
+        // caractere degre est U+00B0, distinct du 'o' minuscule.
+        let deg = Math.round(ctx.rotation * 180 / Math.PI)
+        text += '  rot ' + deg + '\u00b0'
+    }
+    div.textContent = text
 }
 
 resolveMouseClickOnBoard = (e) =>  {
@@ -1380,7 +1546,9 @@ serializeState = () => {
         activeGrid: activeGrid,
         GRID_STEP: GRID_STEP,
         zoomLevel: ctx.zoomLevel,
-        viewCenter: { x: ctx.viewCenter.x, y: ctx.viewCenter.y }
+        viewCenter: { x: ctx.viewCenter.x, y: ctx.viewCenter.y },
+        rotation: ctx.rotation,
+        rotationPivot: { x: ctx.rotationPivot.x, y: ctx.rotationPivot.y }
     })
 }
 
@@ -1460,6 +1628,19 @@ loadState = () => {
         if (data.viewCenter && typeof data.viewCenter.x === 'number' && typeof data.viewCenter.y === 'number') {
             ctx.viewCenter.x = data.viewCenter.x
             ctx.viewCenter.y = data.viewCenter.y
+        }
+        // Rotation de la scene + pivot : on restaure avec clamp sur
+        // 2*PI (un chiffre aberrant / > 100 tours est ramene a sa
+        // valeur equivalente) et garde le pivot que si ses deux
+        // coordonnees sont des nombres finis.
+        if (typeof data.rotation === 'number' && Number.isFinite(data.rotation)) {
+            let r = data.rotation % (2 * Math.PI)
+            if (r < 0) r += 2 * Math.PI
+            ctx.rotation = r
+        }
+        if (data.rotationPivot && typeof data.rotationPivot.x === 'number' && typeof data.rotationPivot.y === 'number' && Number.isFinite(data.rotationPivot.x) && Number.isFinite(data.rotationPivot.y)) {
+            ctx.rotationPivot.x = data.rotationPivot.x
+            ctx.rotationPivot.y = data.rotationPivot.y
         }
         // Mise a jour du HUD zoom apres restauration (sinon l'indicateur
         // reste a la valeur par defaut affichee dans le HTML initial).
@@ -1754,8 +1935,19 @@ resetAll = () => {
     clearTimeout(wheelRotateTimer)
     wheelRotateTimer = undefined
     isWheelRotating = false
+    // Reset complet du viewport : on remet la rotation a zero
+    // (avec son pivot en coords SCREEN place au centre du canvas,
+    // valeur saine pour le prochain AltGr+wheel) pour que la scene
+    // vide demarre sans transformation.
+    ctx.zoomLevel = 1
+    ctx.viewCenter.x = 0
+    ctx.viewCenter.y = 0
+    ctx.rotation = 0
+    ctx.rotationPivot.x = ctx.center.x
+    ctx.rotationPivot.y = ctx.center.y
     persistState()
     drawBoard()
+    updateZoomDisplay()
     updateShapeHud()
     log('Reset OK')
 }
