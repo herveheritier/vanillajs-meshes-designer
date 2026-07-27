@@ -63,26 +63,38 @@ drawSelectionBox = (p1, p2) => {
     _ctx.setLineDash([])
 }
 
-// L'axe suit l'origine (0,0) du modele, projetée à l'écran via
-// modelToScreen. Si l'origine est hors canvas après un zoom, l'axe
-// n'est pas tracé (un seul stroke pour eviter de casser le motif
-// dash). Les coordonnées model restent la source de vérité.
+// L'axe suit l'origine (0,0) du modele en coords SCREEN. Crucial :
+// on utilise ici une projection SANS rotation, pas modelToScreen.
+// Avec le geste AltGr + molette, la scene entiere tourne autour
+// du curseur : si on deleguait a modelToScreen, l'origine (0,0)
+// projetée bougerait sur l'ecran (parce que la rotation tourne
+// autour du curseur, pas de l'origine), et les axes suivraient
+// ce mouvement. Or les axes representent le REPERE modele lui-
+// meme, qui doit rester fixe ; seul le contenu (triangles, groupes
+// de points) tourne. On calcule donc la position screen de (0,0)
+// "comme si la rotation etait zero" (formule directe de l'ancien
+// modelToScreen). Resultat : les axes sont ancres sur l'ecran
+// independamment de ctx.rotation, et l'utilisateur peut faire
+// tourner la scene sans perdre le repere. Si l'origine est hors
+// canvas après un zoom, l'axe n'est pas tracé (un seul stroke pour
+// eviter de casser le motif dash).
 drawAxis = () => {
-    let origin = modelToScreen({ x: 0, y: 0 })
+    let originScreenX = ctx.center.x + (0 - ctx.viewCenter.x) * ctx.zoomLevel
+    let originScreenY = ctx.center.y - (0 - ctx.viewCenter.y) * ctx.zoomLevel
     let w = board.width
     let h = board.height
     _ctx.setLineDash(PATTERN_AXIS)
     _ctx.strokeStyle = COLOR_AXIS
-    if (origin.y >= 0 && origin.y <= h) {
+    if (originScreenY >= 0 && originScreenY <= h) {
         _ctx.beginPath()
-        _ctx.moveTo(0, origin.y)
-        _ctx.lineTo(w, origin.y)
+        _ctx.moveTo(0, originScreenY)
+        _ctx.lineTo(w, originScreenY)
         _ctx.stroke()
     }
-    if (origin.x >= 0 && origin.x <= w) {
+    if (originScreenX >= 0 && originScreenX <= w) {
         _ctx.beginPath()
-        _ctx.moveTo(origin.x, 0)
-        _ctx.lineTo(origin.x, h)
+        _ctx.moveTo(originScreenX, 0)
+        _ctx.lineTo(originScreenX, h)
         _ctx.stroke()
     }
 }
