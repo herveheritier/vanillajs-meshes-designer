@@ -846,10 +846,30 @@ board.addEventListener('wheel', (e) => {
     // Alt seul.
     const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))
     if (isAltGrDown) {
+        // Premier tick d'une gesture AltGlr + wheel : on capture
+        // la position du curseur comme pivot de rotation. Les
+        // ticks suivants de la meme gesture reutilisent ce meme
+        // pivot (lecture de altGrRotationPivot), ce qui verouille
+        // le centre de rotation au point exact ou l'utilisateur a
+        // commence a wheeler ; il n'y a plus de glissement si le
+        // poignet micro-drift entre ticks (= ancien bug "le
+        // centre de rotation fuit le curseur" rapporte par
+        // l'utilisateur).
+        if (!altGrRotationPivot) {
+            altGrRotationPivot = { x: cursorScreen.x, y: cursorScreen.y }
+        }
         let angle = e.deltaY < 0 ? -ROTATE_STEP : ROTATE_STEP
-        rotateSceneAroundCursor(cursorScreen, angle)
+        rotateSceneAroundCursor(altGrRotationPivot, angle)
         return
     }
+    // Sans AltGlr : on libere le pivot capture pour que la
+    // prochaine gesture AltGlr demarre sur un nouveau point.
+    // (= relacher AltGlr briavement = "je veux recadrer la
+    // rotation autour d'un autre point de la scene".) Edge case
+    // : si l'utilisateur voitures avec un doigt sans AltGlr au
+    // milieu d'une sequence AltGlr, le pivot est reset mais la
+    // rotation cumulee reste (pas catastrophe).
+    if (altGrRotationPivot) altGrRotationPivot = undefined
     let canRotate = selectedPoints.length >= 2 && !isSelectionDimmed
     if (canRotate) {
         // Ancien comportement : rotation autour du model point sous
@@ -904,19 +924,39 @@ let wheelRotateTimer = undefined
 // longs gestes.
 let isSceneRotating = false
 let sceneRotateTimer = undefined
+// Pivot de rotation ALTGR capture au PREMIER tick d'une gesture
+// AltGlr + wheel et verrouille jusqu'a ce que la gesture soit
+// liberee (wheel handler remet a undefined quand isAltGlr devient
+// faux). Sans cet etat, le pivot etait redefini a chaque tick
+// sur la nouvelle position du curseur ; la moindre micro-derive
+// du poignet entre ticks entrainait un petit glissement de
+// contenu au debut de la gesture et le sentiment que "le centre
+// de rotation fuit le curseur". Verouille sur le premier tick
+// de la gesture -> curseur exactement sous le contenu pendant
+// tout le geste, meme si le poignet bouge entre ticks.
+// Reinitialise explicitement par Ctrl+0 / resetAll (meme si
+// ces deux chemins ne sont pas censes etre traverses pendant
+// un geste AltGlr, on garde la coherence du state).
+let altGrRotationPivot = undefined
 
-rotateSceneAroundCursor = (cursorScreen, angle) => {
-    // Le pivot de rotation est en COORDS SCREEN (pixels de board)
-    // egal a la position du curseur sur ce tick. modelToScreen
-    // applique la rotation dans l'espace ecran autour de ce
-    // pivot : la position screen du curseur reste donc
-    // visuellement fixe apres chaque tick. Sans ca, en
-    // capturant un pivot MODEL via screenToModel(pre-rotation),
-    // la projection du pivot atterrissait au CENTRE de l'ecran
-    // apres le tick et le cursor 'perdait' son ancrage : le tick
-    // suivant prenait alors un AUTRE model coord sous le curseur
-    // comme nouveau pivot, ce qui causait le drift cumule
-    // (accelere par les sens alternes +/-).
+rotateSceneAroundCursor = (pivotScreen, angle) => {
+    // Le pivot est en COORDS SCREEN (pixels de board), VERROUILLE
+    // par le wheel handler au premier tick de la gesture AltGlr +
+    // wheel et conserve tel quel pour tous les ticks suivants de
+    // la meme gesture (cf. altGrRotationPivot dans le wheel
+    // handler). La rotation est appliquee dans l'espace ecran
+    // autour de ce pivot == le contenu pivote autour d'un meme
+    // point FIXE pendant tout le geste, plus de glissement si le
+    // poignet micro-drift entre ticks.
+    //
+    // modelToScreen applique la rotation dans l'espace ecran
+    // autour de ce pivot : la position screen du pivot est donc
+    // INVARIANTE sous chaque tick (propriete classique d'une
+    // rotation 2D autour d'un point). En alternant +5deg/-5deg,
+    // le contenu revient exactement sur sa position initiale.
+    // (cf. commit a2a4365 pour le passage de rotation en coords
+    // modele a rotation en coords ecran, qui elimine le drift
+    // cumule.)
     ctx.rotationPivot.x = cursorScreen.x
     ctx.rotationPivot.y = cursorScreen.y
     // Modulo borne pour eviter que ctx.rotation derive vers
