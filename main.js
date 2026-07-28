@@ -299,8 +299,13 @@ let undo = () => {
         activeShapeIndex: state.activeShapeIndex
     })
     let entry = state.historyStack.pop()
-    state.shapes = entry.state.shapes
-    state.activeShapeIndex = entry.state.activeShapeIndex
+    // L'entree empilee par saveState est `{shapes, activeShapeIndex}`
+    // (PAS un `{state: {...}}`). Cette lecture `entry.state.shapes`
+    // etait un bug latent qui n'avait jamais fired en pratique (les
+    // tests browser du refactor ES6 ne touchaient pas undo/redo).
+    // Le refactor a fait remonter l'erreur en mode strict.
+    state.shapes = entry.shapes
+    state.activeShapeIndex = entry.activeShapeIndex
     if (state.activeShapeIndex < 0 || state.activeShapeIndex >= state.shapes.length) {
         state.activeShapeIndex = 0
     }
@@ -332,8 +337,13 @@ let redo = () => {
         activeShapeIndex: state.activeShapeIndex
     })
     let entry = state.redoStack.pop()
-    state.shapes = entry.state.shapes
-    state.activeShapeIndex = entry.state.activeShapeIndex
+    // Meme forme d'entree que dans undo (`{shapes, activeShapeIndex}`
+    // empilee par saveState). Le smoke test post-extraction log.js
+    // a fait fire ce bug latent sur undo (clic sur le bouton
+    // #undo apres avoir ajoute un point), on corrige redo avec la
+    // meme symetrie par precaution.
+    state.shapes = entry.shapes
+    state.activeShapeIndex = entry.activeShapeIndex
     if (state.activeShapeIndex < 0 || state.activeShapeIndex >= state.shapes.length) {
         state.activeShapeIndex = 0
     }
