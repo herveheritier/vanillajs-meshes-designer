@@ -1957,16 +1957,23 @@ let serializeState = () => {
     })
 }
 
+// Persiste l'etat courant dans localStorage de maniere SYNCHRONE
+// (pas de debounce). Pourquoi : le debounce 150ms d'origine rait
+// avec les reloads rapides (utilisateur qui clique puis Ctrl+R
+// dans la fenetre du debounce : le timer etait clearre par le
+// futur beforeunload OU par une nouvelle mutation avant que le
+// timer n'ait firre). localStorage.setItem prend ~1ms sur des
+// scenes de taille humaine (~quelques Ko de JSON), donc le
+// write synchrone est acceptable cote perf. Meme pattern que
+// la sauvegarde console-frame (persistConsoleFrame, appele
+// uniquement au mouseup — pas de drag-time debounce).
 let persistState = () => {
-    clearTimeout(state.persistTimer)
-    state.persistTimer = setTimeout(() => {
-        try {
-            localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
-            state.ctx.workIsSaved = 1
-        } catch (e) {
-            log('Persist fail: ' + e.message)
-        }
-    }, 150)
+    try {
+        localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
+        state.ctx.workIsSaved = 1
+    } catch (e) {
+        log('Persist fail: ' + e.message)
+    }
 }
 
 // Reconstruit un tableau de formes a partir d'un payload JSON.
