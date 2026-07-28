@@ -1739,9 +1739,16 @@ let findNextNearestPoint = (nearestPoint) => {
     if(shortIndex<0) return undefined
     let pointId = ['p1','p2','p3'][shortPointIndex]
     let trisRef = activeTriangles()
-    result =  { 
-        triangleIndex:shortIndex, 
-        distance:shortDistance, 
+    // `result` est declare ici (et non en tete de fonction) car il
+    // n'est assigne qu'apres le calcul de shortIndex. Avant le
+    // refactor ES6 modules, ce code s'executait en mode sloppy et
+    // beneficiait de la creation implicite d'un global `result` ;
+    // les modules ES sont strict par defaut, donc l'assignation
+    // nue leve ReferenceError. Meme pattern que les autres vars
+    // locales (shortIndex, shortDistance, etc.) declarees plus haut.
+    let result = {
+        triangleIndex:shortIndex,
+        distance:shortDistance,
         pointIndex:shortPointIndex,
         triangle:trisRef[shortIndex],
         pointId:pointId,
