@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Logo « meshes designer » — concept A (triangle signature).
+     Fond transparent (aucun fill sur racine, aucun rect de fond).
+     viewBox 80x80 : redimensionnable du favicon (16) au splash (512+).
+     Couleur #37c200 = rgb(55, 194, 0) du theme de l'app (meme teinte
+     que les boutons verts, le HUD, la selection edition). Le sommet
+     superieur est mis en valeur (disque 4.5 vs 2.8 sur la base) pour
+     signaler l'origine / le point de depart du dessin. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"
+     fill="none" stroke="#37c200" stroke-width="2.5"
+     stroke-linecap="round" stroke-linejoin="round"
+     role="img" aria-label="meshes designer">
+    <polygon points="40,14 12,62 68,62"/>
+    <circle cx="40" cy="14" r="4.5" fill="#37c200" stroke="none"/>
+    <circle cx="12" cy="62" r="2.8" fill="#37c200" stroke="none"/>
+    <circle cx="68" cy="62" r="2.8" fill="#37c200" stroke="none"/>
+</svg>

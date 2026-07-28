@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Favicon « meshes designer » — variante 16×16 dediee a l'onglet.
+     viewBox natif 16×16 : aucun downscaling, rendu net dans le tab
+     du navigateur. Un seul sommet accentue (le top, r=1.6) : a
+     cette echelle, les deux disques de base du logo 80×80
+     rendraient en sous-pixel (r <= 0.56) et se confondraient avec
+     le trait du triangle, d'ou leur suppression ici. Stroke 2 (vs
+     2.5 dans logo.svg) ajuste a la nouvelle taille pour preserver
+     la marge visuelle. Meme couleur / linecap / linejoin que
+     logo.svg pour la coherence d'identite visuelle (#37c200 =
+     rgb(55,194,0) du theme). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"
+     fill="none" stroke="#37c200" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round"
+     role="img" aria-label="meshes designer">
+    <polygon points="8,2.5 2,12.5 14,12.5"/>
+    <circle cx="8" cy="2.5" r="1.6" fill="#37c200" stroke="none"/>
+</svg>

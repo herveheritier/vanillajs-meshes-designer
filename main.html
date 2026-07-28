@@ -2,24 +2,193 @@
 <html>
     <head>
         <meta charset="utf8"/>
+        <!-- Favicon : SVG vectoriel (pas de pixelisation). S'adapte
+             au theme du navigateur (clair/sombre) si on ajoute un
+             media-query plus tard ; aujourd'hui monochrome vert, le
+             viewer de tab le rend bien sur les deux fonds. type
+             explicite : certains browsers hesitent entre xml/svg. -->
+        <!-- Title : sans lui l'onglet affiche 'localhost:8000/'.
+             Le title prend le pas visuellement sur le favicon (le
+             tab montre d'abord le title, puis l'icone en regard).
+             On en profite pour nommer l'app des l'ouverture. -->
+        <title>meshes designer</title>
+        <!-- Favicon : SVG vectoriel, pas de pixelisation. Pointe
+             vers favicon.svg (variante 16x16 dediee onglet) plutot
+             que logo.svg (80x80 avec disques sub-pixel flous a
+             16). type explicite car certains browsers hesitent
+             entre xml et svg sans. -->
+        <link rel="icon" type="image/svg+xml" href="assets/favicon.svg"/>
         <style>
             /* ========= Messages console (overlay transparent sur le canvas) ========= */
             #messageBoard {
-                width: 99vw;
-                height: 99vh;
-                background-color: rgba(0, 0, 0, 0);
-                color: rgb(55, 194, 0);
+                /* Frame : border + padding + fond legerement plus opaque
+                   que transparent pour delimiter visuellement la console
+                   du canvas noir. Positionnee en absolu directement sous
+                   la toolbar (~54px) avec un petit gap (top:64px) ;
+                   avant on utilisait margin-top/margin-left mais le
+                   margin combine avec border ne se compense pas bien —
+                   passer en top/left explicite est predictible quand on
+                   ajoute padding/border. width/height autos adaptent le
+                   cadre au contenu (logs + bouton clear) jusqu'au
+                   max-width 60vw.
+
+                   Flex column : bandeau de titre (drag handle) en haut,
+                   logs en dessous (scrollable via overflow-y sur
+                   #messageLog). overflow: hidden : le cadre est ferme
+                   (bordure + border-radius), on ne veut pas que les
+                   logs debordent visuellement. Sa position et sa taille
+                   sont ecrivables en JS depuis la souris (voir
+                   applyConsoleFrame / drag/resize handlers). */
                 position: absolute;
-                top: 0;
-                left: 0;
-                margin-left: 1vw;
-                margin-top: 60px; /* sous la toolbar pour eviter le chevauchement */
+                top: 64px;
+                left: 1vw;
+                padding: 6px 8px;
+                border: 1px solid rgba(55, 194, 0, 0.5);
+                border-radius: 3px;
+                background-color: rgba(0, 0, 0, 0.55);
+                color: rgb(55, 194, 0);
                 font-family: monospace;
                 font-size: 11px;
                 line-height: 1.35;
-                pointer-events: none;
-                opacity: 0.85;
+                pointer-events: none; /* clics traversent jusqu'au canvas, sauf le titre/handle/bouton clear */
+                opacity: 0.95;
                 max-width: 60vw;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            /* Bandeau de titre = drag handle : un mousedown capture
+               la position initiale et chaque mousemove translate
+               la cadre via style.left/top. Cursor: move sur le
+               bandeau signale l'intention. pointer-events: auto
+               pour outrepasser le none du parent #messageBoard.
+               user-select: none : empeche de selectionner le label
+               "console" pendant un drag. flex: 0 0 auto : la
+               hauteur ne bouge pas quand le cadre est resize
+               verticalement (sinon le bandeau pourrait etre
+               ecrase). */
+            #consoleTitleBar {
+                flex: 0 0 auto;
+                height: 14px;
+                cursor: move;
+                pointer-events: auto;
+                user-select: none;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                border-bottom: 1px solid rgba(55, 194, 0, 0.2);
+                padding-bottom: 2px;
+            }
+
+            /* Label "console" en haut a gauche du bandeau : petit
+               (10 px), faible couleur (rgba 55,194,0,0.7) pour
+               signaler le handle sans dominer visuellement les
+               vrais logs. pointer-events: none : ne capture pas
+               les events (le drag vient du parent #consoleTitleBar,
+               donc e.target est toujours le titre). */
+            .consoleTitle {
+                font-size: 10px;
+                color: rgba(55, 194, 0, 0.7);
+                pointer-events: none;
+            }
+
+            /* Logs : prennent le reste de la place dans #messageBoard
+               (flex:1). overflow-y: auto + min-height:0 : scroll si
+               les logs excedent la hauteur du cadre (apres un
+               resize vertical), sans deborder du cadre. min-height:0
+               autorise le shrinking du flex item sous la hauteur de
+               son contenu (defaut flex est min-height: auto = hauteur
+               du contenu, qui rendrait overflow-y inutile : le cadre
+               n'obeirait pas au resize vers le haut). */
+            #messageLog {
+                flex: 1 1 auto;
+                min-height: 0;
+                overflow-y: auto;
+            }
+
+            /* Poignee de redimensionnement SE corner : la souris a
+               l'interieur declenche un resize (cursor: nwse-resize).
+               Le grip visuel est une linear-gradient diagonale en
+               rgba vert ; trois barres courtes pour ~55,194,0,0.7
+               suivant l'inclinaison 135deg (haut-gauche -> bas-droite)
+               qui correspond au sens SE classique. pointer-events: auto
+               obligatoire (le parent est a none). Position absolute en
+               bas a droite du cadre — 1px d'offset pour rester
+               visible a l'interieur de la bordure sans chevaucher. */
+            #consoleResizeHandle {
+                position: absolute;
+                right: 1px;
+                bottom: 1px;
+                width: 14px;
+                height: 14px;
+                cursor: nwse-resize;
+                pointer-events: auto;
+                background-image:
+                    linear-gradient(135deg,
+                        transparent 30%, rgba(55, 194, 0, 0.7) 30%, rgba(55, 194, 0, 0.7) 35%,
+                        transparent 35%, transparent 50%, rgba(55, 194, 0, 0.7) 50%, rgba(55, 194, 0, 0.7) 55%,
+                        transparent 55%, transparent 70%, rgba(55, 194, 0, 0.7) 70%, rgba(55, 194, 0, 0.7) 75%,
+                        transparent 75%);
+            }
+
+            /* Override du curseur pendant drag/resize. La canvas
+               (#board) a un cursor: 'none' inline en JS haute
+               priorite ; on ne peut pas l'outrepasser avec une
+               regle CSS non-important. Solution : ajouter une
+               classe sur body, et `body.dragging-console *`
+               avec !important prend le pas sur tout inline non-
+               important (le board cursor: 'none' inline n'a pas
+               !important). Retire au mouseup. La portee * (tous
+               les descendants) garantit que meme si la souris
+               survole #board pendant le drag, le curseur OS
+               reflete bien l'intention de drag. */
+            body.dragging-console * {
+                cursor: move !important;
+            }
+            body.resizing-console * {
+                cursor: nwse-resize !important;
+            }
+
+            /* Bouton clear DANS le bandeau de titre : il est pousse
+               a droite via flex justify-content: space-between du
+               parent #consoleTitleBar ("console" a gauche, bouton
+               a droite). Plus de float ici — le parent gere la
+               mise en page via flex. Plus petit que la version
+               precedente (16x12 vs 22x15) car il est coince dans
+               le bandeau de 14 px de haut, avec un peu de marge
+               visuelle haut/bas. Le SVG trash-can est rapetisse
+               a 9 px. */
+            #clearConsole {
+                width: 16px;
+                height: 12px;
+                padding: 0;
+                background-color: rgba(15, 15, 15, 0.7);
+                color: rgb(220, 220, 220);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 2px;
+                cursor: pointer;
+                pointer-events: auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                line-height: 1;
+                font-family: monospace;
+                transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+            }
+            #clearConsole:hover {
+                background-color: rgba(255, 255, 255, 0.18);
+                border-color: rgba(255, 255, 255, 0.4);
+                color: rgb(255, 255, 255);
+            }
+            #clearConsole:active {
+                color: rgb(55, 194, 0);
+                border-color: rgb(55, 194, 0);
+            }
+            #clearConsole svg {
+                display: block;
+                width: 9px;
+                height: 9px;
             }
 
             /* ========= Toolbar principale ========= */
@@ -195,6 +364,51 @@
                 border-radius: 14px;
                 pointer-events: none;
                 white-space: nowrap;
+            }
+
+            /* Compteur d'annulations : meme traitement pilule verte
+               que #shapeLabel — meme langage visuel pour les read-
+               only pills (forme active, profondeur d'historique).
+               Read-only (pointer-events:none) — la valeur n'est pas
+               cliquable, juste un indicateur du nombre d'annulations
+               restantes. textContent mis a jour par
+               updateUndoRedoHud() ; pas innerHTML car on injecte du
+               texte non formatable (juste "(\u003cN\u003e)"). */
+            #toolbar #undoCount {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                height: 30px;
+                padding: 0 12px;
+                min-width: 44px;
+                font-family: monospace;
+                font-size: 13px;
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border: 1px solid rgba(55, 194, 0, 0.35);
+                border-radius: 14px;
+                pointer-events: none;
+                white-space: nowrap;
+            }
+
+            /* Disabled state partage par les boutons undo/redo (et
+               futurs boutons lies a un etat de pile vide) : pile
+               vide => disabled=true via JS (updateUndoRedoHud).
+               L'attribut HTML disabled bloque deja les clicks, mais
+               on rend le rendu visuel distinct (opacite attenuee +
+               cursor not-allowed) pour que l'utilisateur comprenne
+               que l'action n'est pas disponible — pas juste un
+               bouton mort qui ressemble a un bouton normal. Le
+               hover override garde l'inertie : un bouton disabled
+               ne reagit pas non plus au hover. */
+            #toolbar button:disabled {
+                opacity: 0.35;
+                cursor: not-allowed;
+            }
+            #toolbar button:disabled:hover {
+                background-color: rgba(255, 255, 255, 0.05);
+                border-color: rgba(255, 255, 255, 0.18);
+                color: rgb(220, 220, 220);
             }
 
             /* ========= HUD bas-gauche : indicateur de zoom ========= */
@@ -399,6 +613,20 @@
             <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
             <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
             <span class="toolbar-sep"></span>
+            <!-- Section Annuler / Retablir : miroite les raccourcis
+                 clavier (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y) en passant
+                 par les memes fonctions undo()/redo() — un seul
+                 chemin de verite pour la logique. Le compteur
+                 #undoCount reflete la profondeur de historyStack ;
+                 initialise a (0) avec les boutons disabled tant
+                 qu'aucune action n'a modifie la scene. SVGs : courbe
+                 en forme de U полуверт miroitee undo/redo pour
+                 signifier le retour en arriere / la reprise, distinct
+                 des chevrons de navigation prevShape/nextShape. -->
+            <button id="undo" title="Annuler (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6,11 3,8 6,5"/><path d="M3 8h8a3 3 0 0 1 0 6H7"/></svg></button>
+            <span id="undoCount" title="Nombre d'annulations disponibles">(0)</span>
+            <button id="redo" title="Retablir (Ctrl+Shift+Z / Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="10,11 13,8 10,5"/><path d="M13 8H5a3 3 0 0 0 0 6h4"/></svg></button>
+            <span class="toolbar-sep"></span>
             <button id="export" class="file-op file-op-save" title="Sauvegarder la scene courante en JSON (Ctrl+S)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2v12h12V4l-2-2H2z"/><path d="M11 2v3H5V2"/><rect x="5" y="8" width="6" height="3" fill="currentColor" stroke="none"/></svg></button>
             <span class="toolbar-sep"></span>
             <button id="importMeshes" class="file-op file-op-read" title="Charger et afficher un fichier meshes (1 ligne = 1 forme)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v12h10V5l-3-3H3z"/><path d="M10 2v3h3"/><path d="M4 12L8 5l4 7z"/></svg></button>
@@ -415,7 +643,30 @@
             <button id="helpBtn" title="Afficher l'aide (raccourci : ?)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.8 7a2 2 0 014 0c0 1-2 1.5-2 2.5"/>                <circle cx="8" cy="11.5" r="0.6" fill="currentColor" stroke="none"/></svg></button>
         </div>
         <canvas id="board" width="100" height="100"></canvas>
-        <div id="messageBoard"></div>
+        <div id="messageBoard">
+            <!-- Bandeau de titre : un mousedown declenche un drag
+                 (mouvement du cadre via mousemove document-level).
+                 user-select: none (cf. CSS) empeche la selection
+                 du label "console" pendant le drag. Le bouton clear
+                 a l'interieur stopPropagation sur mousedown pour
+                 NE PAS declencher un drag accidentel quand on veut
+                 juste effacer le contenu. -->
+            <div id="consoleTitleBar" title="Glisser pour deplacer la console">
+                <span class="consoleTitle">console</span>
+                <button id="clearConsole" type="button" title="Effacer la console"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10"/><path d="M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1"/><path d="M4 4l1 9a1 1 0 001 1h4a1 1 0 001-1l1-9"/><line x1="7" y1="6.5" x2="7" y2="12"/><line x1="9" y1="6.5" x2="9" y2="12"/></svg></button>
+            </div>
+            <!-- #messageLog encapsule tout le contenu textuel (les
+                 innerText += ... travaillent sur messageLog, pas sur
+                 messageBoard, pour ne pas detruire le bandeau / le
+                 bouton clear / la poignee de resize qui sont des
+                 siblings dans messageBoard). -->
+            <div id="messageLog">*** CONSOLE ***</div>
+            <!-- Poignee SE : un mousedown declenche un resize
+                 (largeur + hauteur via mousemove document-level).
+                 Grip diagonale en linear-gradient (cf. CSS) visible
+                 a l'oeil nu. -->
+            <div id="consoleResizeHandle" title="Glisser pour redimensionner la console"></div>
+        </div>
         <div id="zoomDisplay">1.0x</div>
         <div id="coords"></div>
         <div id="helpModal" class="modal" hidden>
