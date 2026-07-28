@@ -34,6 +34,14 @@ drawBoard = () => {
     drawAxis()
     drawShapes()
     drawSelectedPoints()
+    // Reticule : guide visuel au curseur. Mode 0 = off (early
+    // return), mode 1 = crosshair simple au curseur, mode 2 =
+    // crosshair au curseur + 3 miroirs aux positions (-x,y),
+    // (x,-y), (-x,-y). Place apres drawSelectedPoints pour etre
+    // visible au-dessus des formes et des points, mais avant
+    // drawSelectionBox (overlay de selection qui reste au-dessus
+    // de tout).
+    if (typeof reticleMode !== 'undefined' && reticleMode > 0) drawReticle()
     if (typeof isSelectingBox !== 'undefined' && isSelectingBox && selectionBoxStart && selectionBoxCurrent) {
         drawSelectionBox(selectionBoxStart, selectionBoxCurrent)
     }
@@ -98,6 +106,51 @@ drawAxis = () => {
         _ctx.lineTo(originScreenX, h)
         _ctx.stroke()
     }
+}
+
+// Reticule : crosshair(s) au curseur en coords modele. Mode 1 =
+// simple (1 crosshair au curseur), mode 2 = projection
+// symetrique (curseur + miroirs aux 3 positions
+// signe-changees sur les 2 axes : (-x,y), (x,-y), (-x,-y)).
+// Meme look que drawAxis (PATTERN_AXIS, lignes pleine largeur
+// dans la zone visible) mais en n&b (blanc au lieu de
+// COLOR_AXIS vert) pour distinguer le guide curseur des axes
+// d'origine. Skip si curseur hors canvas (lastMousePos
+// indefini). Les lignes sont clippees par les bornes du board
+// pour eviter de tracer en dehors.
+drawReticle = () => {
+    if (typeof reticleMode === 'undefined' || reticleMode === 0) return
+    if (typeof lastMousePos === 'undefined' || !lastMousePos) return
+    let m = screenToModel(lastMousePos)
+    if (!m) return
+    // Mode 1 : juste le curseur. Mode 2 : + 3 miroirs. Quand le
+    // curseur est sur un axe (m.x=0 ou m.y=0) ou a l'origine, les
+    // 4 positions reduisent a 1 ou 2 positions uniques — on
+    // retrace alors la meme ligne 2-4 fois (idempotent visuellement,
+    // cout negligeable).
+    let positions = [{x: m.x, y: m.y}]
+    if (reticleMode === 2) {
+        positions.push({x: -m.x, y: m.y})
+        positions.push({x: m.x, y: -m.y})
+        positions.push({x: -m.x, y: -m.y})
+    }
+    _ctx.setLineDash(PATTERN_AXIS)
+    _ctx.strokeStyle = '#FFFFFF'
+    positions.forEach(pos => {
+        let sp = modelToScreen(pos)
+        if (sp.y >= 0 && sp.y <= board.height) {
+            _ctx.beginPath()
+            _ctx.moveTo(0, sp.y)
+            _ctx.lineTo(board.width, sp.y)
+            _ctx.stroke()
+        }
+        if (sp.x >= 0 && sp.x <= board.width) {
+            _ctx.beginPath()
+            _ctx.moveTo(sp.x, 0)
+            _ctx.lineTo(sp.x, board.height)
+            _ctx.stroke()
+        }
+    })
 }
 
 // Rend toutes les formes. Les inactives sont dessinees EN PREMIER
@@ -165,39 +218,52 @@ drawGrid = () => {
     // L'ecart visible entre deux lignes depend du zoom : ecart =
     // baseStep * ctx.zoomLevel. Sinon le zoom rendrait les lignes
     // visuellement figees (zoom in) ou qui se chevauchent (zoom out).
-    // On garde le pattern symetrique autour de ctx.center pour rester
-    // visuellement centre a l'ecran.
+    //
+    // ANCRAGE : la grille est alignee sur les axes du modele (donc
+    // sur l'origine (0,0) du repere) et non pas sur le centre du
+    // board. C'est ce que fait snapToGrid (arrondi au multiple de
+    // GRID_STEP le plus proche depuis 0) ; on aligne ici l'affichage
+    // sur la meme ancre pour que les intersections dessinees
+    // correspondent exactement aux positions vers lesquelles un
+    // point va se snapper. L'alignement reste vrai apres zoom et
+    // pan : originScreenX/Y evoluent en fonction de viewCenter, et
+    // step en fonction de zoomLevel — la grille continue de
+    // representer les memes multiples de GRID_STEP en model coords.
     const step = baseStep * ctx.zoomLevel
+    if (step <= 0) return  // zoom <= 0 : pas de lignes (defensif)
     _ctx.setLineDash([])
     _ctx.strokeStyle = '#333333'
     _ctx.beginPath()
-    // Lignes verticales: symetriques autour de ctx.center.x.
-    let maxOffsetX = Math.max(ctx.center.x, board.width - ctx.center.x)
-    for (let k = 1; k * step <= maxOffsetX; k++) {
-        let xLeft = ctx.center.x - k * step
-        let xRight = ctx.center.x + k * step
-        if (xLeft >= 0) {
-            _ctx.moveTo(xLeft, 0)
-            _ctx.lineTo(xLeft, board.height)
-        }
-        if (xRight <= board.width) {
-            _ctx.moveTo(xRight, 0)
-            _ctx.lineTo(xRight, board.height)
-        }
+    // Position screen du model origin (0,0). MEME formule que
+    // drawAxis : ctx.center - ctx.viewCenter * ctx.zoomLevel
+    // (le signe de Y est inverse par rapport a modelToScreen
+    // parce que drawAxis l'ecrit explicitement ainsi ; on suit
+    // la meme convention par coherence visuelle).
+    let originScreenX = ctx.center.x - ctx.viewCenter.x * ctx.zoomLevel
+    let originScreenY = ctx.center.y + ctx.viewCenter.y * ctx.zoomLevel
+    // Lignes verticales : n tel que screen x = originScreenX + n*step
+    // tombe dans [0, board.width].
+    //   0 <= originScreenX + n*step <= board.width
+    //   n_min = ceil(-originScreenX / step)
+    //   n_max = floor((board.width - originScreenX) / step)
+    let n_min_x = Math.ceil(-originScreenX / step)
+    let n_max_x = Math.floor((board.width - originScreenX) / step)
+    for (let n = n_min_x; n <= n_max_x; n++) {
+        let x_screen = originScreenX + n * step
+        _ctx.moveTo(x_screen, 0)
+        _ctx.lineTo(x_screen, board.height)
     }
-    // Lignes horizontales: symetriques autour de ctx.center.y.
-    let maxOffsetY = Math.max(ctx.center.y, board.height - ctx.center.y)
-    for (let k = 1; k * step <= maxOffsetY; k++) {
-        let yTop = ctx.center.y - k * step
-        let yBottom = ctx.center.y + k * step
-        if (yTop >= 0) {
-            _ctx.moveTo(0, yTop)
-            _ctx.lineTo(board.width, yTop)
-        }
-        if (yBottom <= board.height) {
-            _ctx.moveTo(0, yBottom)
-            _ctx.lineTo(board.width, yBottom)
-        }
+    // Lignes horizontales : screen y = originScreenY - n*step (Y
+    // inverse : n>0 monte sur l'ecran). Plage visible [0, h].
+    //   0 <= originScreenY - n*step <= board.height
+    //   n_min = ceil((originScreenY - board.height) / step)
+    //   n_max = floor(originScreenY / step)
+    let n_min_y = Math.ceil((originScreenY - board.height) / step)
+    let n_max_y = Math.floor(originScreenY / step)
+    for (let n = n_min_y; n <= n_max_y; n++) {
+        let y_screen = originScreenY - n * step
+        _ctx.moveTo(0, y_screen)
+        _ctx.lineTo(board.width, y_screen)
     }
     _ctx.stroke()
 }
