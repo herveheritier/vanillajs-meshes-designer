@@ -362,16 +362,18 @@
                 background-color: rgba(55, 194, 0, 0.10);
                 border: 1px solid rgba(55, 194, 0, 0.35);
                 border-radius: 14px;
-                pointer-events: none;
                 white-space: nowrap;
             }
 
             /* Compteur d'annulations : meme traitement pilule verte
                que #shapeLabel — meme langage visuel pour les read-
                only pills (forme active, profondeur d'historique).
-               Read-only (pointer-events:none) — la valeur n'est pas
-               cliquable, juste un indicateur du nombre d'annulations
-               restantes. textContent mis a jour par
+               Read-only (pas de cursor:pointer) — la valeur n'est
+               pas cliquable, juste un indicateur du nombre
+               d'annulations restantes. PAS de pointer-events:none
+               (sinon le title natif ne s'affiche pas au survol :
+               le navigateur n'a aucun mouseover/hover pour ouvrir
+               le tooltip). textContent mis a jour par
                updateUndoRedoHud() ; pas innerHTML car on injecte du
                texte non formatable (juste "(\u003cN\u003e)"). */
             #toolbar #undoCount {
@@ -387,7 +389,6 @@
                 background-color: rgba(55, 194, 0, 0.10);
                 border: 1px solid rgba(55, 194, 0, 0.35);
                 border-radius: 14px;
-                pointer-events: none;
                 white-space: nowrap;
             }
 
@@ -414,7 +415,6 @@
                 background-color: rgba(55, 194, 0, 0.10);
                 border: 1px solid rgba(55, 194, 0, 0.35);
                 border-radius: 14px;
-                pointer-events: none;
                 white-space: nowrap;
             }
 
@@ -704,8 +704,18 @@
                  a l'oeil nu. -->
             <div id="consoleResizeHandle" title="Glisser pour redimensionner la console"></div>
         </div>
-        <div id="zoomDisplay">1.0x</div>
-        <div id="coords"></div>
+        <!-- #zoomDisplay : affiche "Nx  pos(x, y)" avec eventuellement
+             "  rot D°" si la scene est pivotee. Le tooltip resume les
+             trois nombres (zoom, position viewCenter, rotation) pour
+             que l'utilisateur sache quoi hover avant meme d'avoir lu
+             l'indicateur.
+             #coords : affiche "curseur (x, y)  plus proche (x, y)" en
+             coords modele (Y inverse, origine au centre du modele).
+             Le tooltip distingue les deux paires pour eviter la
+             confusion entre position curseur et position point
+             survole. -->
+        <div id="zoomDisplay" title="Niveau de zoom, position du viewCenter en coords modèle, rotation cumulée de la scène (AltGr + molette)">1.0x</div>
+        <div id="coords" title="Position du curseur (coords modèle, Y inversé) et du point le plus proche sous le curseur"></div>
         <div id="helpModal" class="modal" hidden>
             <div class="modal-backdrop" data-help-close></div>
             <div class="modal-box">
