@@ -1892,8 +1892,6 @@ let addPoint = (point) => {
     }
     state.ctx.workIsSaved = 0;
     state.ctx.workIsBackuped = 0;
-    let _dlog = (m) => { log(m); console.log(m) }
-    _dlog('addPoint: about to persist, tris=' + activeTriangles().length)
     persistState()
 }
 
@@ -1970,39 +1968,11 @@ let serializeState = () => {
 // la sauvegarde console-frame (persistConsoleFrame, appele
 // uniquement au mouseup — pas de drag-time debounce).
 let persistState = () => {
-    // LOG DIAGNOSTIC (debug bug "rien n'est stocké en localhost") :
-    // trace le contenu de state.shapes juste AVANT le setItem pour
-    // voir si le path addPoint -> persistState voit bien le triangle
-    // cree. Si le log dit "0 triangles" alors que visuellement le
-    // point est affiche, c'est que state.shapes est wipe entre
-    // addPoint et persistState. Si "N triangles" mais localStorage
-    // reste vide apres, c'est que setItem echoue silencieusement.
-    //
-    // DOUBLE OUTPUT (console.log + log message overlay) :'ancien
-    // commit n'utilisait que log() qui écrit au sein du DOM .messageLog.
-    // Si l'utilisateur regarde DevTools Console (different du visual
-    // overlay), il ne voit rien. On parallel output aux deux endroits
-    // pour certitude.
-    //
-    // NOTE : ce diagnostic sera retire dans un commit de cleanup
-    // une fois la cause identifiee.
-    let _dlog = (m) => { log(m); console.log(m) }
     try {
-        let totalTris = state.shapes.reduce((a, s) => a + (s && s.triangles ? s.triangles.length : 0), 0)
-        _dlog('persistState in: ' + state.shapes.length + ' shapes, total tris=' + totalTris)
-        let payload = serializeState()
-        _dlog('persistState payload len=' + (payload ? payload.length : 'undef') + ', head=' + (payload ? payload.substring(0, 80) : '(null/undef)'))
-        localStorage.setItem(SCENE_STORAGE_KEY, payload)
+        localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
         state.ctx.workIsSaved = 1
-        let readback = localStorage.getItem(SCENE_STORAGE_KEY)
-        if (readback !== payload) {
-            _dlog('persistState WARNING: readback differs (write=' + payload.length + ', read=' + (readback ? readback.length : 'null') + ')')
-        } else {
-            _dlog('persistState OK: readback matches')
-        }
     } catch (e) {
         log('Persist fail: ' + e.message)
-        console.log('Persist fail: ' + e.message)
     }
 }
 

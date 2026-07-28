@@ -28,3 +28,18 @@ export const log = (message) => {
     let ts = '[' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + ']'
     state.messageLog.innerText += '\n' + ts + ' ' + message
 }
+
+// Helper `logBoth` : ecrit a la fois dans l'overlay visuel de la
+// console (via `log`) ET dans la console du navigateur (via
+// console.log). Module-level pour eviter la duplication d'anciens
+// helpers `_dlog` redéfinis par fonction. Utilise pendant le
+// diagnostique post-refactor pour avoir visibilite dans les
+// deux endroits (DevTools Console ETAIT blinde a log()). Apres
+// la resolution du bug, devenu un utilitaire public : ne pas
+// hesiter a l'utiliser depuis d'autres modules pour des traces
+// punctuelles qui doivent etre visibles aux deux endroits
+// (typiquement : attaques de debugging cibles).
+export const logBoth = (message) => {
+    log(message)
+    console.log(message)
+}
