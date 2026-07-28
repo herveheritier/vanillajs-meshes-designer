@@ -1361,12 +1361,38 @@ deleteSelectedPoint = () => {
     if(targets.length === 0) return
     saveState()
     let activeShapeRef = shapes[activeShapeIndex]
-    activeShapeRef.triangles = activeShapeRef.triangles.filter(t => {
-        let hasP1 = t.p1 && targets.some(target => adjacentPoints(t.p1, target, 0.01))
-        let hasP2 = t.p2 && targets.some(target => adjacentPoints(t.p2, target, 0.01))
-        let hasP3 = t.p3 && targets.some(target => adjacentPoints(t.p3, target, 0.01))
-        return !(hasP1 || hasP2 || hasP3)
-    })
+    // Regle : la suppression d'un segment est effective SSI l'un
+    // de ses points n'existe pas. Quand on supprime un point P :
+    //   - chaque triangle contenant P voit P retire de ses slots ;
+    //   - les segments incidents a P (deux par triangle) sont
+    //     supprimes implicitement (l'un de leurs points n'existe
+    //     plus, la regle s'applique) ;
+    //   - le segment OPPOSE (entre les deux autres points du
+    //     triangle) survit car ses deux endpoints existent
+    //     toujours.
+    // Pour representer ca dans le modele triangle-only, on
+    // reordonne les slots du triangle pour ramener les points
+    // survivants en tete (t.p1, t.p2, t.p3) et laisse undefined
+    // pour les slots non utilises. drawTriangle trace alors
+    // naturellement le segment p1->p2 quand p3===undefined (cf.
+    // son test "if (p2 !== undefined)" qui saute le lineTo vers
+    // p3, et l'absence de lineTo de fermeture).
+    // Un triangle dont il reste <2 points survivants est filtre
+    // (degenere : 0 segment possible ; les eventuels points
+    // orphelins disparaissent avec).
+    activeShapeRef.triangles = activeShapeRef.triangles
+        .map(t => {
+            let surviving = []
+            if (t.p1 && !targets.some(target => adjacentPoints(t.p1, target, 0.01))) surviving.push(t.p1)
+            if (t.p2 && !targets.some(target => adjacentPoints(t.p2, target, 0.01))) surviving.push(t.p2)
+            if (t.p3 && !targets.some(target => adjacentPoints(t.p3, target, 0.01))) surviving.push(t.p3)
+            if (surviving.length < 2) return null
+            t.p1 = surviving[0]
+            t.p2 = surviving[1]
+            t.p3 = surviving[2]
+            return t
+        })
+        .filter(t => t !== null)
     selectedPoints = []
     nearestPoint = undefined
     drawBoard()
