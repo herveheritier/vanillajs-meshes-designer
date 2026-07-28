@@ -839,9 +839,14 @@
                 </div>
             </div>
         </div>
-        <script type="application/javascript" src="./draw.js"></script>
-        <script type="application/javascript" src="./convert.js"></script>
-        <script type="application/javascript" src="./main.js"></script>
-        <script>doit()</script>
+        <!-- Scripts ES6 modules : type="module" deferre l'execution
+             jusqu'a ce que le DOM soit parse. L'ordre des balises
+             preserve l'ordre d'evaluation (draw.js -> convert.js ->
+             main.js). Plus de <script>doit()</script> inline : la
+             fonction doit() est appelee en bas de main.js (lui-meme
+             un module differe). -->
+        <script type="module" src="./draw.js"></script>
+        <script type="module" src="./convert.js"></script>
+        <script type="module" src="./main.js"></script>
     </body>
 </html>
