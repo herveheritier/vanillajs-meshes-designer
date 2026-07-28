@@ -58,12 +58,12 @@ export { log, importMeshFromText }
 // Helper : change la forme active proprement. Annule toute action
 // en cours, vide la selection, recalcule le hover et le HUD.
 let goToShape = (newIndex) => {
-    if (!Array.isArray(shapes) || state.shapes.length === 0) return
+    if (!Array.isArray(state.shapes) || state.shapes.length === 0) return
     if (newIndex < 0 || newIndex >= state.shapes.length) return
     if (newIndex === state.activeShapeIndex) return
     state.currentAction = ACTION_NONE
     state.grabbedGroup = []
-    clearTimeout(wheelRotateTimer)
+    clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
     state.activeShapeIndex = newIndex
@@ -74,7 +74,7 @@ let goToShape = (newIndex) => {
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
     drawBoard()
-    if (lastMousePos) updateMouseHover(lastMousePos)
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateShapeHud()
     // Selection videe au switch de forme -> pilule a 0.
     updateSelectionHud()
@@ -119,7 +119,7 @@ let performDeleteShape = () => {
         state.shapes = [{ triangles: [] }]
         state.activeShapeIndex = 0
     } else {
-        state.shapes.splice(activeShapeIndex, 1)
+        state.shapes.splice(state.activeShapeIndex, 1)
         if (state.activeShapeIndex >= state.shapes.length) state.activeShapeIndex = state.shapes.length - 1
     }
     state.selectedPoints = []
@@ -130,11 +130,11 @@ let performDeleteShape = () => {
     state.isSelectingBox = false
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
-    clearTimeout(wheelRotateTimer)
+    clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
     drawBoard()
-    if (lastMousePos) updateMouseHover(lastMousePos)
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateShapeHud()
     updateSelectionHud()
     persistState()
@@ -273,7 +273,7 @@ let cloneScene = (shapesArray) => {
 
 let saveState = () => {
     state.historyStack.push({
-        shapes: cloneScene(shapes),
+        shapes: cloneScene(state.shapes),
         activeShapeIndex: state.activeShapeIndex
     })
     if (state.historyStack.length > MAX_HISTORY) {
@@ -291,7 +291,7 @@ let undo = () => {
     if (state.historyStack.length === 0) return
     state.currentAction = ACTION_NONE
     state.redoStack.push({
-        shapes: cloneScene(shapes),
+        shapes: cloneScene(state.shapes),
         activeShapeIndex: state.activeShapeIndex
     })
     let entry = state.historyStack.pop()
@@ -307,12 +307,12 @@ let undo = () => {
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
     state.grabbedGroup = []
-    clearTimeout(wheelRotateTimer)
+    clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
     drawBoard()
-    if (lastMousePos) {
-        updateMouseHover(lastMousePos)
+    if (state.lastMousePos) {
+        updateMouseHover(state.lastMousePos)
     }
     updateShapeHud()
     updateUndoRedoHud()
@@ -324,7 +324,7 @@ let redo = () => {
     if (state.redoStack.length === 0) return
     state.currentAction = ACTION_NONE
     state.historyStack.push({
-        shapes: cloneScene(shapes),
+        shapes: cloneScene(state.shapes),
         activeShapeIndex: state.activeShapeIndex
     })
     let entry = state.redoStack.pop()
@@ -340,12 +340,12 @@ let redo = () => {
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
     state.grabbedGroup = []
-    clearTimeout(wheelRotateTimer)
+    clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
     drawBoard()
-    if (lastMousePos) {
-        updateMouseHover(lastMousePos)
+    if (state.lastMousePos) {
+        updateMouseHover(state.lastMousePos)
     }
     updateShapeHud()
     updateUndoRedoHud()
@@ -585,10 +585,10 @@ document.addEventListener('mousemove', (e) => {
     if (!state.consoleDragStart) return
     let dx = e.clientX - state.consoleDragStart.mouseX
     let dy = e.clientY - state.consoleDragStart.mouseY
-    if (consoleMoving) {
+    if (state.consoleMoving) {
         state.messageBoard.style.left = (state.consoleDragStart.mbLeft + dx) + 'px'
         state.messageBoard.style.top = (state.consoleDragStart.mbTop + dy) + 'px'
-    } else if (consoleResizing) {
+    } else if (state.consoleResizing) {
         // Le resize est ancre en haut-gauche : le coin top-left du
         // cadre ne bouge pas, on elargit vers le bas-droite. Math
         // aux minimums (80x30) pour eviter que l'utilisateur
@@ -659,8 +659,8 @@ let selectAllPoints = () => {
     state.selectedPoints = result
     state.nearestPoint = undefined
     drawBoard()
-    if (lastMousePos) {
-        updateMouseHover(lastMousePos)
+    if (state.lastMousePos) {
+        updateMouseHover(state.lastMousePos)
     }
     // Toute la forme est selectionnee -> pilule reflete result.length.
     updateSelectionHud()
@@ -793,7 +793,7 @@ document.addEventListener('mouseup',(e) => {
         persistState()
     }
     if(e.target.id==='board' && e.button===0) {
-        if(isSelectingBox) {
+        if(state.isSelectingBox) {
             let dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
             state.isSelectingBox = false
             if(dist < 5) {
@@ -970,7 +970,7 @@ document.addEventListener('keydown',(e) => {
         // centre, aucune rotation cumulee affichee).
         state.ctx.rotationTracking = 0
         drawBoard()
-        if (lastMousePos) updateMouseHover(lastMousePos)
+        if (state.lastMousePos) updateMouseHover(state.lastMousePos)
         updateZoomDisplay()
         persistState()
     }
@@ -1084,7 +1084,7 @@ state.board.addEventListener('wheel', (e) => {
         // le pivot screen effectif depuis ce pivot modele.
         state.altGrRotationPivot = screenToModel(cursorScreen)
         let angle = e.deltaY < 0 ? -ROTATE_STEP : ROTATE_STEP
-        rotateEachShapeAroundPivot(altGrRotationPivot, angle)
+        rotateEachShapeAroundPivot(state.altGrRotationPivot, angle)
         return
     }
     // Sans AltGlr : on libere le pivot capture pour que la
@@ -1094,7 +1094,7 @@ state.board.addEventListener('wheel', (e) => {
     // : si l'utilisateur voitures avec un doigt sans AltGlr au
     // milieu d'une sequence AltGlr, le pivot est reset mais la
     // rotation cumulee reste (pas catastrophe).
-    if (altGrRotationPivot) state.altGrRotationPivot = undefined
+    if (state.altGrRotationPivot) state.altGrRotationPivot = undefined
     let canRotate = state.selectedPoints.length >= 2 && !state.isSelectionDimmed
     if (canRotate) {
         // Ancien comportement : rotation autour du model point sous
@@ -1118,7 +1118,7 @@ state.board.addEventListener('wheel', (e) => {
         state.ctx.viewCenter.y -= (cursorScreen.y - state.ctx.center.y) * (1 / oldZoom - 1 / newZoom)
         state.ctx.zoomLevel = newZoom
         drawBoard()
-        if (lastMousePos) updateMouseHover(lastMousePos)
+        if (state.lastMousePos) updateMouseHover(state.lastMousePos)
         updateZoomDisplay()
         persistState()
     }
@@ -1213,7 +1213,7 @@ let rotateEachShapeAroundPivot = (pivotModel, angle) => {
             updateSelectionHud()
             log('AltGr + molette detecte - rotation de chaque forme autour du curseur (5 deg/tick)')
     }
-    clearTimeout(eachShapeRotateTimer)
+    clearTimeout(state.eachShapeRotateTimer)
     state.eachShapeRotateTimer = setTimeout(() => {
         state.isEachShapeRotating = false
         persistState()
@@ -1243,7 +1243,7 @@ let rotateEachShapeAroundPivot = (pivotModel, angle) => {
     state.ctx.rotationTracking = ((state.ctx.rotationTracking + angle) % TAU + TAU) % TAU
 
     drawBoard()
-    if (lastMousePos) updateMouseHover(lastMousePos)
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateZoomDisplay()
 }
 
@@ -1253,7 +1253,7 @@ let rotateSelectedPoints = (center, angle) => {
         saveState()
         state.isWheelRotating = true
     }
-    clearTimeout(wheelRotateTimer)
+    clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = setTimeout(() => {
         state.isWheelRotating = false
         persistState()
@@ -1271,7 +1271,7 @@ let rotateSelectedPoints = (center, angle) => {
         let ny = center.y + dx * sin + dy * cos
 
         let target = { x: nx, y: ny }
-        if (activeGrid) {
+        if (state.activeGrid) {
             target = snapToGrid(target)
         }
 
@@ -1289,8 +1289,8 @@ let rotateSelectedPoints = (center, angle) => {
     })
 
     drawBoard()
-    if (lastMousePos) {
-        updateMouseHover(lastMousePos)
+    if (state.lastMousePos) {
+        updateMouseHover(state.lastMousePos)
     }
 }
 
@@ -1339,8 +1339,8 @@ let deleteSelectedPoint = () => {
     state.selectedPoints = []
     state.nearestPoint = undefined
     drawBoard()
-    if(lastMousePos) {
-        updateMouseHover(lastMousePos)
+    if(state.lastMousePos) {
+        updateMouseHover(state.lastMousePos)
     }
     updateSelectionHud()
     persistState()
@@ -1528,14 +1528,14 @@ let resolveMouseMoveOnBoard = (e) => {
         y : e.y - state.board.getBoundingClientRect().y
     }
 
-    if(isSelectingBox) {
+    if(state.isSelectingBox) {
         state.selectionBoxCurrent = mouseScreen
         // Les deux coins sont en coords screen ; on les convertit en
         // coords model (avec zoom et viewCenter) puis on prend min/max
         // pour avoir le bounding box. La conversion passe par
         // screenToModel qui inverse Y (Y screen +bas = Y model +haut).
-        let m1 = screenToModel(selectionBoxStart)
-        let m2 = screenToModel(selectionBoxCurrent)
+        let m1 = screenToModel(state.selectionBoxStart)
+        let m2 = screenToModel(state.selectionBoxCurrent)
         let minXM = Math.min(m1.x, m2.x)
         let maxXM = Math.max(m1.x, m2.x)
         let minYM = Math.min(m1.y, m2.y)
@@ -1556,7 +1556,7 @@ let resolveMouseMoveOnBoard = (e) => {
                 if(!expanded.some(e => e === q)) expanded.push(q)
             })
         })
-        state.selectedPoints = expanded    } else if(isPanning) {
+        state.selectedPoints = expanded    } else if(state.isPanning) {
         // Pan du viewCenter (clic-milieu + drag souris). Convention
         // "drag content" : le contenu suit le curseur.
         //   X : drag a droite (dx > 0) -> viewCenter.x *decroit* car
@@ -1571,7 +1571,7 @@ let resolveMouseMoveOnBoard = (e) => {
         state.ctx.viewCenter.x = state.panStartViewCenter.x - dx / state.ctx.zoomLevel
         state.ctx.viewCenter.y = state.panStartViewCenter.y + dy / state.ctx.zoomLevel
         drawBoard()
-        if (lastMousePos) updateMouseHover(lastMousePos)
+        if (state.lastMousePos) updateMouseHover(state.lastMousePos)
         updateZoomDisplay()
     } else if(grabbed()) {
         // Conversion screen -> model en tenant compte du zoom, puis
@@ -1581,7 +1581,7 @@ let resolveMouseMoveOnBoard = (e) => {
         // visuelle : drag de 10 model units = drag de 10*zoom pixels
         // screen, peu importe le zoom).
         let curModel = screenToModel(mouseScreen)
-        let startModel = screenToModel(grabStartMouse)
+        let startModel = screenToModel(state.grabStartMouse)
         let dx = curModel.x - startModel.x
         let dy = curModel.y - startModel.y
         // Mode move-all + grille : on snap le DELTA (pas chaque
@@ -1869,7 +1869,7 @@ let persistState = () => {
     clearTimeout(persistTimer)
     persistTimer = setTimeout(() => {
         try {
-            localStorage.setItem(STORAGE_KEY, serializeState())
+            localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
             state.ctx.workIsSaved = 1
         } catch (e) {
             log('Persist fail: ' + e.message)
@@ -1925,7 +1925,7 @@ let buildShapesFromPayload = (data) => {
 }
 
 let loadState = () => {
-    let saved = localStorage.getItem(STORAGE_KEY)
+    let saved = localStorage.getItem(SCENE_STORAGE_KEY)
     if (!saved) return
     try {
         // Reset de state.pendingRotation au demarrage du try block,
@@ -1999,7 +1999,7 @@ let loadState = () => {
             // (vue avec l'ancien code viewport-rotation) aux
             // vertices. Voir state.pendingRotation plus haut + helper
             // applyPendingRotationToShapes.
-            applyPendingRotationToShapes(shapes)
+            applyPendingRotationToShapes(state.shapes)
         }
         state.ctx.workIsSaved = 1
         updateGridButtonText()
@@ -2027,7 +2027,7 @@ let loadState = () => {
 window.addEventListener('beforeunload', () => {
     clearTimeout(persistTimer)
     try {
-        localStorage.setItem(STORAGE_KEY, serializeState())
+        localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
     } catch (e) {}
 })
 
@@ -2219,7 +2219,7 @@ let applyImport = (parsed, loaded, mode) => {
         state.isSelectingBox = false
         state.selectionBoxStart = undefined
         state.selectionBoxCurrent = undefined
-        clearTimeout(wheelRotateTimer)
+        clearTimeout(state.wheelRotateTimer)
         state.wheelRotateTimer = undefined
         state.isWheelRotating = false
         // Import = wipe des piles avant reconstitution de la
@@ -2259,7 +2259,7 @@ let applyImport = (parsed, loaded, mode) => {
     state.shapes = loaded
     // Migration LEGACY : rotation viewport du fichier importe,
     // appliquee aux vertices de toutes les nouvelles formes.
-    applyPendingRotationToShapes(shapes)
+    applyPendingRotationToShapes(state.shapes)
     if (typeof parsed.state.activeShapeIndex === 'number' && parsed.state.activeShapeIndex >= 0 && parsed.state.activeShapeIndex < state.shapes.length) {
         state.activeShapeIndex = parsed.state.activeShapeIndex
     } else {
@@ -2306,7 +2306,7 @@ let resetAll = () => {
     state.isSelectingBox = false
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
-    clearTimeout(wheelRotateTimer)
+    clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
     // Reset complet du viewport (zoom + pan). La rotation de
