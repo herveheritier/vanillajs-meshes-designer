@@ -38,8 +38,12 @@ import {
     importMeshesFromFile, autoImportMeshesFromUrl,
 } from './convert.js'
 
-// Re-exports pour casser la dep circulaire avec convert.js.
-export { log, importMeshFromText }
+import { log } from './log.js'
+
+// Re-export pour la dep circulaire restante avec convert.js (sera
+// extrait dans un futur commit import_export.js quand saveMesh et
+// importMeshFromText auront leur propre module).
+export { importMeshFromText }
 
 // =================================================================
 // Reste de main.js : encore beaucoup a migrer dans les modules
@@ -1346,18 +1350,7 @@ let deleteSelectedPoint = () => {
     persistState()
 }
 
-let log = (message) => {
-    if (!state.messageLog) return
-    // Prefixe chaque entree avec un timestamp [HH:MM:SS]. padStart
-    // assure 2 chiffres pour heures/minutes/secondes (0-23, 0-59,
-    // 0-59). Pas de locale : le format est stable et comparable
-    // d'une session a l'autre, contrairement a toLocaleTimeString
-    // qui depend de la locale de l'utilisateur.
-    let d = new Date()
-    let pad = (n) => String(n).padStart(2, '0')
-    let ts = '[' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + ']'
-    state.messageLog.innerText += '\n' + ts + ' ' + message
-}
+
 
 // Efface le contenu de la console. Le bouton #clearConsole est
 // rendu inoperant quand la console est cachee par toggleConsole

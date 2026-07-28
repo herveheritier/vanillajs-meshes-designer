@@ -12,7 +12,7 @@
 // Format JSON cible (nouveau, multi-formes):
 //   { "shapes": [ {"tris","pointList"}, ... ], "activeShapeIndex" }
 
-import { log } from './main.js'
+import { log } from './log.js'
 import { importMeshFromText } from './main.js'
 
 // Renvoie { x, y } a partir d'un token "x,y" ou undefined si invalide.
