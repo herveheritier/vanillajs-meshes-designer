@@ -1913,11 +1913,44 @@ let addPoint = (point) => {
 //     silencieusement s'ils sont absents. Une scene chargee
 //     avec ces champs (migration depuis un ancien format) reste
 //     supportee a la lecture.
+// Convertit state.shapes (triangles avec refs de points partagees)
+// vers le format mesh consumable par buildShapesFromPayload :
+// chaque forme devient {pointList, tris} ou pointList est la liste
+// de points uniques (deduplicated par coords) et tris.p1/p2/p3 sont
+// des INDICES dans pointList. Necessaire pour que loadState ->
+// buildShapesFromPayload puisse reconstruire state.shapes
+// correctement : bug latent du commit e8e2775 (serializeState
+// ecrivait state.shapes directement, mais buildShapesFromPayload
+// attend le format mesh, donc les formes ne s'affichaient pas au
+// reload). Meme format utilise par le file-import
+// (importMeshFromText -> buildShapesFromPayload), donc saveMesh
+// produit aussi un fichier coherent avec le format d'import.
+let shapeToMesh = (shape) => {
+    let pointMap = new Map()
+    let pointList = []
+    let tris = []
+    shape.triangles.forEach(t => {
+        let indices = { p1: undefined, p2: undefined, p3: undefined }
+        ['p1', 'p2', 'p3'].forEach(pid => {
+            let p = t[pid]
+            if (!p) return
+            let key = p.x + ',' + p.y
+            if (!pointMap.has(key)) {
+                pointMap.set(key, pointList.length)
+                pointList.push({ x: p.x, y: p.y })
+            }
+            indices[pid] = pointMap.get(key)
+        })
+        tris.push({ p1: indices.p1, p2: indices.p2, p3: indices.p3 })
+    })
+    return { pointList, tris }
+}
+
 let serializeState = () => {
     return JSON.stringify({
         activeGrid: state.activeGrid,
         GRID_STEP: state.GRID_STEP,
-        shapes: cloneScene(state.shapes),
+        shapes: state.shapes.map(shapeToMesh),
         activeShapeIndex: state.activeShapeIndex,
         zoomLevel: state.ctx.zoomLevel,
         viewCenter: { x: state.ctx.viewCenter.x, y: state.ctx.viewCenter.y }
@@ -1940,44 +1973,65 @@ let persistState = () => {
 // Accepte les deux formats :
 //   - nouveau : { shapes: [{ tris, pointList }, ...], state.activeShapeIndex }
 //   - ancien (compat) : { tris, pointList, state.activeShapeIndex }
+// Helper interne : convertit un tableau de tris en [{p1,p2,p3}] resolus
+// contre pts. Utilise par les 3 branches de buildShapesFromPayload
+// (mesh format, migration state.shapes, legacy single-mesh) pour eviter
+// la duplication du pattern "3 lignes de nt.pX conditionnel" dans
+// chaque branche. DRY : un seul endroit pour faire evoluer la
+// resolution (ajout de tolerance, support de nouveaux slots...).
+// Retourne [] si trisArray n'est pas un tableau (defensif : un mesh
+// sans tris donne un shape vide, ce qui preservait l'ancien
+// comportement des 3 branches avant le DRY).
+let resolveTrisToTriangles = (trisArray, pts) => {
+    let ts = []
+    if (!Array.isArray(trisArray)) return ts
+    trisArray.forEach(t => {
+        let nt = {}
+        if (t.p1 !== undefined && pts[t.p1]) nt.p1 = pts[t.p1]
+        if (t.p2 !== undefined && pts[t.p2]) nt.p2 = pts[t.p2]
+        if (t.p3 !== undefined && pts[t.p3]) nt.p3 = pts[t.p3]
+        ts.push(nt)
+    })
+    return ts
+}
+
 let buildShapesFromPayload = (data) => {
     if (!data || typeof data !== 'object') return null
     let result = []
     if (Array.isArray(data.shapes)) {
         data.shapes.forEach(shape => {
             let pts = []
+            let trisSource = undefined
             if (Array.isArray(shape.pointList)) {
+                // Format mesh (ecrit par le nouveau serializeState) :
+                // pointList contient les coords brutes, tris contient
+                // des indices dans pointList.
                 pts = shape.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
+                trisSource = shape.tris
+            } else if (Array.isArray(shape.triangles)) {
+                // ANCIEN format state.shapes natif (ecrit par les versions
+                // buggees d'avant le commit de fix : serializeState
+                // serialisait directement cloneScene(state.shapes)).
+                // triangles[i].p1|p2|p3 etaient des REFERENCES d'objets
+                // points. Sans cette branche, les utilisateurs avec un
+                // localStorage ecrit en v1 voient des formes vides au
+                // reload (rien ne matche le format mesh). On convertit
+                // via shapeToMesh pour reutiliser le meme chemin de
+                // sortie (pointList dedup + indices).
+                let mesh = shapeToMesh(shape)
+                pts = (mesh.pointList || []).map(p => ({ x: Number(p.x), y: Number(p.y) }))
+                trisSource = mesh.tris
             }
-            let ts = []
-            if (Array.isArray(shape.tris)) {
-                shape.tris.forEach(t => {
-                    let nt = {}
-                    if (t.p1 !== undefined && pts[t.p1]) nt.p1 = pts[t.p1]
-                    if (t.p2 !== undefined && pts[t.p2]) nt.p2 = pts[t.p2]
-                    if (t.p3 !== undefined && pts[t.p3]) nt.p3 = pts[t.p3]
-                    return ts.push(nt)
-                })
-            }
-            result.push({ triangles: ts })
+            result.push({ triangles: resolveTrisToTriangles(trisSource, pts) })
         })
     } else {
-        // Ancien format : un seul mesh -> une seule forme.
+        // Legacy single-mesh format (avant le split : la scene etait
+        // un seul {pointList, tris}, pas un tableau de formes).
         let pts = []
         if (Array.isArray(data.pointList)) {
             pts = data.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
         }
-        let ts = []
-        if (Array.isArray(data.tris)) {
-            data.tris.forEach(t => {
-                let nt = {}
-                if (t.p1 !== undefined && pts[t.p1]) nt.p1 = pts[t.p1]
-                if (t.p2 !== undefined && pts[t.p2]) nt.p2 = pts[t.p2]
-                if (t.p3 !== undefined && pts[t.p3]) nt.p3 = pts[t.p3]
-                ts.push(nt)
-            })
-        }
-        result.push({ triangles: ts })
+        result.push({ triangles: resolveTrisToTriangles(data.tris, pts) })
     }
     if (result.length === 0) result = [{ triangles: [] }]
     return result
