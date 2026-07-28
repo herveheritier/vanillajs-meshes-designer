@@ -213,6 +213,22 @@ let currentAction = undefined
 let grabbedPoint = []
 let relativeGrabbingPosition = undefined
 let activeGrid = false
+// Reticule : guide visuel au curseur, 3 etats :
+//   0 = invisible, 1 = crosshair simple, 2 = projection
+//   symetrique selon les 2 axes (curseur + miroirs a (-x,y),
+//   (x,-y), (-x,-y)). Persiste en localStorage (cle dediee, pas
+//   dans la scene JSON — c'est une preference UI, pas un
+//   contenu). Lecture defensive avec fallback a 0 si la cle est
+//   corrompue / hors plage (meme pattern que consoleVisible).
+const RETICLE_MODE_STORAGE_KEY = 'meshesDesigner.reticleMode'
+let reticleMode = 0
+try {
+    let stored = localStorage.getItem(RETICLE_MODE_STORAGE_KEY)
+    if (stored !== null) {
+        let parsed = parseInt(stored)
+        if (parsed === 0 || parsed === 1 || parsed === 2) reticleMode = parsed
+    }
+} catch (e) {}
 
 snapToGrid = (point) => {
     if (!activeGrid || !point) return point
@@ -531,6 +547,38 @@ gridBtn.addEventListener("mousedown", (e) => {
 })
 
 updateGridButtonText()
+
+// === Réticule : ===
+// Bouton 3 etats cycles au clic (off -> simple -> symetrique -> off).
+// Meme pattern que toggleGrid : toggle + update visuel + redraw +
+// persist. updateReticleButton synchronise le bouton (classe
+// .reticle-active si mode >= 1, texte #reticleText avec le
+// numero d'etat "1" / "2" / vide pour off). Persistance via la
+// cle meshesDesigner.reticleMode (cf. declaration plus haut).
+toggleReticle = () => {
+    reticleMode = (reticleMode + 1) % 3
+    updateReticleButton()
+    drawBoard()
+    persistState()
+}
+
+updateReticleButton = () => {
+    let btn = document.querySelector('#reticle')
+    let text = document.querySelector('#reticleText')
+    if (btn) btn.classList.toggle('reticle-active', reticleMode >= 1)
+    if (text) text.textContent = reticleMode === 0 ? '' : String(reticleMode)
+}
+
+let reticleBtn = document.querySelector('#reticle')
+if (reticleBtn) reticleBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    toggleReticle()
+})
+
+// Init visuel (au boot, apres lecture de localStorage) : affiche
+// l'etat courant dans le bouton. Idempotent avec le HTML par
+// defaut (qui laisse le <span> vide).
+updateReticleButton()
 
 // Toggle la console des messages (utilise par le clic sur le
 // bouton ; centralise comme toggleGrid). Preference persistee a
@@ -1004,6 +1052,16 @@ document.addEventListener('keydown',(e) => {
     if (!typing && !inGridBtn && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyG') {
         e.preventDefault()
         toggleGrid()
+    }
+    // R : cycle du mode reticule (off -> simple -> symetrique -> off).
+    // Meme pattern que 'G' pour la grille : pas de modifier, ignore
+    // si la cible est dans un input (ne pas capter la frappe quand
+    // l'utilisateur tape un 'r' dans un futur champ texte) ou dans
+    // #grid (evite le double-toggle consecutif apres un clic).
+    let inReticleBtn = t && typeof t.closest === 'function' && t.closest('#reticle')
+    if (!typing && !inReticleBtn && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyR') {
+        e.preventDefault()
+        toggleReticle()
     }
     // '?' ouvre/ferme le panneau d'aide. Detecte via e.key (locale-
     // dependant : shift+/ sur US, shift+, sur AZERTY, etc.) et la
