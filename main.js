@@ -552,6 +552,13 @@ let persistConsoleFrame = () => {
 // resizing-console set le cursor OS en !important (le canvas a
 // cursor: 'none' inline ; pas de regle non-important ne l'out-
 // repasse). restore au mouseup.
+// Note : `document.body` (et NON `document.state.body`). Le bulk
+// rename du refactor ES6 avait transforme `document.body` en
+// `document.state.body` (10 sites au total), pattern qui n'a
+// aucun sens : `document.state` est undefined, donc l'acces jetait
+// TypeError des que l'utilisateur touchait la console ou cliquait
+// sur les boutons d'import. Restore ici l'original. Meme
+// pattern que le fix `entry.state.X` -> `entry.X` sur undo/redo.
 let consoleTitleBar = document.querySelector('#consoleTitleBar')
 if (consoleTitleBar) consoleTitleBar.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return
@@ -568,7 +575,7 @@ if (consoleTitleBar) consoleTitleBar.addEventListener('mousedown', (e) => {
         mbLeft: rect.left,
         mbTop: rect.top
     }
-    document.state.body.classList.add('dragging-console')
+    document.body.classList.add('dragging-console')
 })
 
 let consoleResizeHandle = document.querySelector('#consoleResizeHandle')
@@ -584,7 +591,7 @@ if (consoleResizeHandle) consoleResizeHandle.addEventListener('mousedown', (e) =
         mbWidth: rect.width,
         mbHeight: rect.height
     }
-    document.state.body.classList.add('resizing-console')
+    document.body.classList.add('resizing-console')
 })
 
 // === Mousemove document-level ===
@@ -621,8 +628,8 @@ document.addEventListener('mouseup', (e) => {
     state.consoleMoving = false
     state.consoleResizing = false
     state.consoleDragStart = null
-    document.state.body.classList.remove('dragging-console')
-    document.state.body.classList.remove('resizing-console')
+    document.body.classList.remove('dragging-console')
+    document.body.classList.remove('resizing-console')
     // Persist uniquement a la fin du drag (pas pendant le mousemove)
     // — localStorage n'est pas concu pour du haut debit, et les
     // valeurs intermediaires sont transitoires.
@@ -641,8 +648,8 @@ window.addEventListener('blur', () => {
     state.consoleMoving = false
     state.consoleResizing = false
     state.consoleDragStart = null
-    document.state.body.classList.remove('dragging-console')
-    document.state.body.classList.remove('resizing-console')
+    document.body.classList.remove('dragging-console')
+    document.body.classList.remove('resizing-console')
     persistConsoleFrame()
 })
 
@@ -700,7 +707,9 @@ importMeshesBtn.addEventListener('click', (e) => {
         // strict masque ces fichiers dans le picker. On laisse le
         // navigateur montrer TOUS les fichiers, la validation se fait
         // dans importMeshesFromFile.
-        document.state.body.appendChild(input)
+        // `document.body` : voir le commentaire en L555 pour le
+        // pattern de sur-rename du bulk refactor.
+        document.body.appendChild(input)
         input.addEventListener('change', (evt) => {
             let f = evt.target.files && evt.target.files[0]
             if (f) importMeshesFromFile(f)
@@ -724,7 +733,9 @@ if (importJsonBtn) importJsonBtn.addEventListener('click', (e) => {
         input.id = 'importJsonFile'
         input.accept = 'application/json,.json'
         input.hidden = true
-        document.state.body.appendChild(input)
+        // `document.body` : voir le commentaire en L555 pour le
+        // pattern de sur-rename du bulk refactor.
+        document.body.appendChild(input)
         input.addEventListener('change', (evt) => {
             let f = evt.target.files && evt.target.files[0]
             if (f) importMeshFromFile(f)
@@ -2057,9 +2068,9 @@ let saveMesh = () => {
         let a = document.createElement('a')
         a.href = url
         a.download = 'mesh-' + Date.now() + '.json'
-        document.state.body.appendChild(a)
+        document.body.appendChild(a)
         a.click()
-        document.state.body.removeChild(a)
+        document.body.removeChild(a)
         URL.revokeObjectURL(url)
         log('Export OK: ' + a.download)
     } catch (e) {
