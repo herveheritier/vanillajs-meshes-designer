@@ -1895,6 +1895,35 @@ let addPoint = (point) => {
     persistState()
 }
 
+// Serialize l'etat complet en JSON. Consomme par loadState (boot
+// restore depuis localStorage) ET par saveMesh (export fichier).
+// Format FLAT (pas de wrapping `state.X` malgre le bulk rename du
+// refactor ES6 qui en avait ajoute dans loadState — meme pattern
+// que le bug `entry.state.X` sur undo/redo).
+//
+// Champs inclus :
+//   - scene : shapes + activeShapeIndex (couple inseparable)
+//   - grille : activeGrid + GRID_STEP
+//   - camera : zoomLevel + viewCenter
+// Champs NON emis (mais lus conditionnellement par loadState si
+// presents) :
+//   - rotation + rotationPivot : LEGACY, emis par l'ancien code
+//     viewport-rotation. Le code actuel integre la rotation dans
+//     les vertices donc on n'emet rien — loadState.skip
+//     silencieusement s'ils sont absents. Une scene chargee
+//     avec ces champs (migration depuis un ancien format) reste
+//     supportee a la lecture.
+let serializeState = () => {
+    return JSON.stringify({
+        activeGrid: state.activeGrid,
+        GRID_STEP: state.GRID_STEP,
+        shapes: cloneScene(state.shapes),
+        activeShapeIndex: state.activeShapeIndex,
+        zoomLevel: state.ctx.zoomLevel,
+        viewCenter: { x: state.ctx.viewCenter.x, y: state.ctx.viewCenter.y }
+    })
+}
+
 let persistState = () => {
     clearTimeout(state.persistTimer)
     state.persistTimer = setTimeout(() => {
@@ -1914,8 +1943,8 @@ let persistState = () => {
 let buildShapesFromPayload = (data) => {
     if (!data || typeof data !== 'object') return null
     let result = []
-    if (Array.isArray(data.state.shapes)) {
-        data.state.shapes.forEach(shape => {
+    if (Array.isArray(data.shapes)) {
+        data.shapes.forEach(shape => {
             let pts = []
             if (Array.isArray(shape.pointList)) {
                 pts = shape.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
@@ -1968,9 +1997,9 @@ let loadState = () => {
         // applyPendingRotationToShapes).
         state.pendingRotation = undefined
         let data = JSON.parse(saved)
-        if (data.state.activeGrid !== undefined) state.activeGrid = !!data.state.activeGrid
-        if (data.state.GRID_STEP !== undefined && typeof data.state.GRID_STEP === 'number') {
-            state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.state.GRID_STEP))
+        if (data.activeGrid !== undefined) state.activeGrid = !!data.activeGrid
+        if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') {
+            state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
         }
         // Zoom et viewCenter : on les restaure avec le meme clamp que
         // la wheel handler (bornes identiques cote MIN/MAX).
@@ -2020,8 +2049,8 @@ let loadState = () => {
         let loaded = buildShapesFromPayload(data)
         if (loaded) {
             state.shapes = loaded
-            if (typeof data.state.activeShapeIndex === 'number' && data.state.activeShapeIndex >= 0 && data.state.activeShapeIndex < state.shapes.length) {
-                state.activeShapeIndex = data.state.activeShapeIndex
+            if (typeof data.activeShapeIndex === 'number' && data.activeShapeIndex >= 0 && data.activeShapeIndex < state.shapes.length) {
+                state.activeShapeIndex = data.activeShapeIndex
             } else {
                 state.activeShapeIndex = 0
             }
