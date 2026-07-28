@@ -1725,10 +1725,10 @@ let findNextNearestPoint = (nearestPoint) => {
     let shortPointIndex = -1
     let tris = activeTriangles()
     tris.forEach( (e,i) => {
-        if(i<=state.nearestPoint.triangleIndex) return
+        if(i<=nearestPoint.triangleIndex) return
         [e.p1,e.p2,e.p3].forEach( (p,j) => {
             if(!p) return
-            let d = Math.hypot(p.x-state.nearestPoint.point.x,p.y-state.nearestPoint.point.y)
+            let d = Math.hypot(p.x-nearestPoint.point.x,p.y-nearestPoint.point.y)
             if(d < shortDistance) {
                 shortIndex = i
                 shortDistance = d
@@ -1866,8 +1866,8 @@ let addPoint = (point) => {
 }
 
 let persistState = () => {
-    clearTimeout(persistTimer)
-    persistTimer = setTimeout(() => {
+    clearTimeout(state.persistTimer)
+    state.persistTimer = setTimeout(() => {
         try {
             localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
             state.ctx.workIsSaved = 1
@@ -2025,7 +2025,7 @@ let loadState = () => {
 }
 
 window.addEventListener('beforeunload', () => {
-    clearTimeout(persistTimer)
+    clearTimeout(state.persistTimer)
     try {
         localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
     } catch (e) {}

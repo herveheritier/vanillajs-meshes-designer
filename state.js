@@ -90,6 +90,13 @@ export const state = {
     historyStack: [],
     redoStack: [],
 
+    // ===== Persist debounce timer =====
+    // setTimeout ID pour la persistance localStorage debounced (cf.
+    // persistState dans main.js). Annule au rechargement
+    // (beforeunload) pour eviter un flush partiel du state
+    // serialize au milieu d'une frame.
+    persistTimer: undefined,
+
     // ===== Wheel rotations timers =====
     isWheelRotating: false,
     wheelRotateTimer: undefined,
