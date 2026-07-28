@@ -1852,7 +1852,16 @@ let addPoint = (point) => {
         tris.push({p1:point})
     } 
     else {
-        triangle = tris.at(-1)
+        // `triangle` est declare ici (et non dans la boucle for
+        // au-dessus) car il est utilise APRES la fin de cette
+        // boucle. Le `let triangle = tris[i]` dans la boucle
+        // n'a qu'une portee de bloc (loop body), invisible ici.
+        // Avant le refactor ES6 modules, l'assignation nue
+        // beneficiait de la creation implicite d'un global en
+        // mode sloppy ; les modules ES sont strict par defaut,
+        // donc ReferenceError. Cf. fix similaire sur `result`
+        // dans findNextNearestPoint.
+        let triangle = tris.at(-1)
         if(triangle.p2===undefined) {
             triangle.p2 = point
         }
