@@ -391,6 +391,33 @@
                 white-space: nowrap;
             }
 
+            /* Compteur de selection : meme pilule verte que
+               #undoCount / #shapeLabel — meme langage visuel pour
+               les pills read-only de la toolbar. Placer juste
+               apres #selectAll (groupement thematique avec l'outil
+               de selection globale) et avant le separateur vers
+               undo/redo. textContent mis a jour par
+               updateSelectionHud() apres chaque mutation de
+               selectedPoints ; affiche "0" quand rien n'est
+               selectionne, N sinon. Pas d'innerHTML (on injecte un
+               entier brut). */
+            #toolbar #selectionCount {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                height: 30px;
+                padding: 0 12px;
+                min-width: 44px;
+                font-family: monospace;
+                font-size: 13px;
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border: 1px solid rgba(55, 194, 0, 0.35);
+                border-radius: 14px;
+                pointer-events: none;
+                white-space: nowrap;
+            }
+
             /* Disabled state partage par les boutons undo/redo (et
                futurs boutons lies a un etat de pile vide) : pile
                vide => disabled=true via JS (updateUndoRedoHud).
@@ -612,6 +639,16 @@
             <button id="grid" title="Afficher / masquer la grille (G, molette pour ajuster le pas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12"/><line x1="6" y1="2" x2="6" y2="14"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="2" y1="10" x2="14" y2="10"/></svg><span id="gridText"></span></button>
             <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
             <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
+            <!-- Compteur de points selectionnes : miroite le pattern
+                 des autres pills read-only (#shapeLabel, #undoCount)
+                 mais pour la selection courante. Placer APRES
+                 #selectAll pour rester thematiquement groupe avec les
+                 outils de selection. Initialise a 0 dans le HTML
+                 (selection vide au chargement) ; updateSelectionHud()
+                 resynchronise apres chaque mutation de selectedPoints ;
+                 l'appel final dans doit() garantit "(0)" au boot meme
+                 apres une scene restauree depuis localStorage. -->
+            <span id="selectionCount" title="Nombre de points sélectionnés">0</span>
             <span class="toolbar-sep"></span>
             <!-- Section Annuler / Retablir : miroite les raccourcis
                  clavier (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y) en passant
@@ -683,6 +720,15 @@
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd wide">Molette</kbd><span>zoomer (centre sur le curseur) ; pivoter si 2+ points sont selectionnes</span></div>
+                    <!-- Modificateurs souris pour la selection point-par-point.
+                         Sans modificateur : clic sur point REMPLACE la selection.
+                         Shift : TOGGLE (ajoute si absent, retire si present).
+                         Ctrl/Cmd : AJOUTE sans toggle (idempotent — utile pour
+                         accumuler une selection enchainant plusieurs Ctrl+clic).
+                         Sur espace vide, les modifiers preservent la selection
+                         et Ctrl n'y cree pas de sommet (modifiers = ops de
+                         selection, pas de creation). -->
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd wide">Clic sur point</kbd><span>ajouter le point à la sélection (sans toggle, idempotent). <kbd class="kbd">Maj</kbd>+clic = toggle. Clic sans modifier = remplace la sélection. Cmd+clic (Mac) = équivalent Ctrl+clic.</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu + drag</kbd><span>deplacer le viewCenter dans le sens du drag (pan)</span></div>
                     <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Clic-droit + drag</kbd><span>deplacer toutes les formes ensemble (meme delta, quasi-mode). AltGr (Right Alt) declenche Ctrl+Alt sur la plupart des claviers.</span></div>
                     <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Molette</kbd><span>rotation de chaque forme autour du curseur (5 deg/cran, cumulatif). Le pivot est la position de la souris dans la scene (= coords modele sous le curseur, suivi a chaque tick si elle bouge). Sans AltGr : molette pivote si 2+ points sont selectionnes, sinon zoom centre sur le curseur.</span></div>

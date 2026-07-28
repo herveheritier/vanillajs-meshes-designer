@@ -79,6 +79,8 @@ goToShape = (newIndex) => {
     drawBoard()
     if (lastMousePos) updateMouseHover(lastMousePos)
     updateShapeHud()
+    // Selection videe au switch de forme -> pilule a 0.
+    updateSelectionHud()
 }
 
 prevShape = () => {
@@ -118,6 +120,7 @@ deleteShape = () => {
         drawBoard()
         if (lastMousePos) updateMouseHover(lastMousePos)
         updateShapeHud()
+        updateSelectionHud()
         persistState()
         return
     }
@@ -139,6 +142,7 @@ deleteShape = () => {
     drawBoard()
     if (lastMousePos) updateMouseHover(lastMousePos)
     updateShapeHud()
+    updateSelectionHud()
     persistState()
 }
 
@@ -146,6 +150,41 @@ updateShapeHud = () => {
     let label = document.querySelector('#shapeLabel')
     if (!label) return
     label.textContent = (activeShapeIndex + 1) + '/' + shapes.length
+}
+
+// HUD acompagnant la pile d'annulations : le compteur
+// #undoCount reflete la profondeur de historyStack (read-only,
+// pas cliquable), et les boutons #undo/#redo recoivent l'attribut
+// disabled=true quand leur pile respective est vide. Appelee
+// depuis saveState (mute les deux piles), undo/redo (pop +
+// push croises), applyImport.resetEphemeralState et resetAll
+// (clear applique), et au boot (etat initial "(0)" tant que
+// rien n'a bouge). Meme pattern defensif que updateShapeHud :
+// chaque query est tolere a l'absence (retour silencieux) pour
+// ne pas crasher dans des contextes partiels (ex: ancien HTML,
+// tests headless).
+updateUndoRedoHud = () => {
+    let countEl = document.querySelector('#undoCount')
+    let undoEl = document.querySelector('#undo')
+    let redoEl = document.querySelector('#redo')
+    if (countEl) countEl.textContent = '(' + historyStack.length + ')'
+    if (undoEl) undoEl.disabled = historyStack.length === 0
+    if (redoEl) redoEl.disabled = redoStack.length === 0
+}
+
+// HUD acompagnant la selection : la pilule #selectionCount
+// reflete le nombre de points actuellement dans selectedPoints
+// (read-only, pas cliquable). Centralisee : tout chemin qui
+// mute selectedPoints appelle updateSelectionHud() pour
+// garantir que la pilule reflete l'etat a coup sur. Meme
+// pattern defensif que updateUndoRedoHud : si l'element
+// manque (ancien HTML, tests headless) retour silencieux,
+// on ne crash pas. Update via textContent (entier brut,
+// pas d'HTML a formatter — textContent est plus rapide et
+// sans risque d'injection que innerHTML).
+updateSelectionHud = () => {
+    let countEl = document.querySelector('#selectionCount')
+    if (countEl) countEl.textContent = selectedPoints.length
 }
 
 let nearestLine = undefined
@@ -312,6 +351,11 @@ saveState = () => {
         historyStack.shift()
     }
     redoStack = []
+    // Mute les deux piles : mettre a jour le HUD compteur +
+    // disabled ici garantit que tout chemin qui passe par
+    // saveState (editions, drags, rotations, delete, etc.)
+    // voit son etat synchronise.
+    updateUndoRedoHud()
 }
 
 undo = () => {
@@ -342,6 +386,8 @@ undo = () => {
         updateMouseHover(lastMousePos)
     }
     updateShapeHud()
+    updateUndoRedoHud()
+    updateSelectionHud()
     persistState()
 }
 
@@ -373,12 +419,18 @@ redo = () => {
         updateMouseHover(lastMousePos)
     }
     updateShapeHud()
+    updateUndoRedoHud()
+    updateSelectionHud()
     persistState()
 }
 
 let board = document.querySelector('#board')
 let body = document.querySelector('body')
 let messageBoard = document.querySelector('#messageBoard')
+// messageLog encapsule le texte de la console (initial '*** CONSOLE ***'
+// + chaque appel log()) : permet de manipuler innerText sur le contenu
+// sans detruire le bouton #clearConsole qui est frere dans #messageBoard.
+let messageLog = document.querySelector('#messageLog')
 body.style.overflow = 'hidden'
 board.style.border = 'solid 1px black'
 board.style.width = '99vw'
@@ -394,7 +446,9 @@ ctx.center.y = board.height / 2
 let _ctx =  board.getContext("2d")
 _ctx.fillStyle = '#000000'
 _ctx.fillRect(0,0,board.width,board.height)
-messageBoard.innerText = '*** CONSOLE ***'
+// Le '*** CONSOLE ***' initial est dans le HTML (#messageLog),
+// plus dans innerText ici — la assignation supprimerait le
+// bouton #clearConsole frere.
 
 updateGridButtonText = () => {
     let gridText = document.querySelector('#gridText')
@@ -496,6 +550,171 @@ if (consoleBtn) consoleBtn.addEventListener('click', (e) => {
 // quand consoleVisible=true, set style.display='' est idempotent).
 updateConsoleButton()
 
+// === Console frame : position + taille draggables, persistees ===
+// La cadre de la console a un bandeau superieur (drag handle) et
+// une poignee SE (resize). Les valeurs en px (left, top, width,
+// height) sont posees sur #messageBoard via JS pendant le drag,
+// puis memorisees dans localStorage a la fin du drag pour survivre
+// au rechargement. Cle isolee de la scene (cf. cle separee aussi
+// pour consoleVisible et importMode — pas dans la scene JSON).
+const CONSOLE_FRAME_STORAGE_KEY = 'meshesDesigner.consoleFrame'
+
+applyConsoleFrame = () => {
+    if (!messageBoard) return
+    try {
+        let stored = localStorage.getItem(CONSOLE_FRAME_STORAGE_KEY)
+        if (!stored) return
+        let f = JSON.parse(stored)
+        if (!f || typeof f !== 'object') return
+        // Validation : on n'applique que si les valeurs sont san-
+        // seisantes. Un top/left negatif n'a pas de sens ; width
+        // /height en dessous d'un minimum fonctionnel (80/30)
+        // rendrait le cadre inutilisable (resize listener borne a
+        // ces memes minimums en JS). dropped => garde la CSS
+        // default (top:64px, left:1vw, width:auto, height:auto).
+        if (typeof f.left === 'number' && f.left >= 0) messageBoard.style.left = f.left + 'px'
+        if (typeof f.top === 'number' && f.top >= 0) messageBoard.style.top = f.top + 'px'
+        if (typeof f.width === 'number' && f.width >= 80) messageBoard.style.width = f.width + 'px'
+        if (typeof f.height === 'number' && f.height >= 30) messageBoard.style.height = f.height + 'px'
+    } catch (e) {}
+}
+
+persistConsoleFrame = () => {
+    if (!messageBoard) return
+    try {
+        // On ecrit la position / taille en px (parseInt extrait le
+        // nombre, ignore 'px' ; utilise 0 si absent/auto). C'est
+        // importe d'ecrire MEME si l'utilisateur n'a pas bouge,
+        // pour que le CSS default '1vw' soit converti en px exact
+        // (plus stable au reload quelle que soit la largeur
+        // viewport).
+        let f = {
+            left: parseInt(messageBoard.style.left) || 0,
+            top: parseInt(messageBoard.style.top) || 0,
+            width: parseInt(messageBoard.style.width) || 0,
+            height: parseInt(messageBoard.style.height) || 0
+        }
+        localStorage.setItem(CONSOLE_FRAME_STORAGE_KEY, JSON.stringify(f))
+    } catch (e) {}
+}
+
+// === Drag/resize state ===
+// Deux flags distincts pour bouger vs redimensionner, plus une
+// capture de la position initiale au mousedown pour calculer les
+// deltas en mousemove. Pas d'accumulation : le mousemove applique
+// (current - initial) sur la valeur stockée, donc meme si un
+// event est rate, le tick suivant produit la position correcte.
+let consoleMoving = false
+let consoleResizing = false
+let consoleDragStart = null
+
+// === Mousedown handlers (sur elements precis, pas document) ===
+// e.button === 0 strict : un mousedown au milieu ou a droite ne
+// lance pas un drag. La classe body.dragging-console /
+// resizing-console set le cursor OS en !important (le canvas a
+// cursor: 'none' inline ; pas de regle non-important ne l'out-
+// repasse). restore au mouseup.
+let consoleTitleBar = document.querySelector('#consoleTitleBar')
+if (consoleTitleBar) consoleTitleBar.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return
+    if (!messageBoard) return
+    e.preventDefault()
+    consoleMoving = true
+    // Capture une seule fois (au mousedown) le rect + position
+    // souris. Le delta en mousemove se calcule a partir de ces
+    // refs, pas d'accumulation.
+    let rect = messageBoard.getBoundingClientRect()
+    consoleDragStart = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        mbLeft: rect.left,
+        mbTop: rect.top
+    }
+    document.body.classList.add('dragging-console')
+})
+
+let consoleResizeHandle = document.querySelector('#consoleResizeHandle')
+if (consoleResizeHandle) consoleResizeHandle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return
+    if (!messageBoard) return
+    e.preventDefault()
+    consoleResizing = true
+    let rect = messageBoard.getBoundingClientRect()
+    consoleDragStart = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        mbWidth: rect.width,
+        mbHeight: rect.height
+    }
+    document.body.classList.add('resizing-console')
+})
+
+// === Mousemove document-level ===
+// Handler distinct du mousemove existant (qui dispatche sur
+// resolveMouseMoveOnBoard si e.target est board) — pas de conflit,
+// les deux early-return quand leur condition n'est pas remplie.
+// Pas de transition CSS sur left/top/width/height : les transitions
+// rendraient le drag lent/laggy.
+const CONSOLE_MIN_WIDTH = 80
+const CONSOLE_MIN_HEIGHT = 30
+document.addEventListener('mousemove', (e) => {
+    if (!consoleMoving && !consoleResizing) return
+    if (!messageBoard) return
+    if (!consoleDragStart) return
+    let dx = e.clientX - consoleDragStart.mouseX
+    let dy = e.clientY - consoleDragStart.mouseY
+    if (consoleMoving) {
+        messageBoard.style.left = (consoleDragStart.mbLeft + dx) + 'px'
+        messageBoard.style.top = (consoleDragStart.mbTop + dy) + 'px'
+    } else if (consoleResizing) {
+        // Le resize est ancre en haut-gauche : le coin top-left du
+        // cadre ne bouge pas, on elargit vers le bas-droite. Math
+        // aux minimums (80x30) pour eviter que l'utilisateur
+        // ecrase le cadre a 0x0 (devient inutilisable).
+        let w = Math.max(CONSOLE_MIN_WIDTH, consoleDragStart.mbWidth + dx)
+        let h = Math.max(CONSOLE_MIN_HEIGHT, consoleDragStart.mbHeight + dy)
+        messageBoard.style.width = w + 'px'
+        messageBoard.style.height = h + 'px'
+    }
+})
+
+// === Mouseup document-level ===
+document.addEventListener('mouseup', (e) => {
+    if (e.button !== 0) return
+    if (!consoleMoving && !consoleResizing) return
+    consoleMoving = false
+    consoleResizing = false
+    consoleDragStart = null
+    document.body.classList.remove('dragging-console')
+    document.body.classList.remove('resizing-console')
+    // Persist uniquement a la fin du drag (pas pendant le mousemove)
+    // — localStorage n'est pas concu pour du haut debit, et les
+    // valeurs intermediaires sont transitoires.
+    persistConsoleFrame()
+})
+
+// === Reset au blur ===
+// Edge case : si l'utilisateur commence un drag, puis change de
+// fenetre ou alt-tab pendant le drag, le mouseup peut etre rate.
+// Sans ce handler, les flags restent a true indefiniment et le
+// prochain mousemove reprendrait le drag la ou il etait, en
+// utilisant un ancien dragStart — comportement bizarre. Reset
+// propre au blur.
+window.addEventListener('blur', () => {
+    if (!consoleMoving && !consoleResizing) return
+    consoleMoving = false
+    consoleResizing = false
+    consoleDragStart = null
+    document.body.classList.remove('dragging-console')
+    document.body.classList.remove('resizing-console')
+    persistConsoleFrame()
+})
+
+// Au boot : applique le frame precedemment sauvegarde. Si pas de
+// cle, garde top:64px / left:1vw / width:auto / height:auto
+// definis dans la CSS de #messageBoard.
+applyConsoleFrame()
+
 let exportBtn = document.querySelector('#export')
 exportBtn.addEventListener('click', (e) => {
     if (e.button !== 0) return
@@ -521,6 +740,8 @@ selectAllPoints = () => {
     if (lastMousePos) {
         updateMouseHover(lastMousePos)
     }
+    // Toute la forme est selectionnee -> pilule reflete result.length.
+    updateSelectionHud()
 }
 
 let selectAllBtn = document.querySelector('#selectAll')
@@ -604,6 +825,25 @@ if (deleteShapeBtn) deleteShapeBtn.addEventListener('click', (e) => {
     deleteShape()
 })
 
+// Wiring des boutons Annuler / Retablir de la toolbar. Meme
+// pattern defensif que les autres boutons (tolere l'absence
+// pour les tests headless / ancien HTML). Les fonctions undo()
+// et redo() sont deja courtes : si la pile correspondante est
+// vide elles no-op immediatement ; le bouton est de toute
+// facon desactive via l'attribut HTML disabled (cf.
+// updateUndoRedoHud), donc double securite.
+let undoToolbarBtn = document.querySelector('#undo')
+if (undoToolbarBtn) undoToolbarBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    undo()
+})
+
+let redoToolbarBtn = document.querySelector('#redo')
+if (redoToolbarBtn) redoToolbarBtn.addEventListener('click', (e) => {
+    if (e.button !== 0) return
+    redo()
+})
+
 let helpBtn = document.querySelector('#helpBtn')
 if (helpBtn) helpBtn.addEventListener('click', (e) => {
     if (e.button !== 0) return
@@ -639,9 +879,18 @@ document.addEventListener('mouseup',(e) => {
                 let np = findNearestPoint(screenToModel(mouseScreen))
                 if(np && np.distance < 15) {
                     let pointsAtPos = getPointsAtSamePosition(np.point)
-                    if(!e.shiftKey) {
-                        selectedPoints = [...pointsAtPos]
-                    } else {
+                    // Trois branches mutuellement exclusives sur les modifiers :
+                    //   - shift : toggle (existant)
+                    //   - ctrl/meta : ajoute a la selection sans toggle (NEW)
+                    //   - aucun : remplace (existant)
+                    // shift teste en premier pour preserver sa priorite si
+                    // l'utilisateur combine shift+ctrl (rare). ctrl + metaKey
+                    // supportes ensemble : Ctrl sur Linux/Windows, Cmd sur Mac.
+                    // L'operation 'ajouter sans toggle' est idempotente : si le
+                    // point (ou le cluster getPointsAtSamePosition) est deja
+                    // dans la selection, le push n'ajoute pas de doublon (filtre
+                    // isPointSelected ci-dessous).
+                    if(e.shiftKey) {
                         let anySelected = pointsAtPos.some(p => isPointSelected(p))
                         if(anySelected) {
                             selectedPoints = selectedPoints.filter(sp => !pointsAtPos.some(p => adjacentPoints(sp, p, 0.01)))
@@ -650,15 +899,45 @@ document.addEventListener('mouseup',(e) => {
                                 if(!isPointSelected(p)) selectedPoints.push(p)
                             })
                         }
+                    } else if(e.ctrlKey || e.metaKey) {
+                        // Ctrl/Cmd + click sur un point : AJOUTE a la selection.
+                        // Permet d'accumuler une selection point-par-point en
+                        // chainant plusieurs Ctrl+click, sans devoir maintenir
+                        // un modifier jusqu'a la fin d'un geste (le user
+                        // clique, relache, reclique ailleurs, etc.).
+                        pointsAtPos.forEach(p => {
+                            if(!isPointSelected(p)) selectedPoints.push(p)
+                        })
+                    } else {
+                        selectedPoints = [...pointsAtPos]
                     }
                 } else {
-                    if(!e.shiftKey) {
+                    // Clic en espace vide (pas de point proche).
+                    //   - plain : clear selection + cree un point (creation).
+                    //   - shift : preserve selection + cree un point (existant).
+                    //   - ctrl/meta : preserve selection, NE cree PAS de point
+                    //     (modifiers = operations sur la selection, pas sur
+                    //     la scene). Coherent avec la nouvelle branche
+                    //     'ajouter sans toggle' : Ctrl+click accidentel en vide
+                    //     ne pollue pas la scene.
+                    if(e.shiftKey) {
+                        resolveMouseClickOnBoard(e)
+                    } else if(e.ctrlKey || e.metaKey) {
+                        // no-op : ne cree pas de point, ne touche pas a la
+                        // selection. Evite qu'un Ctrl+click maladroit n'ajoute
+                        // un sommet fantome.
+                    } else {
                         selectedPoints = []
+                        resolveMouseClickOnBoard(e)
                     }
-                    resolveMouseClickOnBoard(e)
                 }
             }
             drawBoard()
+            // Pilule selection : tout le bloc if(dist<5) ci-dessus
+            // mute selectedPoints selon le modifier (shift toggle,
+            // ctrl add, rien replace) ou clear en espace vide.
+            // Un seul appel a la fin couvre toutes les branches.
+            updateSelectionHud()
         }
     }
 })
@@ -984,11 +1263,12 @@ rotateEachShapeAroundPivot = (pivotModel, angle) => {
     if (!isEachShapeRotating) {
         saveState()
         isEachShapeRotating = true
-        // Vider la selection : la rotation mute TOUS les points,
-        // pas seulement les selectionnes ; ne pas laisser le
-        // surlignage cyan suggerer le contraire.
-        selectedPoints = []
-        log('AltGr + molette detecte - rotation de chaque forme autour du curseur (5 deg/tick)')
+            // Vider la selection : la rotation mute TOUS les points,
+            // pas seulement les selectionnes ; ne pas laisser le
+            // surlignage cyan suggerer le contraire.
+            selectedPoints = []
+            updateSelectionHud()
+            log('AltGr + molette detecte - rotation de chaque forme autour du curseur (5 deg/tick)')
     }
     clearTimeout(eachShapeRotateTimer)
     eachShapeRotateTimer = setTimeout(() => {
@@ -1093,11 +1373,46 @@ deleteSelectedPoint = () => {
     if(lastMousePos) {
         updateMouseHover(lastMousePos)
     }
+    updateSelectionHud()
     persistState()
 }
 
 log = (message) => {
-    messageBoard.innerText += '\n'+message
+    if (!messageLog) return
+    // Prefixe chaque entree avec un timestamp [HH:MM:SS]. padStart
+    // assure 2 chiffres pour heures/minutes/secondes (0-23, 0-59,
+    // 0-59). Pas de locale : le format est stable et comparable
+    // d'une session a l'autre, contrairement a toLocaleTimeString
+    // qui depend de la locale de l'utilisateur.
+    let d = new Date()
+    let pad = (n) => String(n).padStart(2, '0')
+    let ts = '[' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + ']'
+    messageLog.innerText += '\n' + ts + ' ' + message
+}
+
+// Efface le contenu de la console. Le bouton #clearConsole est
+// rendu inoperant quand la console est cachee par toggleConsole
+// (display:none sur #messageBoard cache aussi son contenu). Une
+// confirmation n'est pas demandee : les logs sont ephemeres
+// (non persistes en localStorage), pas un etat irreversible.
+clearConsole = () => {
+    if (!messageLog) return
+    messageLog.innerText = ''
+}
+
+let clearConsoleBtn = document.querySelector('#clearConsole')
+if (clearConsoleBtn) {
+    // stopPropagation sur mousedown : empeche le drag du bandeau
+    // parent de se declencher quand l'utilisateur veut juste
+    // effacer la console ("mousedown sur bouton" ne doit pas
+    // demarrer un drag accidentel sur le titre). e.stopPropagation
+    // court-circuite la propagation au titre (le listener du
+    // titre ne voit pas l'event).
+    clearConsoleBtn.addEventListener('mousedown', (e) => e.stopPropagation())
+    clearConsoleBtn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        clearConsole()
+    })
 }
 
 grabbed = () => {
@@ -1138,6 +1453,7 @@ beginGrabbing = (e) => {
         // log ci-dessous annonce le nombre TOTAL de points (toutes
         // formes), ce qui doit etre la seule reference visible.
         selectedPoints = []
+        updateSelectionHud()
         shapes.forEach((shape, sIndex) => {
             shape.triangles.forEach((t, tIndex) => {
                 ['p1','p2','p3'].forEach((pid, j) => {
@@ -1195,6 +1511,11 @@ beginGrabbing = (e) => {
                 if(!isPointSelected(p)) selectedPoints.push(p)
             })
         }
+        // Branche non-AltGlr de beginGrabbing : mute selectedPoints
+        // selon le modifier (remplace ou ajoute). Pilule mise a
+        // jour ici plutot qu'en fin de fonction pour eviter un
+        // decalage si la logique plus bas mute a nouveau.
+        updateSelectionHud()
     }
 
     let tris = activeTriangles()
@@ -1329,6 +1650,13 @@ resolveMouseMoveOnBoard = (e) => {
 
     lastMousePos = mouseScreen
     updateMouseHover(mouseScreen)
+    // Fin de resolveMouseMoveOnBoard : centralise l'appel pour
+    // couvrir toutes les branches qui mutent selectedPoints
+    // (selection box du drag, etc). La mutation du drag-clic
+    // (qui mute selectedPoints via grabbedGroup) ne change pas
+    // la selection logique, donc on s'en passe la. Idempotent
+    // avec les appels plus haut dans le flow drag.
+    updateSelectionHud()
 }
 
 // Met a jour le hover (point le plus proche, dim de la selection, etc).
@@ -1786,6 +2114,14 @@ loadState = () => {
         pendingRotation = undefined
         log('Load fail: ' + e.message)
     }
+    // Defense en profondeur : saveState/undo/redo couvrent les
+    // mutations explicites des piles, applyImport.resetEphemeralState
+    // et resetAll couvrent les wipes. Si loadState pousse oucleared
+    // les piles par un chemin non couvert (futur refactor), le
+    // HUD compteur se synchronise au moins a la fin du load
+    // plutot que d'attendre la prochaine mutation. Idempotent
+    // avec l'appel en fin de doit() au boot.
+    updateUndoRedoHud()
 }
 
 window.addEventListener('beforeunload', () => {
@@ -1987,6 +2323,12 @@ applyImport = (parsed, loaded, mode) => {
         clearTimeout(wheelRotateTimer)
         wheelRotateTimer = undefined
         isWheelRotating = false
+        // Import = wipe des piles avant reconstitution de la
+        // scene ; le HUD doit refleter etat vide immediatement,
+        // sans attendre une eventuelle prochaine mutation.
+        updateUndoRedoHud()
+        // Wipe de la selection avant reconstitution -> pilule a 0.
+        updateSelectionHud()
     }
 
     if (mode === 'merge') {
@@ -2081,6 +2423,9 @@ resetAll = () => {
     drawBoard()
     updateZoomDisplay()
     updateShapeHud()
+    updateUndoRedoHud()
+    // Selection videe par resetAll -> pilule a 0.
+    updateSelectionHud()
     log('Reset OK')
 }
 
@@ -2089,4 +2434,14 @@ doit = () => {
     drawBoard()
     updateShapeHud()
     updateZoomDisplay()
+    // Premier appel au HUD undo/redo : initialise le compteur a
+    // (0) et grise les boutons tant que la scene restauree n'a
+    // pas une premiere entree dans historyStack. Meme pattern
+    // que updateShapeHud() qui se cale en fin de boot.
+    updateUndoRedoHud()
+    // Initialise aussi la pilule de selection au boot. Si
+    // loadState a restaure une scene avec selection non vide
+    // (cas rare : non persiste, mais defense en profondeur),
+    // on reflette l'etat reel plutot que le "0" du HTML par defaut.
+    updateSelectionHud()
 }
