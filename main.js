@@ -487,7 +487,7 @@ updateConsoleButton()
 // pour state.consoleVisible et importMode — pas dans la scene JSON).
 
 let applyConsoleFrame = () => {
-    if (!messageBoard) return
+    if (!state.messageBoard) return
     try {
         let stored = localStorage.getItem(CONSOLE_FRAME_STORAGE_KEY)
         if (!stored) return
@@ -499,15 +499,15 @@ let applyConsoleFrame = () => {
         // rendrait le cadre inutilisable (resize listener borne a
         // ces memes minimums en JS). dropped => garde la CSS
         // default (top:64px, left:1vw, width:auto, height:auto).
-        if (typeof f.left === 'number' && f.left >= 0) messageBoard.style.left = f.left + 'px'
-        if (typeof f.top === 'number' && f.top >= 0) messageBoard.style.top = f.top + 'px'
-        if (typeof f.width === 'number' && f.width >= 80) messageBoard.style.width = f.width + 'px'
-        if (typeof f.height === 'number' && f.height >= 30) messageBoard.style.height = f.height + 'px'
+        if (typeof f.left === 'number' && f.left >= 0) state.messageBoard.style.left = f.left + 'px'
+        if (typeof f.top === 'number' && f.top >= 0) state.messageBoard.style.top = f.top + 'px'
+        if (typeof f.width === 'number' && f.width >= 80) state.messageBoard.style.width = f.width + 'px'
+        if (typeof f.height === 'number' && f.height >= 30) state.messageBoard.style.height = f.height + 'px'
     } catch (e) {}
 }
 
 let persistConsoleFrame = () => {
-    if (!messageBoard) return
+    if (!state.messageBoard) return
     try {
         // On ecrit la position / taille en px (parseInt extrait le
         // nombre, ignore 'px' ; utilise 0 si absent/auto). C'est
@@ -516,10 +516,10 @@ let persistConsoleFrame = () => {
         // (plus stable au reload quelle que soit la largeur
         // viewport).
         let f = {
-            left: parseInt(messageBoard.style.left) || 0,
-            top: parseInt(messageBoard.style.top) || 0,
-            width: parseInt(messageBoard.style.width) || 0,
-            height: parseInt(messageBoard.style.height) || 0
+            left: parseInt(state.messageBoard.style.left) || 0,
+            top: parseInt(state.messageBoard.style.top) || 0,
+            width: parseInt(state.messageBoard.style.width) || 0,
+            height: parseInt(state.messageBoard.style.height) || 0
         }
         localStorage.setItem(CONSOLE_FRAME_STORAGE_KEY, JSON.stringify(f))
     } catch (e) {}
@@ -541,36 +541,36 @@ let persistConsoleFrame = () => {
 let consoleTitleBar = document.querySelector('#consoleTitleBar')
 if (consoleTitleBar) consoleTitleBar.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return
-    if (!messageBoard) return
+    if (!state.messageBoard) return
     e.preventDefault()
     state.consoleMoving = true
     // Capture une seule fois (au mousedown) le rect + position
     // souris. Le delta en mousemove se calcule a partir de ces
     // refs, pas d'accumulation.
-    let rect = messageBoard.getBoundingClientRect()
+    let rect = state.messageBoard.getBoundingClientRect()
     state.consoleDragStart = {
         mouseX: e.clientX,
         mouseY: e.clientY,
         mbLeft: rect.left,
         mbTop: rect.top
     }
-    document.body.classList.add('dragging-console')
+    document.state.body.classList.add('dragging-console')
 })
 
 let consoleResizeHandle = document.querySelector('#consoleResizeHandle')
 if (consoleResizeHandle) consoleResizeHandle.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return
-    if (!messageBoard) return
+    if (!state.messageBoard) return
     e.preventDefault()
     state.consoleResizing = true
-    let rect = messageBoard.getBoundingClientRect()
+    let rect = state.messageBoard.getBoundingClientRect()
     state.consoleDragStart = {
         mouseX: e.clientX,
         mouseY: e.clientY,
         mbWidth: rect.width,
         mbHeight: rect.height
     }
-    document.body.classList.add('resizing-console')
+    document.state.body.classList.add('resizing-console')
 })
 
 // === Mousemove document-level ===
@@ -581,13 +581,13 @@ if (consoleResizeHandle) consoleResizeHandle.addEventListener('mousedown', (e) =
 // rendraient le drag lent/laggy.
 document.addEventListener('mousemove', (e) => {
     if (!state.consoleMoving && !state.consoleResizing) return
-    if (!messageBoard) return
+    if (!state.messageBoard) return
     if (!state.consoleDragStart) return
     let dx = e.clientX - state.consoleDragStart.mouseX
     let dy = e.clientY - state.consoleDragStart.mouseY
     if (consoleMoving) {
-        messageBoard.style.left = (state.consoleDragStart.mbLeft + dx) + 'px'
-        messageBoard.style.top = (state.consoleDragStart.mbTop + dy) + 'px'
+        state.messageBoard.style.left = (state.consoleDragStart.mbLeft + dx) + 'px'
+        state.messageBoard.style.top = (state.consoleDragStart.mbTop + dy) + 'px'
     } else if (consoleResizing) {
         // Le resize est ancre en haut-gauche : le coin top-left du
         // cadre ne bouge pas, on elargit vers le bas-droite. Math
@@ -595,8 +595,8 @@ document.addEventListener('mousemove', (e) => {
         // ecrase le cadre a 0x0 (devient inutilisable).
         let w = Math.max(CONSOLE_MIN_WIDTH, state.consoleDragStart.mbWidth + dx)
         let h = Math.max(CONSOLE_MIN_HEIGHT, state.consoleDragStart.mbHeight + dy)
-        messageBoard.style.width = w + 'px'
-        messageBoard.style.height = h + 'px'
+        state.messageBoard.style.width = w + 'px'
+        state.messageBoard.style.height = h + 'px'
     }
 })
 
@@ -607,8 +607,8 @@ document.addEventListener('mouseup', (e) => {
     state.consoleMoving = false
     state.consoleResizing = false
     state.consoleDragStart = null
-    document.body.classList.remove('dragging-console')
-    document.body.classList.remove('resizing-console')
+    document.state.body.classList.remove('dragging-console')
+    document.state.body.classList.remove('resizing-console')
     // Persist uniquement a la fin du drag (pas pendant le mousemove)
     // — localStorage n'est pas concu pour du haut debit, et les
     // valeurs intermediaires sont transitoires.
@@ -627,8 +627,8 @@ window.addEventListener('blur', () => {
     state.consoleMoving = false
     state.consoleResizing = false
     state.consoleDragStart = null
-    document.body.classList.remove('dragging-console')
-    document.body.classList.remove('resizing-console')
+    document.state.body.classList.remove('dragging-console')
+    document.state.body.classList.remove('resizing-console')
     persistConsoleFrame()
 })
 
@@ -686,7 +686,7 @@ importMeshesBtn.addEventListener('click', (e) => {
         // strict masque ces fichiers dans le picker. On laisse le
         // navigateur montrer TOUS les fichiers, la validation se fait
         // dans importMeshesFromFile.
-        document.body.appendChild(input)
+        document.state.body.appendChild(input)
         input.addEventListener('change', (evt) => {
             let f = evt.target.files && evt.target.files[0]
             if (f) importMeshesFromFile(f)
@@ -710,7 +710,7 @@ if (importJsonBtn) importJsonBtn.addEventListener('click', (e) => {
         input.id = 'importJsonFile'
         input.accept = 'application/json,.json'
         input.hidden = true
-        document.body.appendChild(input)
+        document.state.body.appendChild(input)
         input.addEventListener('change', (evt) => {
             let f = evt.target.files && evt.target.files[0]
             if (f) importMeshFromFile(f)
@@ -786,8 +786,8 @@ document.addEventListener('mouseup',(e) => {
     // si l'utilisateur n'a pas bouge entre mousedown et mouseup (force un
     // save pour eviter qu'une scene non persistee avant un pan vide
     // soit perdue apres une fermeture).
-    if(isPanning && e.button===1) {
-        isPanning = false
+    if(state.isPanning && e.button===1) {
+        state.isPanning = false
         state.panStartMouse = undefined
         state.panStartViewCenter = undefined
         persistState()
@@ -797,7 +797,7 @@ document.addEventListener('mouseup',(e) => {
             let dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
             state.isSelectingBox = false
             if(dist < 5) {
-                let mouseScreen = { x: e.x - board.getBoundingClientRect().x, y: e.y - board.getBoundingClientRect().y }
+                let mouseScreen = { x: e.x - state.board.getBoundingClientRect().x, y: e.y - state.board.getBoundingClientRect().y }
                 let np = findNearestPoint(screenToModel(mouseScreen))
                 if(np && np.distance < 15) {
                     let pointsAtPos = getPointsAtSamePosition(np.point)
@@ -866,7 +866,7 @@ document.addEventListener('mouseup',(e) => {
 
 document.addEventListener('mousedown',(e) => {
     if(e.target.id==='board') {
-        let mousePos = { x: e.x - board.getBoundingClientRect().x, y: e.y - board.getBoundingClientRect().y }
+        let mousePos = { x: e.x - state.board.getBoundingClientRect().x, y: e.y - state.board.getBoundingClientRect().y }
         if(e.button===2) {
             beginGrabbing(e)
         } else if(e.button===0) {
@@ -881,7 +881,7 @@ document.addEventListener('mousedown',(e) => {
             // comportement par defaut sur clic du milieu sur un canvas
             // (pas de scroll/paste ici), mais on le met par precaution
             // et pour eviter une potentielle selection native.
-            isPanning = true
+            state.isPanning = true
             state.panStartMouse = mousePos
             state.panStartViewCenter = { x: state.ctx.viewCenter.x, y: state.ctx.viewCenter.y }
         }
@@ -1053,9 +1053,9 @@ if (deleteShapeModal) deleteShapeModal.addEventListener('click', (e) => {
 // Le pan du viewCenter se fait separement, via clic-milieu
 // (button===1) sur le board + drag souris, voir
 // resolveMouseMoveOnBoard.
-board.addEventListener('wheel', (e) => {
+state.board.addEventListener('wheel', (e) => {
     e.preventDefault()
-    let boardRect = board.getBoundingClientRect()
+    let boardRect = state.board.getBoundingClientRect()
     let cursorScreen = { x: e.x - boardRect.x, y: e.y - boardRect.y }
     // Detection AltGr : on reutilise la meme primitive robuste que
     // dans beginGrabbing (Ctrl+Alt OU getModifierState('AltGraph'))
@@ -1124,10 +1124,10 @@ board.addEventListener('wheel', (e) => {
     }
 }, { passive: false })
 
-board.addEventListener("dragover", (e) => {
+state.board.addEventListener("dragover", (e) => {
     e.preventDefault()
 })
-board.addEventListener("drop", (e) => {
+state.board.addEventListener("drop", (e) => {
     e.preventDefault()
     if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return
     let file = e.dataTransfer.files[0]
@@ -1347,7 +1347,7 @@ let deleteSelectedPoint = () => {
 }
 
 let log = (message) => {
-    if (!messageLog) return
+    if (!state.messageLog) return
     // Prefixe chaque entree avec un timestamp [HH:MM:SS]. padStart
     // assure 2 chiffres pour heures/minutes/secondes (0-23, 0-59,
     // 0-59). Pas de locale : le format est stable et comparable
@@ -1356,7 +1356,7 @@ let log = (message) => {
     let d = new Date()
     let pad = (n) => String(n).padStart(2, '0')
     let ts = '[' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + ']'
-    messageLog.innerText += '\n' + ts + ' ' + message
+    state.messageLog.innerText += '\n' + ts + ' ' + message
 }
 
 // Efface le contenu de la console. Le bouton #clearConsole est
@@ -1365,8 +1365,8 @@ let log = (message) => {
 // confirmation n'est pas demandee : les logs sont ephemeres
 // (non persistes en localStorage), pas un etat irreversible.
 let clearConsole = () => {
-    if (!messageLog) return
-    messageLog.innerText = ''
+    if (!state.messageLog) return
+    state.messageLog.innerText = ''
 }
 
 let clearConsoleBtn = document.querySelector('#clearConsole')
@@ -1390,8 +1390,8 @@ let grabbed = () => {
 
 let beginGrabbing = (e) => {
     let mouseScreen = {
-        x : e.x - board.getBoundingClientRect().x,
-        y : e.y - board.getBoundingClientRect().y
+        x : e.x - state.board.getBoundingClientRect().x,
+        y : e.y - state.board.getBoundingClientRect().y
     }    // Detection AltGr robuste : on accepte (a) le couple DOM
     // ctrlKey+altKey (cas Linux X11/Wayland classiques) OU (b)
     // getModifierState('AltGraph') (primitive W3C, fonctionne
@@ -1457,7 +1457,7 @@ let beginGrabbing = (e) => {
         // mais le curseur OS sert de fallback si jamais il redevient
         // visible (ex: sorties de canvas) et de signal visuel en
         // backup. Restore dans endGrabbing.
-        board.style.cursor = 'move'
+        state.board.style.cursor = 'move'
         return
     }
 
@@ -1513,7 +1513,7 @@ let endGrabbing = (e) => {
     // 'move' (Alt tenu = mode toutes les formes). Le canvas est
     // en 'none' par defaut (curseur custom drawMouse), donc meme
     // si beginGrabbing ne l'a pas change l'ecriture reste idempotente.
-    board.style.cursor = 'none'
+    state.board.style.cursor = 'none'
     // Reset du flag move-all : sans ca un futur grabbing classique
     // heriterait du flag de la session precedente et snapperait le
     // delta comme en move-all (comportement buggue). Valeur
@@ -1524,8 +1524,8 @@ let endGrabbing = (e) => {
 
 let resolveMouseMoveOnBoard = (e) => {
     let mouseScreen = {
-        x : e.x - board.getBoundingClientRect().x,
-        y : e.y - board.getBoundingClientRect().y
+        x : e.x - state.board.getBoundingClientRect().x,
+        y : e.y - state.board.getBoundingClientRect().y
     }
 
     if(isSelectingBox) {
@@ -1706,8 +1706,8 @@ let updateZoomDisplay = () => {
 
 let resolveMouseClickOnBoard = (e) =>  {
     let mouseScreen = {
-        x : e.x - board.getBoundingClientRect().x,
-        y : e.y - board.getBoundingClientRect().y
+        x : e.x - state.board.getBoundingClientRect().x,
+        y : e.y - state.board.getBoundingClientRect().y
     }
     let pointToAdd = snapToGrid(screenToModel(mouseScreen))
     addPoint(pointToAdd)
@@ -2038,9 +2038,9 @@ let saveMesh = () => {
         let a = document.createElement('a')
         a.href = url
         a.download = 'mesh-' + Date.now() + '.json'
-        document.body.appendChild(a)
+        document.state.body.appendChild(a)
         a.click()
-        document.body.removeChild(a)
+        document.state.body.removeChild(a)
         URL.revokeObjectURL(url)
         log('Export OK: ' + a.download)
     } catch (e) {
@@ -2099,8 +2099,7 @@ let importMeshFromText = (text) => {
 // ---------- Helpers d'import (modal, stockage, application) ----------
 
 // Cle localStorage pour la preference "mode d'import memorise".
-IMPORT_MODE_STORAGE_KEY = 'mesh-designer-import-mode'
-
+// IMPORT_MODE_STORAGE_KEY is imported from constants.js (mesh-designer-import-mode)
 // Lit la preference. Renvoie 'replace' ou 'merge' ou null si absente/invalide.
 let getStoredImportMode = () => {
     try {
