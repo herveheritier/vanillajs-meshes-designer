@@ -62,6 +62,14 @@ export const screenToModel = (screen) => {
 
 export const activeTriangles = () => state.shapes[state.activeShapeIndex].triangles
 
+export const isSceneEmpty = () => {
+    if (!Array.isArray(state.shapes) || state.shapes.length === 0) return true
+    for (let i = 0; i < state.shapes.length; i++) {
+        if (state.shapes[i] && Array.isArray(state.shapes[i].triangles) && state.shapes[i].triangles.length > 0) return false
+    }
+    return true
+}
+
 export const getAllVertices = () => {
     const vertices = []
     const tris = activeTriangles()
