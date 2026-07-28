@@ -101,33 +101,30 @@ addShape = () => {
 }
 
 deleteShape = () => {
+    // Ouvre la modale de confirmation (memes charte que
+    // resetModal / importModal). Le message d'info est adapte
+    // dynamiquement dans showDeleteShapeModal selon qu'on
+    // supprime la derniere forme ou une parmi plusieurs. La
+    // suppression effective est deferree a performDeleteShape,
+    // appelee par le bouton primary de la modale.
+    showDeleteShapeModal()
+}
+
+// Logique de suppression effective : extraite de l'ancien
+// deleteShape (qui utilisait des confirm() natifs) pour etre
+// appelable depuis le bouton primary de la modale. La logique
+// "derniere forme => creer une scene vide" reste identique a
+// avant, juste enveloppe dans une fonction distincte.
+performDeleteShape = () => {
+    hideDeleteShapeModal()
+    saveState()
     if (shapes.length === 1) {
-        if (!confirm('Supprimer la derniere forme et creer une scene vide ?')) return
-        saveState()
         shapes = [{ triangles: [] }]
         activeShapeIndex = 0
-        selectedPoints = []
-        nearestPoint = undefined
-        nearestLine = undefined
-        grabbedGroup = []
-        currentAction = ACTION_NONE
-        isSelectingBox = false
-        selectionBoxStart = undefined
-        selectionBoxCurrent = undefined
-        clearTimeout(wheelRotateTimer)
-        wheelRotateTimer = undefined
-        isWheelRotating = false
-        drawBoard()
-        if (lastMousePos) updateMouseHover(lastMousePos)
-        updateShapeHud()
-        updateSelectionHud()
-        persistState()
-        return
+    } else {
+        shapes.splice(activeShapeIndex, 1)
+        if (activeShapeIndex >= shapes.length) activeShapeIndex = shapes.length - 1
     }
-    if (!confirm('Supprimer la forme active ?')) return
-    saveState()
-    shapes.splice(activeShapeIndex, 1)
-    if (activeShapeIndex >= shapes.length) activeShapeIndex = shapes.length - 1
     selectedPoints = []
     nearestPoint = undefined
     nearestLine = undefined
@@ -144,6 +141,28 @@ deleteShape = () => {
     updateShapeHud()
     updateSelectionHud()
     persistState()
+}
+
+showDeleteShapeModal = () => {
+    let modal = document.querySelector('#deleteShapeModal')
+    let info = document.querySelector('#deleteShapeModalInfo')
+    if (!modal || !info) return
+    // Message dynamique : si c'est la derniere forme, on va creer
+    // une scene vide en remplacement (l'utilisateur ne peut pas
+    // finir avec 0 formes, sinon la scene est indefinie). Sinon
+    // on supprime juste la forme active. Meme pattern que l'ancien
+    // confirm() mais transcrit dans la charte graphique.
+    if (shapes.length === 1) {
+        info.textContent = 'Supprimer la dernière forme et créer une scène vide ?'
+    } else {
+        info.textContent = 'Supprimer la forme active ?'
+    }
+    modal.hidden = false
+}
+
+hideDeleteShapeModal = () => {
+    let modal = document.querySelector('#deleteShapeModal')
+    if (modal) modal.hidden = true
 }
 
 updateShapeHud = () => {
@@ -998,13 +1017,17 @@ document.addEventListener('keydown',(e) => {
         if (isHelpOpen) hideHelp()
         else showHelp()
     }
-    // Escape ferme la modale d'aide OU la modale de reinit si l'une
-    // d'elles est ouverte (priorite a l'aide si les deux le sont).
+    // Escape ferme la modale d'aide, la modale de reinit OU la
+    // modale de suppression de forme si l'une d'elles est ouverte
+    // (priorite a l'aide si plusieurs le sont — heritage de
+    // l'ordre d'apparition historique).
     let isResetOpen = resetModal && !resetModal.hidden
-    if (e.code === 'Escape' && !e.repeat && (isHelpOpen || isResetOpen)) {
+    let isDeleteShapeOpen = deleteShapeModal && !deleteShapeModal.hidden
+    if (e.code === 'Escape' && !e.repeat && (isHelpOpen || isResetOpen || isDeleteShapeOpen)) {
         e.preventDefault()
         if (isHelpOpen) hideHelp()
         if (isResetOpen) hideResetModal()
+        if (isDeleteShapeOpen) hideDeleteShapeModal()
     }
     if((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code==='KeyZ' || e.key==='z' || e.key==='Z')) {
         e.preventDefault()
@@ -1087,6 +1110,24 @@ if (resetModalValidateBtn) resetModalValidateBtn.addEventListener('click', () =>
 if (resetModal) resetModal.addEventListener('click', (e) => {
     let target = e.target
     if (target && target.dataset && target.dataset.resetClose !== undefined) hideResetModal()
+})
+
+// Modale de suppression d'une forme. Meme pattern que resetModal /
+// importModal : element + bouton Annuler + bouton primary +
+// delegation du clic sur le backdrop. show/hide centralises comme
+// les autres modales. La validation declenche performDeleteShape
+// (extrait de l'ancien deleteShape qui utilisait des confirm()
+// natifs). Pas de confirm() natif ici pour rester coherent avec
+// la charte graphique des autres modales (resetModal, importModal).
+let deleteShapeModal = document.querySelector('#deleteShapeModal')
+
+let deleteShapeModalCancelBtn = document.querySelector('#deleteShapeModalCancel')
+if (deleteShapeModalCancelBtn) deleteShapeModalCancelBtn.addEventListener('click', () => hideDeleteShapeModal())
+let deleteShapeModalValidateBtn = document.querySelector('#deleteShapeModalValidate')
+if (deleteShapeModalValidateBtn) deleteShapeModalValidateBtn.addEventListener('click', performDeleteShape)
+if (deleteShapeModal) deleteShapeModal.addEventListener('click', (e) => {
+    let target = e.target
+    if (target && target.dataset && target.dataset.deleteShapeClose !== undefined) hideDeleteShapeModal()
 })
 
 let isSelectionDimmed = false

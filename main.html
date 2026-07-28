@@ -777,6 +777,26 @@
                 </div>
             </div>
         </div>
+        <!-- Modale de suppression d'une forme (remplace l'ancien
+             confirm() natif). Meme structure et charte que
+             #resetModal / #importModal (memes classes .modal,
+             .modal-box, .modal-title, .modal-info, .modal-buttons,
+             .modal-primary). Le message #deleteShapeModalInfo est
+             renseigne dynamiquement par showDeleteShapeModal selon
+             qu'on supprime la derniere forme (=> creation d'une
+             scene vide) ou une forme parmi plusieurs. Le bouton
+             primary reprend l'accent vert de la charte. -->
+        <div id="deleteShapeModal" class="modal" hidden>
+            <div class="modal-backdrop" data-delete-shape-close></div>
+            <div class="modal-box">
+                <div class="modal-title">Supprimer la forme active</div>
+                <div id="deleteShapeModalInfo" class="modal-info">—</div>
+                <div class="modal-buttons">
+                    <button id="deleteShapeModalCancel" type="button">Annuler</button>
+                    <button id="deleteShapeModalValidate" class="modal-primary" type="button">Supprimer</button>
+                </div>
+            </div>
+        </div>
         <script type="application/javascript" src="./draw.js"></script>
         <script type="application/javascript" src="./convert.js"></script>
         <script type="application/javascript" src="./main.js"></script>
