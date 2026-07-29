@@ -76,6 +76,26 @@ export const shapeToMesh = (shape) => {
     return { pointList, tris }
 }
 
+// Snap du zoom a 0.1 pour aligner la valeur reelle
+// (state.ctx.zoomLevel), la valeur persistee (localStorage
+// SCENE_STORAGE_KEY -> serializeState) et la valeur affichee
+// (toFixed(1) dans updateZoomDisplay / viewport.js). Sans ce
+// snap, des multiplications repetees par ZOOM_STEP_FACTOR (1.1)
+// produisent des flottants a precision arbitraire
+// (1.2 -> 1.32 -> 1.4520000000000002 -> drift cumulatif) que
+// JSON.stringify preserve integralement alors que le HUD
+// n'affiche qu'un seul chiffre apres la virgule, creant un
+// decalage entre reel, persiste et affiche.
+//
+// Defini dans io.js (et non viewport.js) pour eviter une
+// dependance cyclique : viewport.js importe deja persistState
+// depuis io.js, importer snapZoom dans l'autre sens aurait
+// cree un cycle (les deux modules utilisent snapZoom UNIQUEMENT
+// au runtime, pas au top level, donc ca aurait marche par
+// live-binding, mais c'est un piege a TDZ pour les futurs
+// contributeurs).
+export const snapZoom = (z) => Math.round(z * 10) / 10
+
 export const serializeState = () => {
     return JSON.stringify({
         activeGrid: state.activeGrid,
@@ -211,7 +231,13 @@ export const loadState = () => {
             state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
         }
         if (typeof data.zoomLevel === 'number' && data.zoomLevel > 0) {
-            state.ctx.zoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, data.zoomLevel))
+            // Snap a 0.1 pour normaliser les valeurs persistees
+            // avant correction de ce bug (drift flottant
+            // cumule par les multiplications repetees par
+            // ZOOM_STEP_FACTOR). Cf. snapZoom dans viewport.js
+            // pour la rationale complete (reel == persiste ==
+            // affiche a 1 decimale).
+            state.ctx.zoomLevel = snapZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, data.zoomLevel)))
         }
         if (data.viewCenter && typeof data.viewCenter.x === 'number' && typeof data.viewCenter.y === 'number') {
             state.ctx.viewCenter.x = data.viewCenter.x

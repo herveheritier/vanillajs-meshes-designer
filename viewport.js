@@ -27,7 +27,7 @@ import {
 import { drawBoard } from './draw.js'
 import { screenToModel } from './geometry.js'
 import { updateGridButtonText, updateReticleButton, updateConsoleButton } from './hud.js'
-import { persistState } from './io.js'
+import { persistState, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
     rotateEachShapeAroundPivot,
@@ -226,7 +226,9 @@ export const onBoardWheel = (e) => {
 export const zoomCenteredOnCursor = (cursorScreen, deltaY) => {
     const oldZoom = state.ctx.zoomLevel
     const factor = deltaY < 0 ? ZOOM_STEP_FACTOR : 1 / ZOOM_STEP_FACTOR
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom * factor))
+    // Clamp puis snap a 0.1 : cf. snapZoom dans io.js. Maintient
+    // l'identite reel == persiste == affiche = 1 decimale.
+    const newZoom = snapZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom * factor)))
     if (newZoom === oldZoom) return
     state.ctx.viewCenter.x += (cursorScreen.x - state.ctx.center.x) * (1 / oldZoom - 1 / newZoom)
     state.ctx.viewCenter.y -= (cursorScreen.y - state.ctx.center.y) * (1 / oldZoom - 1 / newZoom)
