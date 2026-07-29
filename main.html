@@ -19,6 +19,21 @@
              entre xml et svg sans. -->
         <link rel="icon" type="image/svg+xml" href="assets/favicon.svg"/>
         <style>
+            /* ========= Layout reset (canvas fullscreen coverage) ========= */
+            /* `<body>` a `margin: 8px` par defaut (non reset) et `<canvas>` est
+               `display: inline-block` par defaut (= baseline gap de quelques
+               pixels). Resultat : meme avec `width:99vw;height:99vh` poses
+               via JS, le canvas laissait des bandes en bordure (notamment en
+               haut) ou un clic "visiblement sur la zone noire" tombait sur
+               `<body>` / `<html>` (e.target !== board) -> le mouseup handler
+               bails avant d'appeler addPoint, donc localStorage restait vide.
+               Le fix : reset des marges body + canvas en `display: block` pour
+               que la zone peinte par le canvas couvre integralement le
+               viewport, donc tout clic visible sur le noir atteint bien
+               `<canvas id="board">`. */
+            body { margin: 0; padding: 0; }
+            canvas#board { display: block; }
+
             /* ========= Messages console (overlay transparent sur le canvas) ========= */
             #messageBoard {
                 /* Frame : border + padding + fond legerement plus opaque
@@ -680,6 +695,18 @@
             <button id="reticle" title="Réticule (R) : off / simple / projection symétrique"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.5"/><line x1="8" y1="1" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="15"/><line x1="1" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg><span id="reticleText"></span></button>
             <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
             <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
+            <!-- Bouton fusion : consomme state.selectedPoints (>=2)
+                 pour les faire converger vers une cible (selected[0])
+                 amenee au centroid des POSITIONS UNIQUES (dedup tol
+                 0.01). Redirige dans chaque triangle de la forme
+                 active les slots selectionnes vers la cible. La
+                 fusion est refusee (modale informative) si un
+                 triangle de la forme active contient plusieurs
+                 refs de point distinctes dans la selection. Place
+                 dans le groupe SELECTION (apres #selectAll, avant
+                 #selectionCount) pour rester thematiquement cohere
+                 avec les outils qui operent sur la selection. -->
+            <button id="mergePoints" title="Fusionner les points sélectionnés vers une position commune (le centroid). La fusion est annulée si un triangle contient plusieurs de vos points sélectionnés."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5,5 8,8 11,5"/><polyline points="5,11 8,8 11,11"/></svg></button>
             <!-- Compteur de points selectionnes : miroite le pattern
                  des autres pills read-only (#shapeLabel, #undoCount)
                  mais pour la selection courante. Placer APRES
@@ -713,8 +740,7 @@
             <button id="prevShape" title="Forme precedente"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l-5 5 5 5"/></svg></button>
             <span id="shapeLabel" title="Forme active / nombre total">1/1</span>
             <button id="nextShape" title="Forme suivante"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
-            <button id="newShape" title="Ajouter une nouvelle forme vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>
-            <button id="deleteShape" title="Supprimer la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
+            <button id="newShape" title="Ajouter une nouvelle forme vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>            <button id="deleteShape" title="Supprimer la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
             <span class="toolbar-sep"></span>
             <button id="toggleConsole" title="Afficher / masquer la console des messages" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h12v8H7l-3 3v-3H2z"/><line x1="5" y1="6.5" x2="11" y2="6.5"/><line x1="5" y1="9" x2="9" y2="9"/></svg></button>
             <span class="toolbar-sep"></span>
@@ -839,14 +865,67 @@
                 </div>
             </div>
         </div>
+        <!-- Modale d'erreur de fusion : affichee par merge.js
+             quand la fusion ne peut pas etre effectuee. Meme
+             charte que les autres modales (memes classes .modal,
+             .modal-box, .modal-title, .modal-info, .modal-buttons,
+             .modal-primary). Un seul bouton OK : la modale est
+             purement informative (pas d'action a confirmer). Le
+             message #mergeErrorModalInfo est renseigne
+             dynamiquement par showMergeErrorModal avec la cause
+             exacte (selection vide/insuffisante vs conflit
+             topologique avec indices des triangles incrimines). -->
+        <div id="mergeErrorModal" class="modal" hidden>
+            <div class="modal-backdrop" data-merge-error-close></div>
+            <div class="modal-box">
+                <div class="modal-title">Fusion impossible</div>
+                <div id="mergeErrorModalInfo" class="modal-info">—</div>
+                <div class="modal-buttons">
+                    <button id="mergeErrorModalClose" class="modal-primary" type="button">OK</button>
+                </div>
+            </div>
+        </div>
         <!-- Scripts ES6 modules : type="module" deferre l'execution
-             jusqu'a ce que le DOM soit parse. L'ordre des balises
-             preserve l'ordre d'evaluation (draw.js -> convert.js ->
-             main.js). Plus de <script>doit()</script> inline : la
-             fonction doit() est appelee en bas de main.js (lui-meme
-             un module differe). -->
+             jusqu'a ce que le DOM soit parse. Chaque balise declare
+             un module ; l'ordre n'est pas significatif (les imports
+             ES resolvent eux-memes les deps). Apres le refactor
+             "split main.js", main.js est un thin router (~400 LOC)
+             qui delegue tout aux modules specialises. Le browser
+             charge en parallele les modules (HTTP/2 ou HTTP/1.1
+             multiplexe) ; le cout marginal de N fichiers est
+             negligeable cote latence.
+             L'ordre ci-dessous suit le flux logique "bas niveau
+             vers haut niveau" (sans cycle) :
+             1) constants (pure)
+             2) state (obj mutable autorite)
+             3) log (feuille)
+             4) geometry (topologie + projection)
+             5) hud (DOM read-only)
+             6) draw (rendu)
+             7) convert (format meshes text -> JSON)
+             8) shapes (CRUD formes + modale dediee)
+             9) history (undo/redo)
+             10) modals (help + reset)
+             11) console_overlay (frame drag/resize + clear)
+             12) editor (selection/click/grab/rotation runtime)
+             13) viewport (grid/reticle/console toggle/zoom/pan/wheel)
+             14) io (persistence + import/export + resetAll)
+             15) main (routeur + doit() au boot) -->
+        <script type="module" src="./constants.js"></script>
+        <script type="module" src="./state.js"></script>
+        <script type="module" src="./log.js"></script>
+        <script type="module" src="./geometry.js"></script>
+        <script type="module" src="./hud.js"></script>
         <script type="module" src="./draw.js"></script>
         <script type="module" src="./convert.js"></script>
+        <script type="module" src="./shapes.js"></script>
+        <script type="module" src="./history.js"></script>
+        <script type="module" src="./modals.js"></script>
+        <script type="module" src="./console_overlay.js"></script>
+        <script type="module" src="./editor.js"></script>
+        <script type="module" src="./viewport.js"></script>
+        <script type="module" src="./io.js"></script>
+        <script type="module" src="./merge.js"></script>
         <script type="module" src="./main.js"></script>
     </body>
 </html>

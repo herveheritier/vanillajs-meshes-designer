@@ -13,7 +13,7 @@
 //   { "shapes": [ {"tris","pointList"}, ... ], "activeShapeIndex" }
 
 import { log } from './log.js'
-import { importMeshFromText } from './main.js'
+import { importMeshFromText } from './io.js'
 
 // Renvoie { x, y } a partir d'un token "x,y" ou undefined si invalide.
 export const parsePair = (token) => {
