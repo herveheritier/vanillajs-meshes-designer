@@ -112,9 +112,9 @@ export const adjacentPoints = (a, b, tolerance = 0.01) => {
 }
 
 // ===== Projection / produit scalaire =====
-// Helpers de geometrie utilises par findSelectedLine et
-// findNearestLine (dans main.js). Conserves ici en pure
-// functions car ils ne dependent pas de l'etat.
+// Helpers de geometrie utilises par findSelectedLine
+// (dans editor.js). Conserves ici en pure functions car ils
+// ne dependent pas de l'etat.
 
 export const computeOrthogonalProjection = (p, p1, p2) => {
     const dx = p2.x - p1.x

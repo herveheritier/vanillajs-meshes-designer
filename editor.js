@@ -80,43 +80,6 @@ export const findNextNearestPoint = (nearestPoint) => {
     }
 }
 
-// Plus proche LIGNE parmi les edges de la forme active.
-// Strategie : pour chaque triangle, on regarde les deux
-// segments qui NE contiennent PAS le point le plus proche
-// (celui qui le contient est implicitement couvert par la
-// distance point-a-point) — on garde le plus court.
-export const findNearestLine = (point) => {
-    let shortDistance = Number.MAX_VALUE
-    let shortPointIndex = -1
-    const np = findNearestPoint(point)
-    if (!np || !np.triangle) return undefined
-    const tt = [
-        { id: 'p1', index: 0, point: np.triangle.p1 },
-        { id: 'p2', index: 1, point: np.triangle.p2 },
-        { id: 'p3', index: 2, point: np.triangle.p3 },
-    ]
-    tt.splice(np.pointIndex, 1)
-    tt.forEach((e, j) => {
-        if (!e.point) return
-        const d = Math.hypot(e.point.x - point.x, e.point.y - point.y)
-        if (d < shortDistance) {
-            shortDistance = d
-            shortPointIndex = e.index
-        }
-    })
-    const pointId = ['p1', 'p2', 'p3'][shortPointIndex]
-    return {
-        index: np.shortIndex,
-        firstPointIndex: np.pointIndex,
-        secondPointIndex: shortPointIndex,
-        triangle: np.triangle,
-        firstPointId: np.pointId,
-        secondPointId: pointId,
-        firstPoint: np.triangle[np.pointId],
-        secondPoint: np.triangle[pointId],
-    }
-}
-
 // Plus proche segment (line) en projetant orthogonalement la
 // souris sur chaque edge du triangle, et en filtrant ceux dont
 // la projection tombe entre les deux sommets (cf.
@@ -227,12 +190,27 @@ export const updateCoordsDisplay = (cursorScreen) => {
 //   - 1 triangle avec un/des slot(s) vide : remplit le premier slot vide.
 //   - sinon : cree un nouveau triangle lie au nearestLine (edge
 //     en hover) en utilisant ses deux sommets + le nouveau point.
+//
+// IMPORTANT : recalcul de state.nearestLine au point de clic.
+// L'approche initiale reposait sur la valeur cachee par
+// `updateMouseHover` (definie au dernier mousemove), ce qui
+// pouvait deriver si le clic survenait sans mousemove
+// intermediaire (souris immobile, ou pendant un deplacement
+// rapide). Conséquence : un nouveau triangle etait créé sur
+// une ligne qui n'etait plus celle survolee. En recalculant
+// ici avec le `pointToAdd` (snappé a la grille si active), on
+// garantit que addPoint utilise bien la ligne sous le curseur
+// au moment du clic — visible a l'écran.
+// Note : on ne touche pas state.nearestPoint ; sa propre
+// mise a jour suit son propre cycle de hover et n'est pas
+// consommee par addPoint.
 export const resolveMouseClickOnBoard = (e) => {
     const mouseScreen = {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
     }
     const pointToAdd = snapToGrid(screenToModel(mouseScreen))
+    state.nearestLine = findSelectedLine(pointToAdd)
     addPoint(pointToAdd)
     drawBoard()
     drawMouse(mouseScreen)
@@ -246,6 +224,23 @@ export const addPoint = (point) => {
         if (adjacentPoints(point, triangle.p1, 1)) return
         if (triangle.p2 !== undefined) if (adjacentPoints(point, triangle.p2, 1)) return
         if (triangle.p3 !== undefined) if (adjacentPoints(point, triangle.p3, 1)) return
+    }
+    // Garde la branche "nouveau triangle lie a un segment" :
+    // si le dernier triangle est deja complet MAIS qu'aucune
+    // projection n'est tombee dans un segment au point de clic
+    // (clic en espace vide, sans ligne proche), on abandonne
+    // proprement au lieu de planter sur
+    // `state.nearestLine.firstPoint`. Ce check est fait AVANT
+    // saveState pour eviter une entree no-op dans la pile
+    // d'historique (qui polluerait undo/redo).
+    if (
+        tris.length > 0 &&
+        tris.at(-1).p2 !== undefined &&
+        tris.at(-1).p3 !== undefined &&
+        (!state.nearestLine || !state.nearestLine.firstPoint || !state.nearestLine.secondPoint)
+    ) {
+        log('addPoint: clic trop loin d\'un segment - triangle ignore')
+        return
     }
     saveState()
     if (tris.length === 0) {
