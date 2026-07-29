@@ -207,12 +207,21 @@
             }
 
             /* ========= Toolbar principale ========= */
-            /* Une card flottante qui regroupe tous les boutons de l'app.                Sections separees par un trait vertical :
-               1) canvas (grille, reset, select all)
-               2) sortie fichier (save = Sauvegarder)
-               3) entree fichier (read = Lire & afficher JSON / meshes)
-               4) navigation entre formes
-               5) aide */
+            /* Une card flottante qui regroupe tous les boutons de l'app.
+               7 sous-groupes coherents (cf. div.toolbar-group) separes
+               par un trait vertical (cf. .toolbar-sep) :
+                 1) canvas ops (grille, reticule, reset, select all,
+                    fusion, compteur selection)
+                 2) undo / redo (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
+                 3) file save (export JSON via Ctrl+S)
+                 4) file read (meshes text + JSON)
+                 5) shape nav (prev, label, next, new, delete)
+                 6) console toggle
+                 7) help
+               Les boutons sont regroupes dans les
+               <div class="toolbar-group"> pour que flex-wrap deplace
+               chaque groupe ENTIER sur la ligne suivante au lieu
+               d'eclater ses items au milieu d'une rangee. */
             #toolbar {
                 position: absolute;
                 left: 12px;
@@ -220,7 +229,69 @@
                 z-index: 50;
                 display: flex;
                 align-items: center;
-                gap: 4px;
+                /* gap shorthand `row column`: colon-gap=4px entre
+                   items d'une rangee, row-gap=6px entre rangees.
+                   Quand la toolbar wrappe (fenetre etroite), le
+                   row-gap legerement plus large aide a distinguer
+                   visuellement chaque rangee comme un sous-groupe
+                   coherent (cf. gap uniforme 4px qui tassait les
+                   rangees). Mono-ligne (wide viewport) : pas de
+                   row utilise, effet strictement identique au
+                   gap:4px d'avant. */
+                gap: 6px 4px;
+                /* max-height + overflow-y : sur largeur EXTREME
+                   (mobile portrait etroit, <250px), flex-wrap peut
+                   produire 6-8 rangees qui depassent verticalement
+                   le viewport et masquent les boutons du bas.
+                   max-height = 100vh - 24px reserve une marge de
+                   12px en bas (coherente avec left:12px et
+                   top:12px) ; overflow-y: auto ajoute une scrollbar
+                   interne a l'interieur du cadre (entre border et
+                   padding) plutot qu'un debordement coupe. Garantit
+                   qu'AUCUN bouton n'est invisible, conformement a
+                   l'esprit "toutes largeurs / tous boutons
+                   visibles". Single-line (wide) : inchange. */
+                max-height: calc(100vh - 24px);
+                /* mobile-friendly override : 100dvh suit le viewport
+                   visible (apres repli de la barre d'URL iOS /
+                   Chrome mobile) ; 100vh inclut la barre avant
+                   repli et peut laisser les boutons du bas sous
+                   la barre d'URL au premier render. 100dvh
+                   (iOS 15.4+ / Chrome 108+, 2022) ignore la
+                   declaration sur les anciens browsers. */
+                max-height: calc(100dvh - 24px);
+                overflow-y: auto;
+                /* overflow-x: auto : si un GROUPE entier (le plus
+                   large : canvas ops ~250px naturel) depasse le
+                   max-width restant de la toolbar (fenetre
+                   extreme, <280px), on scrolle horizontalement a
+                   l'interieur du cadre plutot que de laisser le
+                   groupe deborder en silence. Coherent avec
+                   overflow-y: auto pour la gestion verticale : le
+                   toolbar peut scroller dans les DEUX axes si
+                   necessaire, mais reste borne par max-width /
+                   max-height. Sans scrollbar visible en
+                   fonctionnement normal (chaque groupe rentre
+                   dans la rangee ou wrap sur la suivante). */
+                overflow-x: auto;
+                /* flex-wrap : sur fenetre etroite, les boutons qui
+                   dépassent du max-width retombent sur la ligne
+                   suivante au lieu d'etre coupes (sinon ils
+                   devenaient inaccessibles au clic en overflow a
+                   droite). L'ordre source/Html est preserve, donc
+                   les sections (grille -> selection -> undo/redo ->
+                   file ops -> shape nav -> console -> aide)
+                   gardent leur groupement thematique a l'identique.
+                   max-width : bride la toolbar a viewport-12px-marge
+                   de chaque cote pour eviter qu'elle deborde a
+                   droite sur grand ecran ET declenche le wrap
+                   progressif en deça. align-items: center applique
+                   au cross-axis (vertical) par ligne ; entre les
+                   rangees, align-content stretch (defaut) empile
+                   les rangees naturellement puisque chaque bouton a
+                   une hauteur fixe (30px ou 22px pour les seps). */
+                flex-wrap: wrap;
+                max-width: calc(100vw - 24px);
                 padding: 6px 10px;
                 background-color: rgba(15, 15, 15, 0.88);
                 border: 1px solid rgba(255, 255, 255, 0.12);
@@ -379,6 +450,43 @@
                 background-color: rgba(140, 200, 230, 0.30);
                 border-color: rgb(140, 200, 230);
                 color: rgb(190, 225, 245);
+            }
+
+            /* Groupe de boutons : wrapper flex qui reunit les boutons
+               d'une meme section thematique pour que flex-wrap sur
+               #toolbar deplace le groupe ENTIER sur la ligne
+               suivante au lieu d'eclater ses items au milieu d'une
+               rangee.
+               display: inline-flex : le groupe est lui-meme un flex
+               container interne (gap:4px entre ses propres items,
+               identique a l'inter-spacing avant refactor) ET un
+               enfant inline du flex parent #toolbar (soumis au
+               gap:6px 4px entre groupes voisins, plus les
+               toolbar-sep inter-groupes).
+               align-items: center : aligne le contenu du groupe
+               (boutons 30px de haut) sur le centre de la rangee
+               de la toolbar.
+               flex-shrink: 0 : le groupe prend TOUJOURS sa largeur
+               naturelle (somme de ses items + gaps), ne se
+               compresse jamais sur la rangee ; ca garantit qu'un
+               item interne n'est jamais coupe ou reordonne ; au
+               pire, le groupe deborde lateralement sur viewport
+               extreme (cf. overflow-x: auto sur #toolbar qui
+               fournit une scrollbar horizontale en dernier
+               recours).
+               min-width: 0 : autorise theoriquement le shrink
+               (sans comportement reel ici puisque flex-shrink:0
+               prend le pas) ; necessaire pour cooperer
+               proprement avec overflow-x: auto sur le parent,
+               qui sinon verrait un min-width implicite egal a la
+               largeur du contenu et pourrait refuser de
+               scroller. */
+            #toolbar .toolbar-group {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                flex-shrink: 0;
+                min-width: 0;
             }
 
             /* Separateur fin entre sections (file ops vs shape nav) */
@@ -680,71 +788,116 @@
     </head>
     <body>
         <div id="toolbar">
-            <button id="grid" title="Afficher / masquer la grille (G, molette pour ajuster le pas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12"/><line x1="6" y1="2" x2="6" y2="14"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="2" y1="10" x2="14" y2="10"/></svg><span id="gridText"></span></button>
-            <!-- Réticule : guide visuel au curseur (crosshair en
-                 model coords). 3 etats :
-                 0 = invisible, 1 = crosshair simple, 2 = projection
-                 symetrique selon les 2 axes (= crosshair au curseur
-                 PLUS 3 crosshairs miroirs a (-x,y), (x,-y),
-                 (-x,-y)). Look similaire aux axes (dash + meme
-                 couleur de stroke en n&b : blanc) mais suivant
-                 la position du curseur plutot que l'origine.
-                 <span id="reticleText"> montre le numero d'etat
-                 ("1" ou "2") ; vide quand off. Raccourci clavier R
-                 pour cycler. -->
-            <button id="reticle" title="Réticule (R) : off / simple / projection symétrique"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.5"/><line x1="8" y1="1" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="15"/><line x1="1" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg><span id="reticleText"></span></button>
-            <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
-            <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
-            <!-- Bouton fusion : consomme state.selectedPoints (>=2)
-                 pour les faire converger vers une cible (selected[0])
-                 amenee au centroid des POSITIONS UNIQUES (dedup tol
-                 0.01). Redirige dans chaque triangle de la forme
-                 active les slots selectionnes vers la cible. La
-                 fusion est refusee (modale informative) si un
-                 triangle de la forme active contient plusieurs
-                 refs de point distinctes dans la selection. Place
-                 dans le groupe SELECTION (apres #selectAll, avant
-                 #selectionCount) pour rester thematiquement cohere
-                 avec les outils qui operent sur la selection. -->
-            <button id="mergePoints" title="Fusionner les points sélectionnés vers une position commune (le centroid). La fusion est annulée si un triangle contient plusieurs de vos points sélectionnés."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3" cy="4" r="1.4"/><circle cx="3" cy="12" r="1.4"/><circle cx="13" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="4.4" y1="4" x2="6.8" y2="7"/><line x1="4.4" y1="12" x2="6.8" y2="9"/><line x1="11.6" y1="8" x2="9.5" y2="8"/></svg></button>
-            <!-- Compteur de points selectionnes : miroite le pattern
-                 des autres pills read-only (#shapeLabel, #undoCount)
-                 mais pour la selection courante. Placer APRES
-                 #selectAll pour rester thematiquement groupe avec les
-                 outils de selection. Initialise a 0 dans le HTML
-                 (selection vide au chargement) ; updateSelectionHud()
-                 resynchronise apres chaque mutation de selectedPoints ;
-                 l'appel final dans doit() garantit "(0)" au boot meme
-                 apres une scene restauree depuis localStorage. -->
-            <span id="selectionCount" title="Nombre de points sélectionnés">0</span>
+            <!-- Groupe "Canvas ops" : toggles d'affichage (grille,
+                 reticule) + reset + outils de selection (select all,
+                 fusion, compteur). 6 items dans le meme bloc :
+                 l'utilisateur cherche ces controles au meme endroit,
+                 ils basculent ensemble sur la ligne suivante quand la
+                 toolbar wrappe sur viewport etroit. -->
+            <div class="toolbar-group">
+                <button id="grid" title="Afficher / masquer la grille (G, molette pour ajuster le pas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12"/><line x1="6" y1="2" x2="6" y2="14"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="2" y1="10" x2="14" y2="10"/></svg><span id="gridText"></span></button>
+                <!-- Réticule : guide visuel au curseur (crosshair en
+                     model coords). 3 etats :
+                     0 = invisible, 1 = crosshair simple, 2 = projection
+                     symetrique selon les 2 axes (= crosshair au curseur
+                     PLUS 3 crosshairs miroirs a (-x,y), (x,-y),
+                     (-x,-y)). Look similaire aux axes (dash + meme
+                     couleur de stroke en n&b : blanc) mais suivant
+                     la position du curseur plutot que l'origine.
+                     <span id="reticleText"> montre le numero d'etat
+                     ("1" ou "2") ; vide quand off. Raccourci clavier R
+                     pour cycler. -->
+                <button id="reticle" title="Réticule (R) : off / simple / projection symétrique"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.5"/><line x1="8" y1="1" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="15"/><line x1="1" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg><span id="reticleText"></span></button>
+                <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
+                <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
+                <!-- Bouton fusion : consomme state.selectedPoints (>=2)
+                     pour les faire converger vers une cible (selected[0])
+                     amenee au centroid des POSITIONS UNIQUES (dedup tol
+                     0.01). Redirige dans chaque triangle de la forme
+                     active les slots selectionnes vers la cible. La
+                     fusion est refusee (modale informative) si un
+                     triangle de la forme active contient plusieurs
+                     refs de point distinctes dans la selection. Place
+                     dans le groupe SELECTION (apres #selectAll, avant
+                     #selectionCount) pour rester thematiquement cohere
+                     avec les outils qui operent sur la selection. -->
+                <button id="mergePoints" title="Fusionner les points sélectionnés vers une position commune (le centroid). La fusion est annulée si un triangle contient plusieurs de vos points sélectionnés."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3" cy="4" r="1.4"/><circle cx="3" cy="12" r="1.4"/><circle cx="13" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="4.4" y1="4" x2="6.8" y2="7"/><line x1="4.4" y1="12" x2="6.8" y2="9"/><line x1="11.6" y1="8" x2="9.5" y2="8"/></svg></button>
+                <!-- Compteur de points selectionnes : miroite le pattern
+                     des autres pills read-only (#shapeLabel, #undoCount)
+                     mais pour la selection courante. Placer APRES
+                     #selectAll pour rester thematiquement groupe avec les
+                     outils de selection. Initialise a 0 dans le HTML
+                     (selection vide au chargement) ; updateSelectionHud()
+                     resynchronise apres chaque mutation de selectedPoints ;
+                     l'appel final dans doit() garantit "(0)" au boot meme
+                     apres une scene restauree depuis localStorage. -->
+                <span id="selectionCount" title="Nombre de points sélectionnés">0</span>
+            </div>
             <span class="toolbar-sep"></span>
-            <!-- Section Annuler / Retablir : miroite les raccourcis
-                 clavier (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y) en passant
-                 par les memes fonctions undo()/redo() — un seul
-                 chemin de verite pour la logique. Le compteur
-                 #undoCount reflete la profondeur de historyStack ;
-                 initialise a (0) avec les boutons disabled tant
-                 qu'aucune action n'a modifie la scene. SVGs : courbe
-                 en forme de U полуверт miroitee undo/redo pour
-                 signifier le retour en arriere / la reprise, distinct
-                 des chevrons de navigation prevShape/nextShape. -->
-            <button id="undo" title="Annuler (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6,11 3,8 6,5"/><path d="M3 8h8a3 3 0 0 1 0 6H7"/></svg></button>
-            <span id="undoCount" title="Nombre d'annulations disponibles">(0)</span>
-            <button id="redo" title="Retablir (Ctrl+Shift+Z / Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="10,11 13,8 10,5"/><path d="M13 8H5a3 3 0 0 0 0 6h4"/></svg></button>
+            <!-- Groupe "Undo/redo" : miroite les raccourcis clavier
+                 (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y) en passant par les
+                 memes fonctions undo()/redo() — un seul chemin de
+                 verite pour la logique. Le compteur #undoCount reflete
+                 la profondeur de historyStack ; initialise a (0) avec
+                 les boutons disabled tant qu'aucune action n'a modifie
+                 la scene. SVGs : courbe en forme de U полуверт
+                 miroitee undo/redo pour signifier le retour en arriere
+                 / la reprise, distinct des chevrons de navigation
+                 prevShape/nextShape. -->
+            <div class="toolbar-group">
+                <button id="undo" title="Annuler (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6,11 3,8 6,5"/><path d="M3 8h8a3 3 0 0 1 0 6H7"/></svg></button>
+                <span id="undoCount" title="Nombre d'annulations disponibles">(0)</span>
+                <button id="redo" title="Retablir (Ctrl+Shift+Z / Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="10,11 13,8 10,5"/><path d="M13 8H5a3 3 0 0 0 0 6h4"/></svg></button>
+            </div>
             <span class="toolbar-sep"></span>
-            <button id="export" class="file-op file-op-save" title="Sauvegarder la scene courante en JSON (Ctrl+S)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2v12h12V4l-2-2H2z"/><path d="M11 2v3H5V2"/><rect x="5" y="8" width="6" height="3" fill="currentColor" stroke="none"/></svg></button>
+            <!-- Groupe "File save" (1 bouton) : l'export JSON
+                (Ctrl+S). Sa propre ligne pour eviter qu'il soit
+                confondu avec les boutons read dans un meme bloc ;
+                les couleurs d'accent verte/bleue sont distinctes
+                (file-op-save vs file-op-read) et un trait vertical
+                les separe deja visuellement. -->
+            <div class="toolbar-group">
+                <button id="export" class="file-op file-op-save" title="Sauvegarder la scene courante en JSON (Ctrl+S)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2v12h12V4l-2-2H2z"/><path d="M11 2v3H5V2"/><rect x="5" y="8" width="6" height="3" fill="currentColor" stroke="none"/></svg></button>
+            </div>
             <span class="toolbar-sep"></span>
-            <button id="importMeshes" class="file-op file-op-read" title="Charger et afficher un fichier meshes (1 ligne = 1 forme)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v12h10V5l-3-3H3z"/><path d="M10 2v3h3"/><path d="M4 12L8 5l4 7z"/></svg></button>
-            <button id="importJson" class="file-op file-op-read" title="Charger et afficher une scene JSON (fichier ou drop sur le canvas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4l1.5-2h3.5l2 2h5.5v8h-12V4z"/></svg></button>
+            <!-- Groupe "File read" (2 boutons) : import meshes
+                 text + import JSON. Meme langage couleur
+                 file-op-read. Regroupes pour eviter la confusion
+                 vis-a-vis de export (couleur/marqueur distinct) et
+                 rester cohere thematiquement. -->
+            <div class="toolbar-group">
+                <button id="importMeshes" class="file-op file-op-read" title="Charger et afficher un fichier meshes (1 ligne = 1 forme)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v12h10V5l-3-3H3z"/><path d="M10 2v3h3"/><path d="M4 12L8 5l4 7z"/></svg></button>
+                <button id="importJson" class="file-op file-op-read" title="Charger et afficher une scene JSON (fichier ou drop sur le canvas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4l1.5-2h3.5l2 2h5.5v8h-12V4z"/></svg></button>
+            </div>
             <span class="toolbar-sep"></span>
-            <button id="prevShape" title="Forme precedente"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l-5 5 5 5"/></svg></button>
-            <span id="shapeLabel" title="Forme active / nombre total">1/1</span>
-            <button id="nextShape" title="Forme suivante"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
-            <button id="newShape" title="Ajouter une nouvelle forme vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>            <button id="deleteShape" title="Supprimer la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
+            <!-- Groupe "Shape nav" : navigation entre formes (prev,
+                 label, next) + creation (new) + suppression
+                 (delete). Le compteur #shapeLabel deplace avec
+                 prev/next ; new/delete sont des outils de gestion
+                 lies. -->
+            <div class="toolbar-group">
+                <button id="prevShape" title="Forme precedente"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l-5 5 5 5"/></svg></button>
+                <span id="shapeLabel" title="Forme active / nombre total">1/1</span>
+                <button id="nextShape" title="Forme suivante"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+                <button id="newShape" title="Ajouter une nouvelle forme vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>
+                <button id="deleteShape" title="Supprimer la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
+            </div>
             <span class="toolbar-sep"></span>
-            <button id="toggleConsole" title="Afficher / masquer la console des messages" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h12v8H7l-3 3v-3H2z"/><line x1="5" y1="6.5" x2="11" y2="6.5"/><line x1="5" y1="9" x2="9" y2="9"/></svg></button>
+            <!-- Groupe "Console toggle" (1 bouton) : la togglisation
+                de la console est un acte isole (vs par categorie) ;
+                sa propre ligne evite tout groupement parasite. -->
+            <div class="toolbar-group">
+                <button id="toggleConsole" title="Afficher / masquer la console des messages" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h12v8H7l-3 3v-3H2z"/><line x1="5" y1="6.5" x2="11" y2="6.5"/><line x1="5" y1="9" x2="9" y2="9"/></svg></button>
+            </div>
             <span class="toolbar-sep"></span>
-            <button id="helpBtn" title="Afficher l'aide (raccourci : ?)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.8 7a2 2 0 014 0c0 1-2 1.5-2 2.5"/>                <circle cx="8" cy="11.5" r="0.6" fill="currentColor" stroke="none"/></svg></button>
+            <!-- Groupe "Help" (1 bouton) : affiche la modale d'aide
+                (cf. raccourci clavier "?"). Sa propre ligne pour
+                le detachement logique des autres sections ; meme
+                avec 7 groupes mono-ligne restera le dernier
+                item a droite. -->
+            <div class="toolbar-group">
+                <button id="helpBtn" title="Afficher l'aide (raccourci : ?)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.8 7a2 2 0 014 0c0 1-2 1.5-2 2.5"/>                <circle cx="8" cy="11.5" r="0.6" fill="currentColor" stroke="none"/></svg></button>
+            </div>
         </div>
         <canvas id="board" width="100" height="100"></canvas>
         <div id="messageBoard">

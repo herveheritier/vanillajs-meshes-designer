@@ -5,3 +5,4 @@ temp.json
 # Cache Python (le projet a test_server.py et autres .py)
 __pycache__/
 *.pyc
+.agents/
