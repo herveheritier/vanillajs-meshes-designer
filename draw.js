@@ -1,36 +1,61 @@
-// Le systeme de coordonnees du modele est centre a (ctx.center.x,
-// ctx.center.y) avec X vers la droite et Y vers le haut. Pour le
-// rendu, on translate de ctx.center.x (decalage X) et on inverse
-// ctx.center.y (Y inverse). Aucun appelant ne doit appeler drawPoint
+// Module draw.js : primitives de rendu canvas. Converti en ES6 module
+// (type="module") : importe les constantes + state + helpers
+// geometriques depuis leurs modules respectifs, exporte les
+// fonctions de dessin. Aucun appelant ne doit appeler drawPoint
 // avec des coordonnees screen (utiliser drawMouse ou le draw direct).
-// Rendu via modelToScreen (tient compte du zoom et du viewCenter).
-// Aucun appelant ne doit appeler drawPoint avec des coordonnees screen
-// (utiliser drawMouse ou draw direct).
-drawPoint = (p, radius=3, color='#FFFFFF') => {
+//
+// Conventions :
+//   - Le state (formes, selection, viewport, hover, ...) est lu
+//     depuis state.js (import { state }). Toutes les fonctions
+//     qui en ont besoin accedent via state.X.
+//   - Le contexte canvas 2D (_ctx) et le board (ref DOM) sont
+//     initialises dans main.js (state._ctx = state.board.getContext('2d'))
+//     puis stockes dans state pour etre accessibles ici.
+//   - Toutes les fonctions qui dessinent sont exportees en
+//     named exports (cf. main.js qui importe).
+
+import { state } from './state.js'
+import { modelToScreen, screenToModel } from './geometry.js'
+import {
+    TAU,
+    COLOR_AXIS,
+    COLOR_LINES,
+    COLOR_LINES_INACTIVE,
+    POINT_COLOR_INACTIVE,
+    PATTERN_AXIS,
+    PATTERN_LINES,
+    PATTERN_LINES_INACTIVE,
+} from './constants.js'
+
+// Le systeme de coordonnees du modele est centre a (state.ctx.center.x,
+// state.ctx.center.y) avec X vers la droite et Y vers le haut.
+// Pour le rendu, on translate de state.ctx.center.x (decalage X)
+// et on inverse state.ctx.center.y (Y inverse).
+export const drawPoint = (p, radius = 3, color = '#FFFFFF') => {
     if (!p) return
     let sp = modelToScreen(p)
-    _ctx.setLineDash([])
-    _ctx.strokeStyle = color
-    _ctx.beginPath()
-    _ctx.arc(sp.x, sp.y, radius, 0, TAU)
-    _ctx.stroke()
+    state._ctx.setLineDash([])
+    state._ctx.strokeStyle = color
+    state._ctx.beginPath()
+    state._ctx.arc(sp.x, sp.y, radius, 0, TAU)
+    state._ctx.stroke()
 }
 
-// Le curseur de la souris reste affiche en coords screen (l'inverse de Y
-// ne s'applique pas au pointeur physique).
-drawMouse = (p) => {
+// Le curseur de la souris reste affiche en coords screen (l'inverse
+// de Y ne s'applique pas au pointeur physique).
+export const drawMouse = (p) => {
     if (!p) return
-    _ctx.setLineDash([])
-    _ctx.strokeStyle = '#FFFFFF'
-    _ctx.beginPath()
-    _ctx.arc(p.x, p.y, 3, 0, TAU)
-    _ctx.stroke()
+    state._ctx.setLineDash([])
+    state._ctx.strokeStyle = '#FFFFFF'
+    state._ctx.beginPath()
+    state._ctx.arc(p.x, p.y, 3, 0, TAU)
+    state._ctx.stroke()
 }
 
-drawBoard = () => {
-    _ctx.fillStyle = '#000000'
-    _ctx.fillRect(0,0,board.width,board.height)
-    if(activeGrid) drawGrid()
+export const drawBoard = () => {
+    state._ctx.fillStyle = '#000000'
+    state._ctx.fillRect(0, 0, state.board.width, state.board.height)
+    if (state.activeGrid) drawGrid()
     drawAxis()
     drawShapes()
     drawSelectedPoints()
@@ -41,34 +66,39 @@ drawBoard = () => {
     // visible au-dessus des formes et des points, mais avant
     // drawSelectionBox (overlay de selection qui reste au-dessus
     // de tout).
-    if (typeof reticleMode !== 'undefined' && reticleMode > 0) drawReticle()
-    if (typeof isSelectingBox !== 'undefined' && isSelectingBox && selectionBoxStart && selectionBoxCurrent) {
-        drawSelectionBox(selectionBoxStart, selectionBoxCurrent)
+    if (typeof state.reticleMode !== 'undefined' && state.reticleMode > 0) drawReticle()
+    if (
+        typeof state.isSelectingBox !== 'undefined' &&
+        state.isSelectingBox &&
+        state.selectionBoxStart &&
+        state.selectionBoxCurrent
+    ) {
+        drawSelectionBox(state.selectionBoxStart, state.selectionBoxCurrent)
     }
 }
 
-drawSelectedPoints = () => {
-    if (typeof selectedPoints === 'undefined' || !selectedPoints || selectedPoints.length === 0) return
-    let isDimmed = typeof isSelectionDimmed !== 'undefined' && isSelectionDimmed
+export const drawSelectedPoints = () => {
+    if (typeof state.selectedPoints === 'undefined' || !state.selectedPoints || state.selectedPoints.length === 0) return
+    let isDimmed = typeof state.isSelectionDimmed !== 'undefined' && state.isSelectionDimmed
     let color = isDimmed ? 'rgba(0, 255, 255, 0.6)' : '#00FFFF'
-    selectedPoints.forEach(p => {
+    state.selectedPoints.forEach((p) => {
         if (!p) return
         drawPoint(p, 6, color)
     })
 }
 
-drawSelectionBox = (p1, p2) => {
+export const drawSelectionBox = (p1, p2) => {
     if (!p1 || !p2) return
     let x = Math.min(p1.x, p2.x)
     let y = Math.min(p1.y, p2.y)
     let w = Math.abs(p2.x - p1.x)
     let h = Math.abs(p2.y - p1.y)
-    _ctx.fillStyle = 'rgba(0, 255, 255, 0.15)'
-    _ctx.fillRect(x, y, w, h)
-    _ctx.strokeStyle = '#00FFFF'
-    _ctx.setLineDash([4, 4])
-    _ctx.strokeRect(x, y, w, h)
-    _ctx.setLineDash([])
+    state._ctx.fillStyle = 'rgba(0, 255, 255, 0.15)'
+    state._ctx.fillRect(x, y, w, h)
+    state._ctx.strokeStyle = '#00FFFF'
+    state._ctx.setLineDash([4, 4])
+    state._ctx.strokeRect(x, y, w, h)
+    state._ctx.setLineDash([])
 }
 
 // L'axe suit l'origine (0,0) du modele en coords SCREEN. On utilise
@@ -87,24 +117,24 @@ drawSelectionBox = (p1, p2) => {
 // le contenu tourne autour. Si l'origine est hors canvas apres un
 // zoom, l'axe n'est pas trace (un seul stroke pour eviter de casser
 // le motif dash).
-drawAxis = () => {
-    let originScreenX = ctx.center.x + (0 - ctx.viewCenter.x) * ctx.zoomLevel
-    let originScreenY = ctx.center.y - (0 - ctx.viewCenter.y) * ctx.zoomLevel
-    let w = board.width
-    let h = board.height
-    _ctx.setLineDash(PATTERN_AXIS)
-    _ctx.strokeStyle = COLOR_AXIS
+export const drawAxis = () => {
+    let originScreenX = state.ctx.center.x + (0 - state.ctx.viewCenter.x) * state.ctx.zoomLevel
+    let originScreenY = state.ctx.center.y - (0 - state.ctx.viewCenter.y) * state.ctx.zoomLevel
+    let w = state.board.width
+    let h = state.board.height
+    state._ctx.setLineDash(PATTERN_AXIS)
+    state._ctx.strokeStyle = COLOR_AXIS
     if (originScreenY >= 0 && originScreenY <= h) {
-        _ctx.beginPath()
-        _ctx.moveTo(0, originScreenY)
-        _ctx.lineTo(w, originScreenY)
-        _ctx.stroke()
+        state._ctx.beginPath()
+        state._ctx.moveTo(0, originScreenY)
+        state._ctx.lineTo(w, originScreenY)
+        state._ctx.stroke()
     }
     if (originScreenX >= 0 && originScreenX <= w) {
-        _ctx.beginPath()
-        _ctx.moveTo(originScreenX, 0)
-        _ctx.lineTo(originScreenX, h)
-        _ctx.stroke()
+        state._ctx.beginPath()
+        state._ctx.moveTo(originScreenX, 0)
+        state._ctx.lineTo(originScreenX, h)
+        state._ctx.stroke()
     }
 }
 
@@ -118,37 +148,37 @@ drawAxis = () => {
 // d'origine. Skip si curseur hors canvas (lastMousePos
 // indefini). Les lignes sont clippees par les bornes du board
 // pour eviter de tracer en dehors.
-drawReticle = () => {
-    if (typeof reticleMode === 'undefined' || reticleMode === 0) return
-    if (typeof lastMousePos === 'undefined' || !lastMousePos) return
-    let m = screenToModel(lastMousePos)
+export const drawReticle = () => {
+    if (typeof state.reticleMode === 'undefined' || state.reticleMode === 0) return
+    if (typeof state.lastMousePos === 'undefined' || !state.lastMousePos) return
+    let m = screenToModel(state.lastMousePos)
     if (!m) return
     // Mode 1 : juste le curseur. Mode 2 : + 3 miroirs. Quand le
     // curseur est sur un axe (m.x=0 ou m.y=0) ou a l'origine, les
     // 4 positions reduisent a 1 ou 2 positions uniques — on
     // retrace alors la meme ligne 2-4 fois (idempotent visuellement,
     // cout negligeable).
-    let positions = [{x: m.x, y: m.y}]
-    if (reticleMode === 2) {
-        positions.push({x: -m.x, y: m.y})
-        positions.push({x: m.x, y: -m.y})
-        positions.push({x: -m.x, y: -m.y})
+    let positions = [{ x: m.x, y: m.y }]
+    if (state.reticleMode === 2) {
+        positions.push({ x: -m.x, y: m.y })
+        positions.push({ x: m.x, y: -m.y })
+        positions.push({ x: -m.x, y: -m.y })
     }
-    _ctx.setLineDash(PATTERN_AXIS)
-    _ctx.strokeStyle = '#FFFFFF'
-    positions.forEach(pos => {
+    state._ctx.setLineDash(PATTERN_AXIS)
+    state._ctx.strokeStyle = '#FFFFFF'
+    positions.forEach((pos) => {
         let sp = modelToScreen(pos)
-        if (sp.y >= 0 && sp.y <= board.height) {
-            _ctx.beginPath()
-            _ctx.moveTo(0, sp.y)
-            _ctx.lineTo(board.width, sp.y)
-            _ctx.stroke()
+        if (sp.y >= 0 && sp.y <= state.board.height) {
+            state._ctx.beginPath()
+            state._ctx.moveTo(0, sp.y)
+            state._ctx.lineTo(state.board.width, sp.y)
+            state._ctx.stroke()
         }
-        if (sp.x >= 0 && sp.x <= board.width) {
-            _ctx.beginPath()
-            _ctx.moveTo(sp.x, 0)
-            _ctx.lineTo(sp.x, board.height)
-            _ctx.stroke()
+        if (sp.x >= 0 && sp.x <= state.board.width) {
+            state._ctx.beginPath()
+            state._ctx.moveTo(sp.x, 0)
+            state._ctx.lineTo(sp.x, state.board.height)
+            state._ctx.stroke()
         }
     })
 }
@@ -157,21 +187,25 @@ drawReticle = () => {
 // (gris, dash elargi) puis la forme active PAR-DESSUS avec les couleurs
 // d'origine. Cela permet a l'actif de rester toujours lisible meme
 // quand une inactive lui passe devant dans l'ordre du tableau.
-drawShapes = () => {
-    if (typeof shapes === 'undefined' || !Array.isArray(shapes) || shapes.length === 0) return
-    for (let i = 0; i < shapes.length; i++) {
-        if (i === activeShapeIndex) continue
-        drawShape(shapes[i], false)
+export const drawShapes = () => {
+    if (
+        typeof state.shapes === 'undefined' ||
+        !Array.isArray(state.shapes) ||
+        state.shapes.length === 0
+    ) return
+    for (let i = 0; i < state.shapes.length; i++) {
+        if (i === state.activeShapeIndex) continue
+        drawShape(state.shapes[i], false)
     }
-    drawShape(shapes[activeShapeIndex], true)
+    drawShape(state.shapes[state.activeShapeIndex], true)
 }
 
-drawShape = (shape, isActive) => {
+export const drawShape = (shape, isActive) => {
     if (!shape || !shape.triangles || shape.triangles.length === 0) return
     let lineColor = isActive ? COLOR_LINES : COLOR_LINES_INACTIVE
     let linePattern = isActive ? PATTERN_LINES : PATTERN_LINES_INACTIVE
     let pointColor = isActive ? '#FFFF00' : POINT_COLOR_INACTIVE
-    shape.triangles.forEach(t => {
+    shape.triangles.forEach((t) => {
         drawTriangle(t.p1, t.p2, t.p3, linePattern, lineColor)
         drawPoint(t.p1, 2, pointColor)
         drawPoint(t.p2, 2, pointColor)
@@ -181,89 +215,68 @@ drawShape = (shape, isActive) => {
 
 // pattern et color sont optionnels (compat avec l'ancien code qui
 // appelait drawTriangle(p1,p2,p3) sans param de style).
-drawTriangle = (p1, p2, p3, pattern, color) => {
+export const drawTriangle = (p1, p2, p3, pattern, color) => {
     if (!p1) return
     let s1 = modelToScreen(p1)
-    _ctx.setLineDash(pattern !== undefined ? pattern : PATTERN_LINES)
-    _ctx.strokeStyle = color !== undefined ? color : COLOR_LINES
-    _ctx.beginPath()
-    _ctx.moveTo(s1.x, s1.y)
+    state._ctx.setLineDash(pattern !== undefined ? pattern : PATTERN_LINES)
+    state._ctx.strokeStyle = color !== undefined ? color : COLOR_LINES
+    state._ctx.beginPath()
+    state._ctx.moveTo(s1.x, s1.y)
     if (p2 !== undefined) {
         let s2 = modelToScreen(p2)
-        _ctx.lineTo(s2.x, s2.y)
+        state._ctx.lineTo(s2.x, s2.y)
         if (p3 !== undefined) {
             let s3 = modelToScreen(p3)
-            _ctx.lineTo(s3.x, s3.y)
-            _ctx.lineTo(s1.x, s1.y)
+            state._ctx.lineTo(s3.x, s3.y)
+            state._ctx.lineTo(s1.x, s1.y)
         }
     }
-    _ctx.stroke()
+    state._ctx.stroke()
 }
 
-drawLine = (p1, p2, pattern, color) => {
+export const drawLine = (p1, p2, pattern, color) => {
     if (!p1 || !p2) return
     let s1 = modelToScreen(p1)
     let s2 = modelToScreen(p2)
-    _ctx.setLineDash(pattern)
-    _ctx.strokeStyle = color
-    _ctx.beginPath()
-    _ctx.moveTo(s1.x, s1.y)
-    _ctx.lineTo(s2.x, s2.y)
-    _ctx.stroke()
+    state._ctx.setLineDash(pattern)
+    state._ctx.strokeStyle = color
+    state._ctx.beginPath()
+    state._ctx.moveTo(s1.x, s1.y)
+    state._ctx.lineTo(s2.x, s2.y)
+    state._ctx.stroke()
 }
 
-drawGrid = () => {
-    const baseStep = typeof GRID_STEP !== 'undefined' ? GRID_STEP : 32
+// La grille est alignee sur les axes du modele (donc sur
+// l'origine (0,0) du repere) et non pas sur le centre du board.
+// C'est ce que fait snapToGrid (arrondi au multiple de
+// GRID_STEP le plus proche depuis 0) ; on aligne ici
+// l'affichage sur la meme ancre pour que les intersections
+// dessinees correspondent exactement aux positions vers
+// lesquelles un point va se snapper. Voir l'historique du
+// fix dans git (commit "Anchor drawGrid on model origin").
+export const drawGrid = () => {
+    const baseStep = typeof state.GRID_STEP !== 'undefined' ? state.GRID_STEP : 32
     if (!baseStep || baseStep <= 0) return
-    // L'ecart visible entre deux lignes depend du zoom : ecart =
-    // baseStep * ctx.zoomLevel. Sinon le zoom rendrait les lignes
-    // visuellement figees (zoom in) ou qui se chevauchent (zoom out).
-    //
-    // ANCRAGE : la grille est alignee sur les axes du modele (donc
-    // sur l'origine (0,0) du repere) et non pas sur le centre du
-    // board. C'est ce que fait snapToGrid (arrondi au multiple de
-    // GRID_STEP le plus proche depuis 0) ; on aligne ici l'affichage
-    // sur la meme ancre pour que les intersections dessinees
-    // correspondent exactement aux positions vers lesquelles un
-    // point va se snapper. L'alignement reste vrai apres zoom et
-    // pan : originScreenX/Y evoluent en fonction de viewCenter, et
-    // step en fonction de zoomLevel — la grille continue de
-    // representer les memes multiples de GRID_STEP en model coords.
-    const step = baseStep * ctx.zoomLevel
-    if (step <= 0) return  // zoom <= 0 : pas de lignes (defensif)
-    _ctx.setLineDash([])
-    _ctx.strokeStyle = '#333333'
-    _ctx.beginPath()
-    // Position screen du model origin (0,0). MEME formule que
-    // drawAxis : ctx.center - ctx.viewCenter * ctx.zoomLevel
-    // (le signe de Y est inverse par rapport a modelToScreen
-    // parce que drawAxis l'ecrit explicitement ainsi ; on suit
-    // la meme convention par coherence visuelle).
-    let originScreenX = ctx.center.x - ctx.viewCenter.x * ctx.zoomLevel
-    let originScreenY = ctx.center.y + ctx.viewCenter.y * ctx.zoomLevel
-    // Lignes verticales : n tel que screen x = originScreenX + n*step
-    // tombe dans [0, board.width].
-    //   0 <= originScreenX + n*step <= board.width
-    //   n_min = ceil(-originScreenX / step)
-    //   n_max = floor((board.width - originScreenX) / step)
+    const step = baseStep * state.ctx.zoomLevel
+    if (step <= 0) return
+    state._ctx.setLineDash([])
+    state._ctx.strokeStyle = '#333333'
+    state._ctx.beginPath()
+    let originScreenX = state.ctx.center.x - state.ctx.viewCenter.x * state.ctx.zoomLevel
+    let originScreenY = state.ctx.center.y + state.ctx.viewCenter.y * state.ctx.zoomLevel
     let n_min_x = Math.ceil(-originScreenX / step)
-    let n_max_x = Math.floor((board.width - originScreenX) / step)
+    let n_max_x = Math.floor((state.board.width - originScreenX) / step)
     for (let n = n_min_x; n <= n_max_x; n++) {
         let x_screen = originScreenX + n * step
-        _ctx.moveTo(x_screen, 0)
-        _ctx.lineTo(x_screen, board.height)
+        state._ctx.moveTo(x_screen, 0)
+        state._ctx.lineTo(x_screen, state.board.height)
     }
-    // Lignes horizontales : screen y = originScreenY - n*step (Y
-    // inverse : n>0 monte sur l'ecran). Plage visible [0, h].
-    //   0 <= originScreenY - n*step <= board.height
-    //   n_min = ceil((originScreenY - board.height) / step)
-    //   n_max = floor(originScreenY / step)
-    let n_min_y = Math.ceil((originScreenY - board.height) / step)
+    let n_min_y = Math.ceil((originScreenY - state.board.height) / step)
     let n_max_y = Math.floor(originScreenY / step)
     for (let n = n_min_y; n <= n_max_y; n++) {
         let y_screen = originScreenY - n * step
-        _ctx.moveTo(0, y_screen)
-        _ctx.lineTo(board.width, y_screen)
+        state._ctx.moveTo(0, y_screen)
+        state._ctx.lineTo(state.board.width, y_screen)
     }
-    _ctx.stroke()
+    state._ctx.stroke()
 }
