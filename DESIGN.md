@@ -190,25 +190,55 @@ cela, Ctrl+click sur un point déjà sélectionné n'a aucun effet visible
 et ressemble à un clic nu, ce qui déroute.
 
 Implémentation : `applySelectionModifiers(pointsAtPos, e, ctrlToggles)` dans
-`editor.js` accepte un 3ᵉ paramètre `ctrlToggles` (défaut `false`). Le seul
-site d'appel qui passe `true` aujourd'hui est la branche vertex du
-fallback dans `processMouseUpSelection` :
-`applySelectionModifiers(pointsAtPos, e, state.selectionMode === 'vertex')`.
+`editor.js` accepte un 3ᵉ paramètre `ctrlToggles` (défaut `false`). Deux
+sites d'appel propagent `state.selectionMode === 'vertex'` :
+
+1. Fallback vertex dans `processMouseUpSelection` (clic gauche) :
+   `applySelectionModifiers(pointsAtPos, e, state.selectionMode === 'vertex')`.
+2. `beginGrabbing` (clic droit, branche `!preserveExisting`) :
+   `applySelectionModifiers(grabPoints, e, state.selectionMode === 'vertex')`.
+
+Avant l'extension à `beginGrabbing` (commit `feat(editor): extend §3.6 ctrl
+toggle to beginGrabbing`), la branche vertex de `beginGrabbing` n'avait pas
+de cas `ctrl` — ctrl+clic-droit en mode vertex faisait juste
+`state.selectedPoints = [...grabPoints]` (replace silencieux). Le bloc a
+été refactoré en un seul appel à `applySelectionModifiers` qui mutualise
+les 3 modifiers et propage `ctrlToggles`, garantissant une grille cognitive
+identique entre clic gauche et clic droit en mode vertex.
+
 Le helper privé `toggleSelectionPoints(pointsAtPos)` (même fichier)
 factorise le bloc `anySelected / filter / push` entre la branche Shift et
 la branche Ctrl+`ctrlToggles` true.
 
-Modes `segment` et `triangle` : conservent *Ajoute SANS toggle*. Cette
-grille stable est partagée avec `beginGrabbing` (clic droit) qui n'a pas,
-lui, l'exception vertex — un passage ultérieur aux deux autres modes
-serait trivial via le même flag mais nécessiterait un même ajustement dans
-`beginGrabbing` pour rester cohérent (d'où le scope volontairement limité
-à cette itération).
+Modes `segment` et `triangle` : conservent *Ajoute SANS toggle* — la grille
+universelle `applySelectionModifiers(..., ctrlToggles=false)` y produit
+strictement le même comportement qu'avant le refactor (vérifié via
+lecture/écriture manuelles + `node --check --input-type=module`).
 
 *Espace vide* : inchangé dans tous les modes — Ctrl/Meta-click =
 *préserve, NE CRÉE PAS de point* (les modifiers opèrent sur la sélection,
 pas sur la scène). Le toggle en espace vide est implicitement *no-op* (rien
 à toggler), donc le comportement existant est déjà conforme.
+
+**Nuance clic-droit (`beginGrabbing`)** : le verrou `preserveExisting` (qui
+protège un clic-droit *basique* sur entité déjà sélectionnée du flicker de
+sélection) ne s'active **jamais** quand un modifier est tenu —
+`hasModifier = e.shiftKey || e.ctrlKey || e.metaKey` dans `editor.js:593`
+court-circuite le verrou. Conséquence : clic-droit + modifier sur entité
+déjà sélectionnée déclenche le toggle §3.6 comme le clic-gauche (parité
+stricte). AltGr est exclu de cette liste : early-return plus haut dans
+`beginGrabbing` traite AltGr comme « déplacer toutes les formes ».
+
+**Cohérence `selectedTriangles` ↔ `selectedPoints`** : la branche shift de
+`applyGrabTriangleSync` ne pousse un index `i` dans
+`state.selectedTriangles` que si les 3 sommets de `tris[i]` sont
+effectivement en sélection *après* le toggle de `applySelectionModifiers`.
+Sinon, le toggle retire les sommets de `selectedPoints` mais l'index
+demeurerait dans `selectedTriangles` — incohérence entre le surlignage
+des sommets (perdu) et le fill vert du triangle (perpétué). Cette garde est
+indispensable depuis que `hasModifier` ouvre le chemin « clic-droit + shift
++ triangle dont les 3 sommets sont déjà sélectionnés » (que
+`preserveExisting=true` masquait avant).
 
 ---
 

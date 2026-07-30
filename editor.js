@@ -362,7 +362,14 @@ const applyGrabTriangleSync = (grabPoints, e) => {
             state.selectedTriangles = state.selectedTriangles.filter(i => !matching.includes(i))
         } else {
             matching.forEach(i => {
-                if (!state.selectedTriangles.includes(i)) state.selectedTriangles.push(i)
+                // Cohérence selectedTriangles ↔ selectedPoints : on ne push
+                // i que si ses 3 sommets sont en sélection (sinon le toggle
+                // de applySelectionModifiers les a déjà retirés et un push
+                // laisserait l'index dans selectedTriangles alors que ses
+                // sommets sont retirés -> incohérence visuelle).
+                const t = tris[i]
+                const inSel = t && t.p1 && t.p2 && t.p3 && [t.p1, t.p2, t.p3].every(p => state.selectedPoints.some(sp => adjacentPoints(p, sp, 0.01)))
+                if (inSel && !state.selectedTriangles.includes(i)) state.selectedTriangles.push(i)
             })
         }
     } else if (e.ctrlKey || e.metaKey) {
@@ -578,6 +585,10 @@ export const beginGrabbing = (e) => {
         return
     }
 
+    // preserveExisting : gated on !hasModifier — les modifiers court-circuitent
+    // le verrou pour que la grille §3.6 s'applique identiquement au clic-droit
+    // (AltGr retourne plus haut, donc hasModifier ne le capture jamais).
+    const hasModifier = e.shiftKey || e.ctrlKey || e.metaKey
     const targetModel = screenToModel(mouseScreen)
     let grabPoints = []
     let preserveExisting = false
@@ -585,20 +596,20 @@ export const beginGrabbing = (e) => {
         const nt = findNearestTriangle(targetModel)
         if (nt) {
             grabPoints = collectUnderlyingPoints([nt.p1, nt.p2, nt.p3])
-            preserveExisting = grabPoints.length > 0 && grabPoints.every(p => isPointSelected(p))
+            preserveExisting = !hasModifier && grabPoints.length > 0 && grabPoints.every(p => isPointSelected(p))
         }
     } else if (state.selectionMode === 'segment') {
         const ns = findSelectedLine(targetModel)
         if (ns && ns.firstPoint && ns.secondPoint && !adjacentPoints(ns.firstPoint, ns.secondPoint, 0.01)) {
             grabPoints = collectUnderlyingPoints([ns.firstPoint, ns.secondPoint])
-            preserveExisting = grabPoints.length > 0 && grabPoints.every(p => isPointSelected(p))
+            preserveExisting = !hasModifier && grabPoints.length > 0 && grabPoints.every(p => isPointSelected(p))
         }
     }
     if (grabPoints.length === 0) {
         const np = findNearestPoint(targetModel)
         if (!np || !np.point) return
         grabPoints = getPointsAtSamePosition(np.point)
-        preserveExisting = isPointSelected(np.point)
+        preserveExisting = !hasModifier && isPointSelected(np.point)
     }
 
     state.currentAction = ACTION_GRABBING
@@ -606,37 +617,18 @@ export const beginGrabbing = (e) => {
     saveState()
 
     if (!preserveExisting) {
+        // Rationale : voir DESIGN.md §3.6 (extension beginGrabbing : ctrl/méta
+        // = toggle add/remove en mode vertex via ctrlToggles, alignement shift
+        // également — le clic-droit vertex+shift passe de push idempotent à
+        // toggle, parité avec le clic-gauche ligne 322).
+        applySelectionModifiers(grabPoints, e, state.selectionMode === 'vertex')
+        if (state.selectionMode === 'triangle') {
+            applyGrabTriangleSync(grabPoints, e)
+        } else if (state.selectionMode === 'segment') {
+            state.selectedTriangles = []
+        }
         if (state.selectionMode === 'triangle' || state.selectionMode === 'segment') {
-            if (e.shiftKey) {
-                const anySelected = grabPoints.some(p => isPointSelected(p))
-                if (anySelected) {
-                    state.selectedPoints = state.selectedPoints.filter(sp => !grabPoints.some(p => adjacentPoints(sp, p, 0.01)))
-                } else {
-                    grabPoints.forEach(p => {
-                        if (!isPointSelected(p)) state.selectedPoints.push(p)
-                    })
-                }
-            } else if (e.ctrlKey || e.metaKey) {
-                grabPoints.forEach(p => {
-                    if (!isPointSelected(p)) state.selectedPoints.push(p)
-                })
-            } else {
-                state.selectedPoints = [...grabPoints]
-            }
-            if (state.selectionMode === 'triangle') {
-                applyGrabTriangleSync(grabPoints, e)
-            } else {
-                state.selectedTriangles = []
-            }
             updateColorButtonState()
-        } else {
-            if (!e.shiftKey) {
-                state.selectedPoints = [...grabPoints]
-            } else {
-                grabPoints.forEach(p => {
-                    if (!isPointSelected(p)) state.selectedPoints.push(p)
-                })
-            }
         }
         updateSelectionHud()
     }
