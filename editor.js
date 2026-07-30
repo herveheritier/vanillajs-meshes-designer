@@ -386,6 +386,7 @@ const toggleSelectionPoints = (pointsAtPos) => {
     }
 }
 
+// Rationale : voir DESIGN.md §3.6
 const applySelectionModifiers = (pointsAtPos, e, ctrlToggles = false) => {
     if (e.shiftKey) {
         toggleSelectionPoints(pointsAtPos)
