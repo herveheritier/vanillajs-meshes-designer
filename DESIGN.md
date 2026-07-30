@@ -6,6 +6,25 @@ inline dans le code source ne portent plus que des descriptions courtes de type
 **what** (1-2 lignes par fonction ou bloc logique), avec un cross-ref
 `// Rationale : voir DESIGN.md §X.Y` quand la justification est ailleurs.
 
+## §0. Maintenance de DESIGN.md (anti-drift)
+
+DESIGN.md est une **vue extraite** du code. Si une section devient obsolète par un
+changement de comportement dans le code source :
+
+1. **Mettre à jour DESIGN.md EN PREMIER** (avant le commit du changement de code)
+   — les cross-refs `// voir §X.Y` dans le code pointeront alors vers une version
+   à jour.
+2. **Si une nouvelle règle émerge qui mérite DESIGN.md**, créer la section, puis
+   ajouter le cross-ref correspondant dans le code.
+3. **Si une règle inline devient triviale ou évidente**, la supprimer du code SANS
+   toucher DESIGN.md (le doc reste la source de vérité pour les invariants).
+
+Failure mode typique : un futur contributeur modifie `deleteSelectedSegment` sans
+toucher §4.1 → le doc dérive. À détecter en revue de PR par grep croisé
+`grep -n 'voir DESIGN.md §' <files>` vs sections effectivement présentes.
+
+---
+
 ## Lexique
 
 - **MODÈLE** : coordonnées logiques, X→droite, Y→haut (maths).
