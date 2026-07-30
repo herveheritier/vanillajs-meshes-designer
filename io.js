@@ -14,25 +14,6 @@ import { isSceneEmpty } from './geometry.js'
 
 // ===== Serialisation (state -> JSON) =====
 
-// Convertit une forme (triangles avec shared refs) en mesh
-// dedup (pointList + indices). Necessaire pour que
-// buildShapesFromPayload puisse reconstruire la scene au
-// reload. Meme format utilise par le file-import, donc
-// saveMesh produit un fichier coherent avec le format
-// d'import.
-//
-// Persiste aussi les metadonnees par-triangle : `fill`
-// (couleur optionnelle, voir draw.js). Persistance
-// inverse dans buildShapesFromPayload. Aucun autre champ
-// n'est serialise : le modele est minimaliste (p1, p2, p3,
-// fill) ; ajouter un nouveau champ necessite de toucher
-// les 3 endroits (draw, serialize, deserialize) +
-// cloneTriArray (pour undo/redo).
-//
-// Defense en profondeur : si `shape.triangles` n'est pas un
-// Array, on retombe sur une forme vide plutot que de jeter
-// JSON.stringify (causerait la perte de TOUTE la scene
-// alors qu'une seule forme est cassee).
 export const shapeToMesh = (shape) => {
     const pointMap = new Map()
     const pointList = []
@@ -77,12 +58,6 @@ export const serializeState = () => {
 
 // ===== Persistance (write to localStorage) =====
 
-// Synchrone (pas de debounce) : le debounce 150ms d'origine
-// rait avec les reloads rapides (Ctrl+R dans la fenetre du
-// debounce). localStorage.setItem prend ~1ms sur des scenes
-// de taille humaine, le write synchrone est acceptable cote
-// perf. Meme pattern que la sauvegarde console-frame :
-// uniquement au mouseup, pas de drag-time debounce.
 export const persistState = () => {
     try {
         localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
@@ -94,15 +69,6 @@ export const persistState = () => {
 
 // ===== Restore (read from localStorage) =====
 
-// Helper interne : convertit un tableau de tris en
-// [{p1,p2,p3}] resolus contre pts. Utilise par les 3
-// branches de buildShapesFromPayload (mesh format,
-// migration state.shapes, legacy single-mesh) pour eviter
-// la duplication du pattern "3 lignes de nt.pX conditionnel".
-// Preserve aussi les metadonnees par-triangle (fill) si
-// elles existent dans le payload (cf. shapeToMesh pour
-// l'inverse). Champ string vide ou null ignore (= retombe
-// sur fill default COLOR_TRIANGLE_FILL_ACTIVE en draw).
 const resolveTrisToTriangles = (trisArray, pts) => {
     const ts = []
     if (!Array.isArray(trisArray)) return ts
@@ -117,11 +83,6 @@ const resolveTrisToTriangles = (trisArray, pts) => {
     return ts
 }
 
-// Reconstruit un tableau de formes a partir d'un payload
-// JSON. Accepte plusieurs formats :
-//   - nouveau : { shapes: [{ tris, pointList }, ...], activeShapeIndex }
-//   - ancien (compat) : { tris, pointList, activeShapeIndex }
-//   - state.shapes natif legacy (rare, via shapeToMesh)
 export const buildShapesFromPayload = (data) => {
     if (!data || typeof data !== 'object') return null
     let result = []
@@ -133,12 +94,6 @@ export const buildShapesFromPayload = (data) => {
                 pts = shape.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
                 trisSource = shape.tris
             } else if (Array.isArray(shape.triangles)) {
-                // Legacy state.shapes natif (ecrit par les versions
-                // buggees d'avant le commit de fix serializeState) :
-                // triangles[i].p1|p2|p3 etaient des REFERENCES
-                // d'objets points. Sans cette branche, les
-                // utilisateurs avec un localStorage en v1 voient
-                // des formes vides au reload.
                 const mesh = shapeToMesh(shape)
                 pts = (mesh.pointList || []).map(p => ({ x: Number(p.x), y: Number(p.y) }))
                 trisSource = mesh.tris
@@ -146,8 +101,6 @@ export const buildShapesFromPayload = (data) => {
             result.push({ triangles: resolveTrisToTriangles(trisSource, pts) })
         })
     } else {
-        // Legacy single-mesh (avant le split : la scene etait
-        // un seul {pointList, tris}, pas un tableau de formes).
         const pts = []
         if (Array.isArray(data.pointList)) {
             pts = data.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
@@ -158,14 +111,6 @@ export const buildShapesFromPayload = (data) => {
     return result
 }
 
-// Helper prive : applique la rotation "legacy viewport"
-// stockee dans state.pendingRotation aux vertices de chaque
-// forme passee en argument. Meme formule CCW standard que
-// rotateEachShapeAroundPivot (editor.js), juste appelee une
-// fois en bloc sur un tableau de formes au lieu d'un point
-// a la fois. Utilisee par loadState ET applyImport pour
-// migrer les scenes sauvegardees avec l'ancien format
-// viewport-rotation.
 const applyPendingRotationToShapes = (shapeArray) => {
     if (!state.pendingRotation || !shapeArray || shapeArray.length === 0) return
     const angle = state.pendingRotation.angle
@@ -191,12 +136,6 @@ export const loadState = () => {
     const saved = localStorage.getItem(SCENE_STORAGE_KEY)
     if (!saved) return
     try {
-        // Reset de state.pendingRotation au demarrage du try,
-        // avant parsing. Sans ca, si une exception survient
-        // apres que pendingRotation ait ete set et que
-        // buildShapesFromPayload jette, le state reste pollue
-        // et un futur applyImport appliquerait la rotation
-        // stale silencieusement.
         state.pendingRotation = undefined
         const data = JSON.parse(saved)
         if (data.activeGrid !== undefined) state.activeGrid = !!data.activeGrid
@@ -204,20 +143,12 @@ export const loadState = () => {
             state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
         }
         if (typeof data.zoomLevel === 'number' && data.zoomLevel > 0) {
-            // Snap a 0.1 pour normaliser les valeurs persistees
-            // avant correction de ce bug (drift flottant
-            // cumule par les multiplications repetees par
-            // ZOOM_STEP_FACTOR). Cf. snapZoom dans viewport.js
-            // pour la rationale complete (reel == persiste ==
-            // affiche a 1 decimale).
             state.ctx.zoomLevel = snapZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, data.zoomLevel)))
         }
         if (data.viewCenter && typeof data.viewCenter.x === 'number' && typeof data.viewCenter.y === 'number') {
             state.ctx.viewCenter.x = data.viewCenter.x
             state.ctx.viewCenter.y = data.viewCenter.y
         }
-        // Migration LEGACY : rotation viewport-rotation
-        // integree aux vertices.
         if (typeof data.rotation === 'number' && Number.isFinite(data.rotation) && data.rotation !== 0) {
             let r = data.rotation % TAU
             if (r < 0) r += TAU
@@ -227,15 +158,10 @@ export const loadState = () => {
                     pivot.x = data.rotationPivot.x
                     pivot.y = data.rotationPivot.y
                 } else {
-                    // Ancien format screen : conversion via camera transform inverse.
                     pivot.x = state.ctx.viewCenter.x + (data.rotationPivot.x - state.ctx.center.x) / state.ctx.zoomLevel
                     pivot.y = state.ctx.viewCenter.y - (data.rotationPivot.y - state.ctx.center.y) / state.ctx.zoomLevel
                 }
             }
-            // Migration deferred : on ne peut pas tourner les
-            // vertices ici car state.shapes n'est pas encore
-            // charge. On flag et on applique apres
-            // buildShapesFromPayload.
             state.pendingRotation = { angle: r, pivot }
         } else {
             state.pendingRotation = undefined
@@ -257,16 +183,9 @@ export const loadState = () => {
         state.pendingRotation = undefined
         log('Load fail: ' + e.message)
     }
-    // Defense en profondeur : sync HUD meme en cas de
-    // chemin non couvert (futur refactor). Idempotent avec
-    // l'appel en fin de doit().
     updateUndoRedoHud()
 }
 
-// beforeunload : force un flush du state au cas ou une
-// mutation inachevee trainerait. clearTimeout du persistTimer
-// evite un flush en double (defensif meme si persistState ne
-// debounce plus).
 const onBeforeUnload = () => {
     clearTimeout(state.persistTimer)
     try {
@@ -280,9 +199,6 @@ export const wireBeforeUnload = () => {
 
 // ===== Save (export fichier) =====
 
-// Telechargement d'un fichier JSON portant un nom
-// timestamp (ex: mesh-1785323941.json). URL.createObjectURL +
-// revokeObjectURL : pattern standard, propre au DOM.
 export const saveMesh = () => {
     try {
         const blob = new Blob([serializeState()], { type: 'application/json' })
@@ -320,9 +236,6 @@ export const saveStoredImportMode = (mode) => {
     } catch (e) { /* ignore */ }
 }
 
-// Anti-double-modal : si la modale est deja ouverte, le
-// second appel est ignore et le callback recoit null
-// (= annule).
 let importModalShown = false
 
 // Rationale : voir DESIGN.md §7.4
@@ -333,10 +246,6 @@ const showImportModal = (opts, callback) => {
     }
     const modal = document.querySelector('#importModal')
     if (!modal) {
-        // Le DOM modal n'existe pas (tests headless, ancien
-        // HTML). On ne fait pas crasher l'import : on retombe
-        // sur replace silencieux comme avant l'introduction du
-        // modal.
         log('Import modal absent, replace par defaut')
         callback({ mode: 'replace', remember: false })
         return
@@ -378,13 +287,6 @@ const showImportModal = (opts, callback) => {
         if (e.key === 'Escape') onCancel()
     }
     const onBackdrop = (e) => {
-        // Le clic sur le fond (backdrop) doit annuler. Le DOM
-        // modal contient <div class="modal-backdrop"> comme
-        // premier enfant, donc e.target sur la zone sombre est
-        // ce div, PAS #importModal. On accepte les deux cas
-        // (clic direct sur le container ou sur le div
-        // backdrop) ; les clics sur .modal-box ou ses enfants
-        // ne correspondent pas et ne declenchent rien.
         if (e.target && (e.target === modal || e.target.classList && e.target.classList.contains('modal-backdrop'))) {
             onCancel()
         }
@@ -402,11 +304,6 @@ const showImportModal = (opts, callback) => {
 
 // ===== Import (text et file) =====
 
-// Parse + validation du payload d'abord, AVANT tout prompt.
-// 1) Scene vide : pas de prompt, replace direct.
-// 2) Scene non vide : affiche le modal HTML custom.
-// Le radio est pre-selectionne sur le dernier choix memorise
-// (defaut 'replace' si premiere fois).
 export const importMeshFromText = (text) => {
     let parsed = null
     let loaded = null
@@ -443,18 +340,10 @@ export const importMeshFromText = (text) => {
     return true
 }
 
-// Applique le payload importe selon le mode ('replace' ou
-// 'merge'). Choix deja fait, ici on ne fait QUE
-// l'application (reset d'etat ephemere, mutation de
-// state.shapes, persist, redraw).
 const resetEphemeralState = () => {
     state.historyStack = []
     state.redoStack = []
     state.selectedPoints = []
-    // Clearing les indices de triangles : apres import (replace
-    // ou merge post-reset), les indices referencent des
-    // positions differentes dans la nouvelle scene, donc
-    // invalides. Meme logique que history.clearEditingTransientState.
     state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
@@ -478,9 +367,6 @@ export const applyImport = (parsed, loaded, mode) => {
             state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, parsed.GRID_STEP))
         }
         loaded.forEach(s => state.shapes.push(s))
-        // Migration LEGACY : rotation viewport sauvegardee
-        // appliquee aux nouvelles formes (loaded), pas aux
-        // anciennes (shapes).
         applyPendingRotationToShapes(loaded)
         state.activeShapeIndex = beforeCount
         if (state.activeShapeIndex < 0 || state.activeShapeIndex >= state.shapes.length) {
@@ -496,7 +382,6 @@ export const applyImport = (parsed, loaded, mode) => {
         return true
     }
 
-    // Replace mode
     state.shapes = loaded
     applyPendingRotationToShapes(state.shapes)
     if (typeof parsed.activeShapeIndex === 'number' && parsed.activeShapeIndex >= 0 && parsed.activeShapeIndex < state.shapes.length) {
@@ -518,8 +403,6 @@ export const applyImport = (parsed, loaded, mode) => {
     return true
 }
 
-// Lit un fichier JSON via FileReader (+ validation extension /
-// MIME), delegue a importMeshFromText au onload.
 export const importMeshFromFile = (file) => {
     if (!file) return
     if (file.type !== 'application/json' && !file.name.match(/\.json$/i)) {
@@ -536,9 +419,6 @@ export const importMeshFromFile = (file) => {
 
 // ===== Reset =====
 
-// Wipe complet : scene vide + piles + selection + viewport
-// par defaut. log explicite 'Reset OK' pour tracabilite
-// dans la console in-app.
 export const resetAll = () => {
     state.shapes = [{ triangles: [] }]
     state.activeShapeIndex = 0
