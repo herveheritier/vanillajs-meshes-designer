@@ -9,10 +9,6 @@ import { persistState } from './io.js'
 import { log } from './log.js'
 import { updateMouseHover } from './editor.js'
 
-// Helper : change la forme active proprement. Annule toute action
-// en cours, vide la selection, recalcule le hover et le HUD.
-// Centralise toute la logique de bascule entre formes ; prev/next/
-// delete y arrivent via un index passe en argument.
 export const goToShape = (newIndex) => {
     if (!Array.isArray(state.shapes) || state.shapes.length === 0) return
     if (newIndex < 0 || newIndex >= state.shapes.length) return
@@ -24,9 +20,6 @@ export const goToShape = (newIndex) => {
     state.isWheelRotating = false
     state.activeShapeIndex = newIndex
     state.selectedPoints = []
-    // Selection de triangles invalidee : les indices stockes
-    // referencent des positions dans l'ancienne forme ; vider
-    // pour eviter une application de couleur cross-form.
     state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
@@ -57,21 +50,10 @@ export const addShape = () => {
     persistState()
 }
 
-// Ouvre la modale de confirmation (memes charte que
-// resetModal / importModal). Le message d'info est adapte
-// dynamiquement dans showDeleteShapeModal selon qu'on
-// supprime la derniere forme ou une parmi plusieurs. La
-// suppression effective est deferree a performDeleteShape,
-// appelee par le bouton primary de la modale.
 export const deleteShape = () => {
     showDeleteShapeModal()
 }
 
-// Logique de suppression effective : extraite de l'ancien
-// deleteShape (qui utilisait des confirm() natifs) pour etre
-// appelable depuis le bouton primary de la modale. La logique
-// "derniere forme => creer une scene vide" reste identique a
-// avant, juste enveloppe dans une fonction distincte.
 export const performDeleteShape = () => {
     hideDeleteShapeModal()
     saveState()
@@ -83,11 +65,6 @@ export const performDeleteShape = () => {
         if (state.activeShapeIndex >= state.shapes.length) state.activeShapeIndex = state.shapes.length - 1
     }
     state.selectedPoints = []
-    // Invalider la selection de triangles : les indices
-    // precedents referencent l'ANCIEN shapes[] qui vient d'etre
-    // splice ou remplace par une forme vide. Sans ce reset, un
-    // applyColor ulterieur (apres deleteShape) ciblerait des
-    // indices stale -> dessin incoherent ou index out of range.
     state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
@@ -107,11 +84,6 @@ export const performDeleteShape = () => {
     persistState()
 }
 
-// Affiche la modale de suppression de forme avec un message
-// dynamique : si c'est la derniere forme, on va creer une
-// scene vide en remplacement (l'utilisateur ne peut pas finir
-// avec 0 formes, sinon la scene est indefinie). Sinon on
-// supprime juste la forme active.
 export const showDeleteShapeModal = () => {
     const modal = document.querySelector('#deleteShapeModal')
     const info = document.querySelector('#deleteShapeModalInfo')
@@ -129,9 +101,6 @@ export const hideDeleteShapeModal = () => {
     if (modal) modal.hidden = true
 }
 
-// Wiring de la modale dediee : escape via main.js, mais les
-// boutons Cancel/Validate + le clic sur le backdrop sont
-// attaches ici en co-localisation avec la logique.
 export const wireDeleteShapeModal = () => {
     const modal = document.querySelector('#deleteShapeModal')
     const cancelBtn = document.querySelector('#deleteShapeModalCancel')
