@@ -1,18 +1,4 @@
-// Module draw.js : primitives de rendu canvas. Converti en ES6 module
-// (type="module") : importe les constantes + state + helpers
-// geometriques depuis leurs modules respectifs, exporte les
-// fonctions de dessin. Aucun appelant ne doit appeler drawPoint
-// avec des coordonnees screen (utiliser drawMouse ou le draw direct).
-//
-// Conventions :
-//   - Le state (formes, selection, viewport, hover, ...) est lu
-//     depuis state.js (import { state }). Toutes les fonctions
-//     qui en ont besoin accedent via state.X.
-//   - Le contexte canvas 2D (_ctx) et le board (ref DOM) sont
-//     initialises dans main.js (state._ctx = state.board.getContext('2d'))
-//     puis stockes dans state pour etre accessibles ici.
-//   - Toutes les fonctions qui dessinent sont exportees en
-//     named exports (cf. main.js qui importe).
+// Rationale : voir DESIGN.md §4.3
 
 import { state } from './state.js'
 import { modelToScreen, screenToModel } from './geometry.js'

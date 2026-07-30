@@ -1,16 +1,4 @@
-// Module geometry.js : helpers de coordonnees + snapping + topologie.
-//
-// Dependances :
-//   - constants.js : DEFAULT_GRID_STEP (importe via state.GRID_STEP
-//     pour la version mutable)
-//   - state.js : state.ctx (camera transform), state.activeGrid
-//     (snap-to-grid actif ou non), state.shapes (pour getAllVertices)
-//
-// Convention : pure functions quand c'est possible (modelToScreen,
-// screenToModel, snapToGrid, adjacentPoints, isInsideSegmentByDot,
-// computeOrthogonalProjection, scalarProduct). Mutations d'etat
-// seulement pour les fonctions de selection / extraction
-// (getAllVertices, getPointsAtSamePosition, isPointSelected).
+// Rationale : voir DESIGN.md §3.2
 
 import { state } from './state.js'
 import { TAU } from './constants.js'

@@ -108,8 +108,6 @@ export const undo = () => {
     persistState()
 }
 
-// Meme symetrie que undo : push courant dans historyStack, pop
-// la redoStack, restore l'etat.
 export const redo = () => {
     if (state.redoStack.length === 0) return
     state.currentAction = ACTION_NONE
@@ -132,11 +130,7 @@ export const redo = () => {
     persistState()
 }
 
-// Helper prive : remet a zero les Etats ephemeres lies a
-// l'edition (selection, hover, drag en cours, timers de
-// rotation). Centralise car undo/redo l'appellent tous les
-// deux pour garantir que la scene restauree est dans un
-// etat coherent, identique a un swap de forme (goToShape).
+// Rationale : voir DESIGN.md §7.2
 const clearEditingTransientState = () => {
     state.selectedPoints = []
     state.selectedTriangles = []

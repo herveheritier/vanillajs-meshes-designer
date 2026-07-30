@@ -1,25 +1,4 @@
-// Module shapes.js : gestion des formes (CRUD) + modale dediee
-// a la suppression d'une forme.
-//
-// Dependances :
-//   - state.js : state.shapes, state.activeShapeIndex, etc.
-//   - constants.js : ACTION_NONE
-//   - hud.js : updateShapeHud, updateSelectionHud
-//   - draw.js : drawBoard (redraw apres switch de forme)
-//   - history.js : saveState (snapshot avant add/delete)
-//   - io.js : persistState (sauvegarde apres mutation)
-//   - log.js : journal (log pur)
-//   - geometry.js : activeTriangles (rare, mais evite les cycles)
-//
-// Sans dep circulaire : shapes.js n'est importe PAR personne.
-// main.js importe les fonctions ci-dessous pour le wiring de
-// la toolbar (boutons prev/next/new/delete) et de la modale
-// dediee (le cancel/validate des boutons de la modale).
-//
-// Note : updateMouseHover est rappele au switch de forme pour
-// rafraichir le hover apres changement de la geometrie visible.
-// Pas de cycle : editor.js ne depend pas de shapes.js (pas de
-// CRUD depuis l'editeur direct).
+// Rationale : voir DESIGN.md §3.1
 
 import { state } from './state.js'
 import { ACTION_NONE } from './constants.js'

@@ -1,15 +1,4 @@
-// Module hud.js : fonctions de mise a jour du DOM HUD (les
-// "pilules" read-only et le style des boutons).
-//
-// Dependances :
-//   - state.js : state.shapes, state.activeShapeIndex, state.selectedPoints,
-//     state.historyStack, state.redoStack, state.reticleMode,
-//     state.activeGrid, state.GRID_STEP, state.consoleVisible,
-//     state.messageBoard
-//
-// Convention : chaque query DOM est toleree a l'absence (retour
-// silencieux) pour ne pas crasher dans des contextes partiels
-// (ancien HTML, tests headless). Idiomatique au codebase.
+// Rationale : voir DESIGN.md §1.2
 
 import { state } from './state.js'
 

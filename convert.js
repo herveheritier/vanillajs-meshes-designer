@@ -1,16 +1,4 @@
-// Module convert.js : conversion du format "meshes" (ligne de paires
-// "x,y;x,y;...") vers le format JSON reconnu par le mesh-designer.
-// Converti en ES6 module : importe log/importMeshFromText depuis
-// main.js (qui les exporte), exporte les fonctions de conversion
-// pour que main.js puisse les utiliser directement.
-//
-// Format source "meshes" (un mesh par ligne):
-//   "x1,y1;x2,y2;x3,y3;x4,y4;..."
-//   Chaque triplet consecutif forme un triangle. Si la ligne se
-//   termine par 1 ou 2 points, un triangle partiel est emis.
-//
-// Format JSON cible (nouveau, multi-formes):
-//   { "shapes": [ {"tris","pointList"}, ... ], "activeShapeIndex" }
+// Rationale : voir DESIGN.md §3.2
 
 import { log } from './log.js'
 import { importMeshFromText } from './io.js'

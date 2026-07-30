@@ -1,24 +1,4 @@
-// Module editor.js : logique d'edition directement sur la scene
-// geometrique.
-//
-// Domaine : tout ce qui touche a la manipulation du CANVAS et
-// des POINTS — selection, hover, find, drag, click, drop,
-// grab/drag de points, ajout/suppression de points, rotations
-// runtime de la scene ou des points selectionnes.
-//
-// Separations stricte des responsabilites :
-//   - Pas de CRUD de formes (c'est shapes.js)
-//   - Pas d'historique (c'est history.js) — sauf appel a saveState
-//   - Pas de zoom/pan/wheel de viewport (c'est viewport.js)
-//   - Pas d'import/export ni de persistance (c'est io.js)
-//
-// Les fonctions runtime-rotation (rotateEachShapeAroundPivot,
-// rotateSelectedPoints) sont exposees pour que viewport.js
-// puisse les appeler depuis le wheel handler. Les coordonnees
-// sont en MODELE (zoom/viewCenter gere par viewport.js).
-//
-// Dependances : state, constants, draw, hud, geometry, history,
-// io, log.
+// Rationale : voir DESIGN.md §4.1
 
 import { state } from './state.js'
 import { ACTION_NONE, ACTION_GRABBING, COLOR_HOVER_NEAREST_LINE, LINE_WIDTH_HOVER_NEAREST_LINE, TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU } from './constants.js'
@@ -35,8 +15,6 @@ import { saveState } from './history.js'
 import { persistState, importMeshFromFile } from './io.js'
 import { log } from './log.js'
 
-// findNearestPoint est declare plus bas dans ce meme
-// module ; rien a importer de l'exterieur.
 
 // ===== find : point/line/triangle les plus proches =====
 
@@ -336,27 +314,7 @@ export const updateCoordsDisplay = (cursorScreen) => {
 
 // ===== Selection / click sur board =====
 
-// Wrap resolveMouseClickOnBoard : ajout d'un point unique a
-// la forme active (et creation d'un triangle si besoin).
-// Trois branches :
-//   - 0 triangles : cree un triangle partiel avec p1 uniquement.
-//   - 1 triangle avec un/des slot(s) vide : remplit le premier slot vide.
-//   - sinon : cree un nouveau triangle lie au nearestLine (edge
-//     en hover) en utilisant ses deux sommets + le nouveau point.
-//
-// IMPORTANT : recalcul de state.nearestLine au point de clic.
-// L'approche initiale reposait sur la valeur cachee par
-// `updateMouseHover` (definie au dernier mousemove), ce qui
-// pouvait deriver si le clic survenait sans mousemove
-// intermediaire (souris immobile, ou pendant un deplacement
-// rapide). Conséquence : un nouveau triangle etait créé sur
-// une ligne qui n'etait plus celle survolee. En recalculant
-// ici avec le `pointToAdd` (snappé a la grille si active), on
-// garantit que addPoint utilise bien la ligne sous le curseur
-// au moment du clic — visible a l'écran.
-// Note : on ne touche pas state.nearestPoint ; sa propre
-// mise a jour suit son propre cycle de hover et n'est pas
-// consommee par addPoint.
+// Rationale : voir DESIGN.md §2.1
 export const resolveMouseClickOnBoard = (e) => {
     const mouseScreen = {
         x: e.x - state.board.getBoundingClientRect().x,
@@ -722,20 +680,7 @@ const applyTriangleIndexModifier = (triangleIndex, e) => {
 
 // ===== Suppression d'un point =====
 
-// Regle : la suppression d'un segment est effective SSI l'un
-// de ses points n'existe pas. Quand on supprime un point P :
-//   - chaque triangle contenant P voit P retire de ses slots ;
-//   - les segments incidents a P (deux par triangle) sont
-//     supprimes implicitement (l'un de leurs points n'existe
-//     plus) ;
-//   - le segment OPPOSE (entre les deux autres points du
-//     triangle) survit car ses deux endpoints existent.
-// Pour representer ca dans le modele triangle-only, on
-// reordonne les slots du triangle pour ramener les points
-// survivants en tete (t.p1, t.p2, t.p3) et laisse undefined
-// pour les slots non utilises. drawTriangle trace alors
-// naturellement le segment p1->p2 quand p3===undefined.
-// Un triangle dont il reste <2 points survivants est filtre.
+// Rationale : voir DESIGN.md §1.1
 export const deleteSelectedPoint = () => {
     let targets = []
     if (state.selectedPoints.length > 0) {
@@ -779,48 +724,7 @@ export const deleteSelectedPoint = () => {
 
 // ===== Suppression d'un segment (mode 'segment') =====
 
-// En mode 'segment' (cf. state.selectionMode), la touche
-// Backspace doit supprimer les triangles qui dependent du
-// (= partagent comme edge) segment selectionne, en
-// preservant les points encore references par un autre
-// triangle.
-//
-// Strategie :
-//   1) Cibles = points selectionnes OU, a defaut, les 2
-//      endpoints du segment survole (state.nearestLine) +
-//      leurs shared-refs via collectUnderlyingPoints
-//      (parallele strict au fallback nearestPoint de
-//      deleteSelectedPoint).
-//   2) Pour chaque triangle de la forme active, on compte
-//      combien de ses slots (p1 / p2 / p3) matchent une
-//      cible au sens adjacentPoints(0.01). Si >= 2 -> le
-//      triangle "depend du segment" (les 2 extremites sont
-//      parmi ses sommets) et il est SUPPRIME EN TOTALITE
-//      (pas juste de ses slots — c'est ca la
-//      specificite du mode segment par rapport au mode
-//      vertex qui retire juste la cible du slot).
-//   3) Les autres triangles ne sont pas TOUCHES : leurs
-//      slots restent tels quels, et donc les points qu'ils
-//      referencent continuent de pointer sur les memes
-//      objets. Un point qui n'est reference que par un
-//      triangle dependant du segment devient alors "inutilise"
-//      (= orphelin, GC par le moteur JS) ; un point encore
-//      reference par un triangle survivant (qui ne
-//      partageait qu'un seul sommet avec le segment,
-//      ex. un autre triangle du voisinage) reste vivant car
-//      son ref est preserve dans le slot du survivant.
-// C'est exactement la regle demandee par l'utilisateur :
-// "les points sont supprimes s'ils ne sont pas utilises
-// par d'autres segments, sinon conserves".
-//
-// Anti-regression doublure :
-//   - Comme deleteSelectedPoint, saveState en tete pour
-//     que la suppression reste annulable (undo = restaure
-//     la scene avant).
-//   - Comme deleteSelectedPoint, reset selection + hover
-//     + draw + HUD + persist en queue.
-//   - Garde no-op si cibles vide (rien ne se passe sans
-//     selection ET sans nearestLine).
+// Rationale : voir DESIGN.md §8
 export const deleteSelectedSegment = () => {
     let targets = []
     if (state.selectedPoints.length > 0) {
@@ -866,58 +770,7 @@ export const deleteSelectedSegment = () => {
 
 // ===== Suppression d'un triangle (mode 'triangle') =====
 
-// En mode 'triangle' (cf. state.selectionMode), la touche
-// Backspace doit supprimer UNIQUEMENT les triangles
-// actuellement selectionnes (pas les triangles qui partagent
-// un sommet avec eux, ni ceux qui partagent un edge) ; les
-// points en position concernee sont preserves s'ils sont
-// encore references par un autre triangle (survivant).
-//
-// Strategie (symetrique stricte a deleteSelectedSegment) :
-//   1) Cibles = points selectionnes OU, a defaut, les 3
-//      sommets du triangle survole (state.nearestTriangle) +
-//      leurs shared-refs via collectUnderlyingPoints
-//      (parallele strict aux fallbacks nearestPoint /
-//      nearestLine de deleteSelectedPoint / deleteSelectedSegment).
-//   2) Pour chaque triangle de la forme active, on compte
-//      combien de ses slots (p1 / p2 / p3) matchent une
-//      cible au sens adjacentPoints(0.01).
-//        - matchCount === 3 : le triangle est EXACTEMENT un
-//          des triangles selectionnes (ses 3 sommets font
-//          partie des positions cibles) -> SUPPRIME EN TOTALITE.
-//          Strictement different de deleteSelectedSegment qui
-//          utilise matchCount >= 2 (= "toutes les triangles
-//          contenant >=2 sommets partages") : ici on veut
-//          "uniquement les triangles selectionnes" au sens
-//          3 slots sur 3.
-//        - matchCount < 3 : le triangle n'est PAS un triangle
-//          selectionne -> on le GARDE tel quel.
-//   3) Les triangles survivants ne sont pas TOUCHES : leurs
-//      slots restent tels quels, et donc les points qu'ils
-//      referencent continuent de pointer sur les memes
-//      objets (= preserver si encore reference ailleurs,
-//      implicitement "supprimer" sinon = GC par le moteur).
-// C'est exactement la regle demandee par l'utilisateur :
-// "uniquement les triangles selectionnes ... les points
-// supprimés s'ils ne sont pas utilisés par d'autres
-// triangles, sinon conserves".
-//
-// Note sur shift-click : si l'utilisateur a multi-selectionne
-// plusieurs triangles (le selectionMode 'triangle' + shift
-// accumule les 3 sommets de chaque clic dans
-// state.selectedPoints), les positions cibles peuvent
-// couvrir N triangles distincts. Un triangle tombera si et
-// seulement si ses 3 positions matchent toutes (= il est
-// l'un des N). Un triangle qui partage 2 sommets avec un
-// triangle selectionne survit : le match n'est que de 2/3.
-//
-// Anti-regression doublure :
-//   - Comme deleteSelectedPoint et deleteSelectedSegment,
-//     saveState en tete pour undo-restore.
-//   - Comme deleteSelectedPoint et deleteSelectedSegment,
-//     reset selection + hover + draw + HUD + persist en queue.
-//   - Garde no-op si cibles vide (rien ne se passe sans
-//     selection ET sans nearestTriangle exploitable).
+// Rationale : voir DESIGN.md §7.1
 export const deleteSelectedTriangle = () => {
     let targets = []
     if (state.selectedPoints.length > 0) {
@@ -1302,16 +1155,7 @@ const applyGrabToPoint = (item, targetPos) => {
 
 // ===== Rotation runtime =====
 
-// Rotation PER-SHAPE (AltGr + wheel). Mute TOUS les points de
-// TOUTES les formes par rapport au pivot en coords MODELE.
-// Suivi a chaque tick (le wheel handler passe un pivot
-// re-evalue depuis screenToModel(cursorScreen)). Si la souris
-// reste fixe, le pivot est invariant ; si elle bouge, le
-// pivot suit (= rotation orbitale).
-// Vider la selection au premier tick d'une gesture car la
-// rotation mute TOUS les points, pas seulement les
-// selectionnes ; ne pas laisser le surlignage cyan suggerer
-// le contraire.
+// Rationale : voir DESIGN.md §1.2
 export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
     if (!state.shapes || state.shapes.length === 0) return
     if (!state.isEachShapeRotating) {
@@ -1457,17 +1301,7 @@ export const applyColorToSelectedTriangles = (color) => {
 
 // ===== Panneau flottant de coloration =====
 
-// Toggle du panneau de coloration. Aligne le panneau juste
-// sous le bouton #triangleColor (getBoundingClientRect
-// recupere la position reelle). Si le panneau est deja
-// ouvert, le ferme (et retire la classe .color-panel-open
-// du bouton). Sinon, l'ouvre, positionne, focus l'input
-// color pour qu'un user puisse taper immediatement une
-// valeur custom. Si le contexte n'est pas pret (mode !=
-// 'triangle' ou aucun triangle selectionne) : no-op
-// silencieux (le bouton est de toute facon disabled dans ce
-// cas cf. updateColorButtonState, donc cette garde defense-
-// en-profondeur ne devrait jamais trigger sauf regression).
+// Rationale : voir DESIGN.md §3.3
 export const toggleTriangleColorPanel = () => {
     const btn = document.querySelector('#triangleColor')
     const panel = document.querySelector('#triangleColorPanel')

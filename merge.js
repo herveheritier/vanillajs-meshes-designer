@@ -1,38 +1,4 @@
-// Module merge.js : fusion des points selectionnes d'une forme.
-//
-// Regle de la fusion (cf. demande utilisateur) : elle n'est
-// effectuee que si AUCUN triangle de la forme active ne
-// contient 2 sommets (ou plus) parmi state.selectedPoints.
-// Sinon, fusionner deux sommets d'un meme triangle le
-// rendrait degenere (deux sommets superposes = aire nulle).
-//
-// Strategie :
-//   1. Validation "cote triangle" : pour chaque triangle de
-//      activeTriangles(), compter le nombre de slots (p1, p2,
-//      p3) dont le contenu est dans selectedPoints au sens
-//      POSITION (on utilise isPointSelected, qui dedup par
-//      adjacentPoints 0.01). Si count >= 2 sur un triangle,
-//      CONFIT -> modal. Compter cote triangle (et non cote
-//      selection) evite le double-comptage d'un cluster de
-//      refs identiques dans selected.
-//   2. Calcul du "centre de la fusion" : moyenne x/y sur les
-//      POSITIONS UNIQUES (dedup par adjacentPoints 0.01). Si
-//      4 refs identiques au meme endroit sont selectionnees,
-//      elles comptent comme 1 seule position, sinon la
-//      moyenne serait biaisee par le cluster.
-//   3. Cible : state.selectedPoints[0] (premiere ref). Toutes
-//      les autres refs selectionnees seront redirigees vers
-//      celle-ci via les slots des triangles. Utiliser
-//      isPointSelected (pas indexOf) pour le test de
-//      position couvre les clusters de refs distinctes au
-//      meme endroit.
-//   4. Selection videe apres la fusion (input consomme).
-//   5. saveState (undo) + persistState (localStorage) +
-//      drawBoard + updateMouseHover + updateSelectionHud.
-//
-// Dependances : state, geometry, draw, hud, history, io,
-// editor, log. Pas de cycle : merge.js est importe par
-// main.js uniquement.
+// Rationale : voir DESIGN.md §7.5
 
 import { state } from './state.js'
 import { activeTriangles, adjacentPoints, isPointSelected } from './geometry.js'
@@ -75,16 +41,7 @@ export const wireMergeErrorModal = () => {
 
 // ===== Validation =====
 
-// Compte les REFS DISTINCTES de points selectionnes dans un
-// triangle. Le dedup se fait par IDENTITE de reference (Set),
-// pas par position toleree : si un triangle porte p1 === p2
-// (cas degenere : meme ref sur 2 slots), une seule ref doit
-// compter, conformement a la regle utilisateur ("un ou
-// plusieurs AUTRES points selectionnes"). Cela laisse passer
-// un triangle degenere deja present dans la scene (topologie
-// imposee par l'utilisateur). On utilise isPointSelected
-// (tol 0.01) pour savoir si le slot est selectionne, mais on
-// COMPTE par identite, pas par position tolerante.
+// Rationale : voir DESIGN.md §3.2
 const countSelectedSlots = (tri) => {
     const seen = new Set()
     let count = 0

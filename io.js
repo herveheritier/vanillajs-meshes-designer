@@ -1,29 +1,4 @@
-// Module io.js : persistance state + import/export fichiers.
-//
-// Domaine :
-//   - Serialisation / deserialisation du state vers / depuis
-//     localStorage et fichiers JSON.
-//   - Reconstruction de la scene a partir d'un payload
-//     JSON (multi-format support : shape natif legacy,
-//     mesh, mesh multi-formes).
-//   - Migration de la rotation legacy viewport-rotation.
-//   - resetAll : wipe complet + reseed d'une scene vide.
-//   - Helpers pour la modale d'import (getStoredImportMode,
-//     saveStoredImportMode, importModalShown, modal API).
-//
-// Dependances :
-//   - state, constants, geometry, draw, hud
-//   - log
-//   - shapes (updateShapeHud)
-//   - modals (showImportModal)
-//   - history (updateUndoRedoHud)
-//
-// Cycle : io.js depend de editor.js pour
-// applyPendingRotationToShapes ? NON : c'est interne.
-// Apres reflexion, applyPendingRotationToShapes est aussi
-// utile a shapes.js (via resetAll) -> je le declare
-// comme helper interne (non-exporte). Toute autre entree
-// externe n'est pas necessaire.
+// Rationale : voir DESIGN.md §4.1
 
 import { state } from './state.js'
 import {
@@ -86,24 +61,7 @@ export const shapeToMesh = (shape) => {
     return { pointList, tris }
 }
 
-// Snap du zoom a 0.1 pour aligner la valeur reelle
-// (state.ctx.zoomLevel), la valeur persistee (localStorage
-// SCENE_STORAGE_KEY -> serializeState) et la valeur affichee
-// (toFixed(1) dans updateZoomDisplay / viewport.js). Sans ce
-// snap, des multiplications repetees par ZOOM_STEP_FACTOR (1.1)
-// produisent des flottants a precision arbitraire
-// (1.2 -> 1.32 -> 1.4520000000000002 -> drift cumulatif) que
-// JSON.stringify preserve integralement alors que le HUD
-// n'affiche qu'un seul chiffre apres la virgule, creant un
-// decalage entre reel, persiste et affiche.
-//
-// Defini dans io.js (et non viewport.js) pour eviter une
-// dependance cyclique : viewport.js importe deja persistState
-// depuis io.js, importer snapZoom dans l'autre sens aurait
-// cree un cycle (les deux modules utilisent snapZoom UNIQUEMENT
-// au runtime, pas au top level, donc ca aurait marche par
-// live-binding, mais c'est un piege a TDZ pour les futurs
-// contributeurs).
+// Rationale : voir DESIGN.md §3.5
 export const snapZoom = (z) => Math.round(z * 10) / 10
 
 export const serializeState = () => {
@@ -344,8 +302,6 @@ export const saveMesh = () => {
 
 // ===== Import modal helpers =====
 
-// Lit la preference "mode d'import memorise". Renvoie
-// 'replace', 'merge' ou null si absente/invalide.
 export const getStoredImportMode = () => {
     try {
         const v = localStorage.getItem(IMPORT_MODE_STORAGE_KEY)
@@ -355,8 +311,7 @@ export const getStoredImportMode = () => {
     }
 }
 
-// Persiste la preference. Les erreurs (quota, etc) sont
-// ignorees pour ne JAMAIS bloquer l'import.
+// Rationale : voir DESIGN.md §1.1
 export const saveStoredImportMode = (mode) => {
     try {
         if (mode === 'replace' || mode === 'merge') {
@@ -370,24 +325,7 @@ export const saveStoredImportMode = (mode) => {
 // (= annule).
 let importModalShown = false
 
-// Affiche le modal HTML d'import. opts = { currentInfo,
-// importedInfo }. callback(null) = annule (Escape,
-// backdrop, bouton Annuler). callback({ mode }) = choix
-// valide ('replace' | 'merge').
-//
-// Co-localisation : cette fonction depend de
-// importModalShown (etat prive), getStoredImportMode (cle
-// localStorage preference). Plutot que de l'exporter depuis
-// modals.js (qui ne sait rien de l'import), je la garde
-// ici dans io.js a cote de son etat prive. modals.js
-// contient uniquement les modales HELP et RESET, qui n'ont
-// pas de couplage avec io.js.
-//
-// Pre-selection du radio sur le dernier choix memorise
-// (defaut 'replace' si pas de memoire ou valeur invalide).
-// Le modal s'affiche a chaque import (cf. importMeshFromText),
-// c'est donc le seul mecanisme pour proposer le bon defaut
-// sans demander explicitement "se souvenir".
+// Rationale : voir DESIGN.md §7.4
 const showImportModal = (opts, callback) => {
     if (importModalShown) {
         callback(null)

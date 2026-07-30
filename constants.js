@@ -1,6 +1,4 @@
-// Module constants.js : constantes pures extraites du top-level de main.js.
-// Pas de dependances : peut etre importe n'importe ou sans effet de bord.
-// Convention : named exports pour permettre un tree-shaking eventuel.
+// Rationale : voir DESIGN.md §5.1
 
 export const TAU = 2 * Math.PI
 
@@ -10,12 +8,7 @@ export const COLOR_LINES = '#FFFFFF'
 // "non editable" tout en restant visibles.
 export const COLOR_LINES_INACTIVE = '#5A5A5A'
 export const POINT_COLOR_INACTIVE = '#7A7800'
-// Fill tres leger applique aux triangles de la FORME COURANTE
-// (active) uniquement : rgba blanc ~10% d'opacite, juste assez
-// pour donner un wash subtil aux surfaces sans concurrencer
-// les points jaunes ou les contours. Inactif (inactives ne
-// recoivent PAS de fill — elles restent en simples contours
-// grises pour signaler 'non-editable').
+// Rationale : voir DESIGN.md §1.1
 export const COLOR_TRIANGLE_FILL_ACTIVE = 'rgba(255, 255, 255, 0.10)'
 // Couleur du trait "nearest" en hover (modes 'vertex' et
 // 'segment') : vert accent rgba(0,255,0,0.7), meme teinte
@@ -41,9 +34,7 @@ export const DEFAULT_GRID_STEP = 32
 export const MIN_GRID_STEP = 8
 export const MAX_GRID_STEP = 128
 
-// Actions : ancien systeme enumere en constantes globales. ACTION_NONE
-// vaut undefined pour permettre une comparaison `currentAction === undefined`
-// idiomatique. ACTION_GRABBING = 1 (drag d'un point en cours).
+// Rationale : voir DESIGN.md §2.2
 export const ACTION_NONE = undefined
 export const ACTION_GRABBING = 1
 
@@ -62,9 +53,7 @@ export const ROTATE_STEP = (5 * Math.PI) / 180
 export const CONSOLE_MIN_WIDTH = 80
 export const CONSOLE_MIN_HEIGHT = 30
 
-// Clefs localStorage (isolees de la scene JSON, voir knowledge.md
-// "localStorage is sticky across reloads"). Les prefixes sont
-// explicites pour permettre un audit rapide dans devtools.
+// Rationale : voir DESIGN.md §2.2
 export const SCENE_STORAGE_KEY = 'meshesDesigner.scene'
 export const GRID_STEP_STORAGE_KEY = 'meshesDesigner.gridStep'
 export const ACTIVE_GRID_STORAGE_KEY = 'meshesDesigner.activeGrid'
@@ -79,17 +68,7 @@ export const SELECTION_MODE_STORAGE_KEY = 'meshesDesigner.selectionMode'
 // 'vertex' est en premier pour qu'au premier toggle on aille vers
 // 'segment', qui est la decouverte de feature la plus naturelle.
 export const SELECTION_MODES = ['vertex', 'segment', 'triangle']
-// Presets de couleurs affiches comme swatches dans le panneau
-// de coloration des triangles (mode 'triangle' uniquement).
-// Chaque tuple = { bg: couleur pleine, fill: couleur avec alpha
-// 0.45 pour le fill des triangles }. bg sert pour le rendu du
-// swatch (opaque, pour lisibilite sur fond sombre) ; fill est
-// la valeur passee a t.fill (semi-transparente pour ne pas
-// ecraser les contours jaunes et le feedback hover).
-// 8 presets : rouge, orange, jaune, vert, cyan, bleu, violet,
-// blanc. Le blanc correspond au fill par defaut
-// COLOR_TRIANGLE_FILL_ACTIVE (10% blanc) -> equivaudra visuellement
-// a "pas de couleur custom" une fois le alpha 0.1 du CSS par defaut.
+// Rationale : voir DESIGN.md §7.3
 const triangleAlpha = 0.45
 export const TRIANGLE_COLOR_PRESETS = [
     { bg: '#E53935', fill: `rgba(229, 57, 53, ${triangleAlpha})` },
