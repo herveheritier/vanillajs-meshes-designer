@@ -1,9 +1,8 @@
-// Rationale : voir DESIGN.md §3.2
+// Rationale : voir DESIGN.md §8
 
 import { log } from './log.js'
 import { importMeshFromText } from './io.js'
 
-// Renvoie { x, y } a partir d'un token "x,y" ou undefined si invalide.
 export const parsePair = (token) => {
     let parts = token.split(',')
     if (parts.length !== 2) return undefined
@@ -13,7 +12,6 @@ export const parsePair = (token) => {
     return { x: x, y: y }
 }
 
-// Insere/Trouve un point dans pointList (cle "x,y").
 export const ensurePointIndex = (pointList, pointIndexByKey, x, y) => {
     let key = x + ',' + y
     let idx = pointIndexByKey.get(key)
@@ -24,7 +22,6 @@ export const ensurePointIndex = (pointList, pointIndexByKey, x, y) => {
     return idx
 }
 
-// Convertit UNE ligne meshes en JSON {tris, pointList}.
 export const convertMeshesLineToMesh = (line) => {
     let tris = []
     let pointList = []
@@ -50,7 +47,6 @@ export const convertMeshesLineToMesh = (line) => {
             buffer = []
         }
     }
-    // Triangle partiel en queue (1 ou 2 points).
     if (buffer.length > 0) {
         let partial = {}
         partial.p1 = ensurePointIndex(pointList, pointIndexByKey, buffer[0].x, buffer[0].y)
@@ -62,9 +58,6 @@ export const convertMeshesLineToMesh = (line) => {
     return { tris: tris, pointList: pointList }
 }
 
-// Convertit un texte multi-lignes en tableau de mesh JSON. CHAQUE ligne
-// devient un mesh distinct (mapping "un mesh par ligne" du format
-// meshes). NE FUSIONNE PAS, contrairement a une version anterieure.
 export const convertMeshesToMeshes = (text) => {
     return String(text)
         .split(/\r?\n/)
@@ -73,9 +66,6 @@ export const convertMeshesToMeshes = (text) => {
         .map((line) => convertMeshesLineToMesh(line))
 }
 
-// Lit un fichier meshes, le convertit et passe directement chaque
-// ligne comme une FORME distincte a importMeshFromText (definie dans
-// main.js) via le payload multi-shapes du nouveau format.
 export const importMeshesFromFile = (file) => {
     if (!file) return
     if (file.size === 0) {
@@ -86,9 +76,6 @@ export const importMeshesFromFile = (file) => {
     reader.onload = (e) => {
         try {
             let text = String(e.target.result)
-            // Heuristique meshes: il y a beaucoup de points-virgules
-            // (separateurs de coordonnees). Si le fichier n'en a aucun,
-            // ce n'est clairement pas le bon format.
             let semicolons = (text.match(/;/g) || []).length
             if (semicolons < 3) {
                 log('Import meshes fail: format inattendu (peu ou pas de ; separateurs)')
@@ -113,8 +100,6 @@ export const importMeshesFromFile = (file) => {
     reader.readAsText(file)
 }
 
-// Point d'entree "auto-import" depuis l'URL: ?autoimport=<base64-urlsafe>.
-// Pratique pour les tests headless (le picker natif n'est pas scriptable).
 export const autoImportMeshesFromUrl = () => {
     if (typeof window === 'undefined') return
     try {

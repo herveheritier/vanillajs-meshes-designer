@@ -11,8 +11,6 @@ import { updateMouseHover } from './editor.js'
 import { log } from './log.js'
 
 // ===== Modal helpers =====
-// Meme charte que #deleteShapeModal / #resetModal (helper de
-// query defensif, classe .modal + .modal-box partagees en CSS).
 const mergeErrorModal = () => document.querySelector('#mergeErrorModal')
 const mergeErrorModalInfo = () => document.querySelector('#mergeErrorModalInfo')
 
@@ -60,9 +58,6 @@ const countSelectedSlots = (tri) => {
     return count
 }
 
-// Renvoie la liste (1-based) des triangles de la forme
-// active qui ont >= 2 sommets selectionnes. Renvoie []
-// si la contrainte est OK.
 const findMergeConflicts = () => {
     const tris = activeTriangles()
     const conflicting = []
@@ -74,12 +69,6 @@ const findMergeConflicts = () => {
 
 // ===== Centroid =====
 
-// Moyenne x/y sur les POSITIONS UNIQUES (dedup par
-// adjacentPoints 0.01) parmi state.selectedPoints. Evite le
-// biais des clusters : si 4 refs identiques sont
-// selectionnees, elles comptent comme 1 seule position.
-// Renvoie {x, y} (defaut 0, 0 si rien — ne devrait pas
-// arriver car la fusion requiert >= 2 points).
 const computeMergeCentroid = () => {
     const selected = state.selectedPoints
     const uniquePositions = []
@@ -101,12 +90,9 @@ const computeMergeCentroid = () => {
 
 // ===== Merge =====
 
-// Effectue la fusion ou affiche la modale d'erreur.
-// Renvoie true si la fusion a ete effectuee, false sinon.
 export const mergeSelectedPoints = () => {
     const selected = state.selectedPoints
 
-    // Cas 1 : pas assez de points.
     if (selected.length < 2) {
         showMergeErrorModal(
             `Sélection insuffisante : la fusion nécessite au moins 2 points.\n` +
@@ -115,10 +101,6 @@ export const mergeSelectedPoints = () => {
         return false
     }
 
-    // Cas 2 : conflit topologique (au moins un triangle
-    // partage 2 sommets selectionnes). Affiche la liste
-    // des indices de triangles concernes (tronquee au
-    // dela de 6 pour rester lisible).
     const conflicting = findMergeConflicts()
     if (conflicting.length > 0) {
         const idxList = conflicting.length <= 6
@@ -133,18 +115,9 @@ export const mergeSelectedPoints = () => {
         return false
     }
 
-    // Cas OK : on y va.
     const centroid = computeMergeCentroid()
     const target = selected[0]
 
-    // Redirection : pour chaque triangle de la forme
-    // active, tout slot dont le POINT est selectionne (au
-    // sens position, via isPointSelected) ET n'est pas la
-    // cible est redirige vers cette cible. Cela couvre
-    // les clusters de refs distinctes : si une ref
-    // distincte A' partage la position de la cible A,
-    // isPointSelected(A') === true et A' !== target =>
-    // redirection.
     const tris = activeTriangles()
     tris.forEach((t) => {
         ['p1', 'p2', 'p3'].forEach((pid) => {
@@ -156,14 +129,9 @@ export const mergeSelectedPoints = () => {
         })
     })
 
-    // La cible absorbe toutes les autres positions et
-    // s'installe au centroid.
     target.x = centroid.x
     target.y = centroid.y
 
-    // Cleanup complet : consommation de la selection,
-    // reset des actions en cours, vidage du hover/grab,
-    // mise a jour HUD/persistance.
     saveState()
     state.selectedPoints = []
     state.nearestPoint = undefined
