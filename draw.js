@@ -1,4 +1,4 @@
-// Rationale : voir DESIGN.md §4.3
+// Rationale : voir DESIGN.md §2.3
 
 import { state } from './state.js'
 import { modelToScreen, screenToModel } from './geometry.js'
