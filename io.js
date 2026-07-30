@@ -46,6 +46,14 @@ import { isSceneEmpty } from './geometry.js'
 // saveMesh produit un fichier coherent avec le format
 // d'import.
 //
+// Persiste aussi les metadonnees par-triangle : `fill`
+// (couleur optionnelle, voir draw.js). Persistance
+// inverse dans buildShapesFromPayload. Aucun autre champ
+// n'est serialise : le modele est minimaliste (p1, p2, p3,
+// fill) ; ajouter un nouveau champ necessite de toucher
+// les 3 endroits (draw, serialize, deserialize) +
+// cloneTriArray (pour undo/redo).
+//
 // Defense en profondeur : si `shape.triangles` n'est pas un
 // Array, on retombe sur une forme vide plutot que de jeter
 // JSON.stringify (causerait la perte de TOUTE la scene
@@ -71,7 +79,9 @@ export const shapeToMesh = (shape) => {
             }
             indices[pid] = pointMap.get(key)
         })
-        tris.push({ p1: indices.p1, p2: indices.p2, p3: indices.p3 })
+        const tri = { p1: indices.p1, p2: indices.p2, p3: indices.p3 }
+        if (t.fill !== undefined) tri.fill = t.fill
+        tris.push(tri)
     })
     return { pointList, tris }
 }
@@ -131,6 +141,10 @@ export const persistState = () => {
 // branches de buildShapesFromPayload (mesh format,
 // migration state.shapes, legacy single-mesh) pour eviter
 // la duplication du pattern "3 lignes de nt.pX conditionnel".
+// Preserve aussi les metadonnees par-triangle (fill) si
+// elles existent dans le payload (cf. shapeToMesh pour
+// l'inverse). Champ string vide ou null ignore (= retombe
+// sur fill default COLOR_TRIANGLE_FILL_ACTIVE en draw).
 const resolveTrisToTriangles = (trisArray, pts) => {
     const ts = []
     if (!Array.isArray(trisArray)) return ts
@@ -139,6 +153,7 @@ const resolveTrisToTriangles = (trisArray, pts) => {
         if (t.p1 !== undefined && pts[t.p1]) nt.p1 = pts[t.p1]
         if (t.p2 !== undefined && pts[t.p2]) nt.p2 = pts[t.p2]
         if (t.p3 !== undefined && pts[t.p3]) nt.p3 = pts[t.p3]
+        if (typeof t.fill === 'string' && t.fill.length > 0) nt.fill = t.fill
         ts.push(nt)
     })
     return ts
@@ -498,6 +513,11 @@ const resetEphemeralState = () => {
     state.historyStack = []
     state.redoStack = []
     state.selectedPoints = []
+    // Clearing les indices de triangles : apres import (replace
+    // ou merge post-reset), les indices referencent des
+    // positions differentes dans la nouvelle scene, donc
+    // invalides. Meme logique que history.clearEditingTransientState.
+    state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.grabbedGroup = []
@@ -585,6 +605,7 @@ export const resetAll = () => {
     state.shapes = [{ triangles: [] }]
     state.activeShapeIndex = 0
     state.selectedPoints = []
+    state.selectedTriangles = []
     state.historyStack = []
     state.redoStack = []
     state.nearestPoint = undefined

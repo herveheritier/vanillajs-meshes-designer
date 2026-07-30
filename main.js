@@ -25,13 +25,15 @@
 import { state, initDomRefs } from './state.js'
 import { drawBoard } from './draw.js'
 import {
-    updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
+    updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton, updateSelectionModeButton,
+    updateColorButtonState,
 } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import {
-    selectAllPoints, deleteSelectedPoint,
+    selectAllPoints, deleteSelectedPoint, deleteSelectedSegment, deleteSelectedTriangle,
     endGrabbing, grabbed, resolveMouseMoveOnBoard, beginGrabbing,
     processMouseUpSelection, wireBoardDrop,
+    wireTriangleColorPanel, hideTriangleColorPanel,
 } from './editor.js'
 import { undo, redo } from './history.js'
 import {
@@ -41,6 +43,7 @@ import {
     restoreReticleMode, wireReticleControl, wireConsoleToggle, restoreConsoleVisible,
     wireBoardWheel, toggleGrid, toggleReticle, resetZoom,
     startPan, updatePan, endPan,
+    restoreSelectionMode, wireSelectionModeControl,
 } from './viewport.js'
 import { wireGridControl } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
@@ -70,6 +73,7 @@ state._ctx.fillRect(0, 0, state.board.width, state.board.height)
 // ===== Restore localStorage + wire UI controls =====
 
 restoreReticleMode()
+restoreSelectionMode()
 restoreConsoleVisible()
 
 // ===== Branchement des listeners "locaux" =====
@@ -78,6 +82,7 @@ restoreConsoleVisible()
 // main.js se contente de les appeler au boot.
 wireGridControl()
 wireReticleControl()
+wireSelectionModeControl()
 wireConsoleToggle()
 wireConsoleOverlay()
 wireClearConsole()
@@ -88,6 +93,7 @@ wireMergeErrorModal()
 wireBoardDrop()
 wireBoardWheel()
 wireBeforeUnload()
+wireTriangleColorPanel()
 
 // ===== Toolbar buttons =====
 
@@ -251,9 +257,25 @@ document.addEventListener('mouseup', (e) => {
 document.addEventListener('keydown', (e) => {
     // Backspace : supprime le selection (sans shift), ou
     // affiche la modale de reset (avec shift+Backspace).
+    // Dispatch par mode de selection :
+    //   - 'segment' : deleteSelectedSegment (supprime les
+    //                 triangles dependent du segment,
+    //                 preserve les points encore references
+    //                 ailleurs).
+    //   - 'triangle' : deleteSelectedTriangle (supprime
+    //                  UNIQUEMENT les triangles selectionnes,
+    //                  preserve les partages partiels).
+    //   - 'vertex'   : deleteSelectedPoint (retire le point
+    //                  des slots de tous les triangles
+    //                  concernes, ce qui peut cascader en
+    //                  triangles <2 points).
     if (e.code === 'Backspace') {
         if (e.shiftKey) {
             showResetModal()
+        } else if (state.selectionMode === 'segment') {
+            deleteSelectedSegment()
+        } else if (state.selectionMode === 'triangle') {
+            deleteSelectedTriangle()
         } else {
             deleteSelectedPoint()
         }
@@ -303,6 +325,14 @@ document.addEventListener('keydown', (e) => {
         }
         if (isMergeErrorOpen) hideMergeErrorModal()
     }
+    // Escape ferme aussi le panneau flottant de coloration
+    // (meme UX que les modales help/reset). Si le panneau est
+    // ouvert ET qu'aucune autre modale n'est ouverte (pour ne
+    // pas interferer avec Escape de Help/Reset), on ferme.
+    if (e.code === 'Escape' && !e.repeat && state.isTriangleColorPanelOpen && !isHelpOpen && !isResetOpen && !isDeleteShapeOpen && !isMergeErrorOpen) {
+        e.preventDefault()
+        hideTriangleColorPanel()
+    }
     // Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y, Ctrl/Cmd+S, Ctrl/Cmd+0.
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z')) {
         e.preventDefault()
@@ -346,6 +376,16 @@ const doit = () => {
     // scene avec selection non vide (cas rare), on reflette
     // l'etat reel plutot que le "0" du HTML par defaut.
     updateSelectionHud()
+    // Bouton mode de selection : sync apres restoreSelectionMode
+    // pour que le label "0"/"1"/"2" reflete l'eventuelle
+    // preference persistee en localStorage, pas la valeur
+    // hard-coded "0" du HTML par defaut.
+    updateSelectionModeButton()
+    // Bouton Colorier : au boot, reste disabled (aucun
+    // triangle selectionne + mode vertex par defaut). Defensive
+    // sync pour aligner le bouton sur la regle
+    // updateColorButtonState.
+    updateColorButtonState()
     log('App ready')
 }
 

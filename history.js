@@ -15,7 +15,7 @@
 
 import { state } from './state.js'
 import { MAX_HISTORY, ACTION_NONE } from './constants.js'
-import { updateUndoRedoHud, updateSelectionHud, updateShapeHud } from './hud.js'
+import { updateUndoRedoHud, updateSelectionHud, updateShapeHud, updateColorButtonState } from './hud.js'
 import { drawBoard } from './draw.js'
 import { updateMouseHover } from './editor.js'
 import { persistState } from './io.js'
@@ -28,6 +28,9 @@ import { persistState } from './io.js'
 // Utilise une Map pour dedupliquer les points partages : si
 // t1.p1 === t2.p2 (meme reference), le clone garde un seul
 // objet copie.
+// Preserve aussi les metadonnees par-triangle : `fill`
+// (couleur optionnelle). Sans cette copie, undo/redo d'une
+// application de couleur perdrait la couleur custom.
 export const cloneTriArray = (triArray) => {
     const pointMap = new Map()
     return triArray.map(t => {
@@ -44,6 +47,7 @@ export const cloneTriArray = (triArray) => {
             if (!pointMap.has(t.p3)) pointMap.set(t.p3, { x: t.p3.x, y: t.p3.y })
             nt.p3 = pointMap.get(t.p3)
         }
+        if (t.fill !== undefined) nt.fill = t.fill
         return nt
     })
 }
@@ -135,8 +139,10 @@ export const redo = () => {
 // etat coherent, identique a un swap de forme (goToShape).
 const clearEditingTransientState = () => {
     state.selectedPoints = []
+    state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
+    state.nearestTriangle = undefined
     state.isSelectingBox = false
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
@@ -144,4 +150,5 @@ const clearEditingTransientState = () => {
     clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
+    updateColorButtonState()
 }

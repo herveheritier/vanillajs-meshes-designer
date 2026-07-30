@@ -22,11 +22,12 @@ import { state } from './state.js'
 import {
     MIN_ZOOM, MAX_ZOOM, ZOOM_STEP_FACTOR, ROTATE_STEP,
     DEFAULT_GRID_STEP, MIN_GRID_STEP, MAX_GRID_STEP,
-    RETICLE_MODE_STORAGE_KEY, CONSOLE_VISIBLE_STORAGE_KEY,
+    RETICLE_MODE_STORAGE_KEY, SELECTION_MODE_STORAGE_KEY, SELECTION_MODES,
+    CONSOLE_VISIBLE_STORAGE_KEY,
 } from './constants.js'
 import { drawBoard } from './draw.js'
 import { screenToModel } from './geometry.js'
-import { updateGridButtonText, updateReticleButton, updateConsoleButton } from './hud.js'
+import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState } from './hud.js'
 import { persistState, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
@@ -34,6 +35,8 @@ import {
     rotateSelectedPoints,
     updateMouseHover,
 } from './editor.js'
+
+
 
 // ===== Zoom display =====
 
@@ -156,6 +159,52 @@ export const wireReticleControl = () => {
     reticleBtn.addEventListener('click', (e) => {
         if (e.button !== 0) return
         toggleReticle()
+    })
+}
+
+// ===== Selection mode =====
+
+// Cycle vertex -> segment -> triangle -> vertex. Mode par
+// defaut 'vertex' (cf. state.js initial). Le nouveau mode est
+// persiste en localStorage (cf. SELECTION_MODE_STORAGE_KEY)
+// pour survivre aux reloads comme le reticule.
+// Vide la selection au switch pour eviter que des points
+// "orphelins" d'un mode precedent polluent le nouveau mode
+// (un segment selectionne en mode segment -> passage en mode
+// triangle : les 2 sommets ne representent plus rien de
+// coherent dans le nouveau mode ; vider explicitement est
+// plus safe que de laisser une selection potentiellement
+// bizarre).
+export const toggleSelectionMode = () => {
+    const idx = SELECTION_MODES.indexOf(state.selectionMode)
+    const next = SELECTION_MODES[(idx + 1) % SELECTION_MODES.length]
+    state.selectionMode = next
+    state.selectedPoints = []
+    state.selectedTriangles = []
+    updateSelectionHud()
+    updateSelectionModeButton()
+    updateColorButtonState()
+    drawBoard()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+    try { localStorage.setItem(SELECTION_MODE_STORAGE_KEY, next) } catch (e) { /* ignore */ }
+    log(`Selection mode -> ${next}`)
+}
+
+export const restoreSelectionMode = () => {
+    try {
+        const stored = localStorage.getItem(SELECTION_MODE_STORAGE_KEY)
+        if (stored && SELECTION_MODES.indexOf(stored) !== -1) {
+            state.selectionMode = stored
+        }
+    } catch (e) { /* ignore */ }
+}
+
+export const wireSelectionModeControl = () => {
+    const btn = document.querySelector('#selectionMode')
+    if (!btn) return
+    btn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        toggleSelectionMode()
     })
 }
 

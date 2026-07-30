@@ -21,6 +21,7 @@ import {
     COLOR_AXIS,
     COLOR_LINES,
     COLOR_LINES_INACTIVE,
+    COLOR_TRIANGLE_FILL_ACTIVE,
     POINT_COLOR_INACTIVE,
     PATTERN_AXIS,
     PATTERN_LINES,
@@ -205,17 +206,45 @@ export const drawShape = (shape, isActive) => {
     let lineColor = isActive ? COLOR_LINES : COLOR_LINES_INACTIVE
     let linePattern = isActive ? PATTERN_LINES : PATTERN_LINES_INACTIVE
     let pointColor = isActive ? '#FFFF00' : POINT_COLOR_INACTIVE
+    // Forme inactive : JAMAIS de fill (meme si les triangles
+    // ont un t.fill defini). Justification : inactives restent
+    // en simples contours grises pour signaler 'non-editable'
+    // (cf. commentaire d'origine) ; un fill colore sur une
+    // forme inactive induirait l'utilisateur en erreur ('un
+    // triangle rouge doit etre editable'). Resolution :
+    // passer undefined pour forcer drawTriangle a ne pas fill.
     shape.triangles.forEach((t) => {
-        drawTriangle(t.p1, t.p2, t.p3, linePattern, lineColor)
+        // Forme active : si t.fill est defini (string CSS color),
+        // l'utiliser ; sinon retomber sur COLOR_TRIANGLE_FILL_ACTIVE
+        // (= rgba blanc ~10%). Permet a applyColorToSelectedTriangles
+        // (editor.js) de personnaliser la couleur de chaque triangle.
+        let fill = isActive ? (t.fill !== undefined ? t.fill : COLOR_TRIANGLE_FILL_ACTIVE) : undefined
+        drawTriangle(t.p1, t.p2, t.p3, linePattern, lineColor, fill)
         drawPoint(t.p1, 2, pointColor)
         drawPoint(t.p2, 2, pointColor)
         drawPoint(t.p3, 2, pointColor)
     })
 }
 
-// pattern et color sont optionnels (compat avec l'ancien code qui
-// appelait drawTriangle(p1,p2,p3) sans param de style).
-export const drawTriangle = (p1, p2, p3, pattern, color) => {
+// pattern, color et fill sont optionnels (compat avec l'ancien
+// code qui appelait drawTriangle(p1,p2,p3) sans param de
+// style). Fill n'est applique que pour un triangle COMPLET
+// (p1+p2+p3 tous definis) :
+//   - Partial (p3 absent) : pas de fill ni closePath, on garde
+//     exactement le trace d'origine (simples segments en
+//     cours de construction dans le flux addPoint).
+//   - Complet : on appelle closePath() AVANT fill() pour
+//     refermer explicitemement le path intermediaire (sinon
+//     fill peut deborder sur certaines implementations
+//     canvas), puis on retrace la derniere edge en stroke
+//     pour preserver le rendu visuel identique a l'ancien
+//     code (closePath ajoute implicitement la derniere edge,
+//     mais on l'aurait fait de toute facon avec lineTo).
+//     fillStyle est positionne juste avant fill() (et non
+//     en debut de fonction) pour eviter de polluer le
+//     fillStyle global entre triangles consecutifs si le
+//     caller n'a pas reinitialise.
+export const drawTriangle = (p1, p2, p3, pattern, color, fill) => {
     if (!p1) return
     let s1 = modelToScreen(p1)
     state._ctx.setLineDash(pattern !== undefined ? pattern : PATTERN_LINES)
@@ -228,7 +257,11 @@ export const drawTriangle = (p1, p2, p3, pattern, color) => {
         if (p3 !== undefined) {
             let s3 = modelToScreen(p3)
             state._ctx.lineTo(s3.x, s3.y)
-            state._ctx.lineTo(s1.x, s1.y)
+            state._ctx.closePath()
+            if (fill !== undefined) {
+                state._ctx.fillStyle = fill
+                state._ctx.fill()
+            }
         }
     }
     state._ctx.stroke()

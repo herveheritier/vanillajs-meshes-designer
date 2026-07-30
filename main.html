@@ -387,6 +387,36 @@
                 color: rgb(55, 194, 0);
             }
 
+            /* Bouton mode de selection : meme structure visuelle
+               que #grid et #reticle (icone SVG + texte d'etat).
+               3 etats cycliques : vertex (texte "0"), segment
+               ("1"), triangle ("2"). On affiche TOUJOURS le
+               chiffre (dont le "0" en mode vertex) pour que
+               l'utilisateur voit 3 paliers cliquables (cf.
+               justification dans updateSelectionModeButton dans
+               hud.js). Classe .selection-mode-active quand le
+               mode > vertex (= sortie du mode par defaut) ;
+               visuellement cela met le texte en vert accent,
+               meme langage que reticle/grid. */
+            #selectionMode {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+            }
+            #selectionMode #selectionModeText {
+                font-family: monospace;
+                font-size: 11px;
+                line-height: 1;
+                font-style: normal;
+                color: rgba(220, 220, 220, 0.55);
+                pointer-events: none;
+                white-space: nowrap;
+                transition: color 0.12s;
+            }
+            #selectionMode.selection-mode-active #selectionModeText {
+                color: rgb(55, 194, 0);
+            }
+
             /* Passe en vert accent quand la console est visible. */
             #toggleConsole.console-active {
                 color: rgb(55, 194, 0);
@@ -569,6 +599,46 @@
                 border-radius: 14px;
                 white-space: nowrap;
             }
+            /* Bouton Colorier : releve la stylistique partagee des
+               autres boutons de la toolbar (hauteur 30px, monospace,
+               border subtil). Sur etat disponible (mode triangle
+               + selection non vide), passe en accent vert comme
+               les autres outils de selection. Sur etat disabled
+               (defaut CSS des boutons toolbar .disabled), le bouton
+               au global reste grise. updateColorButtonState (hud.js)
+               ajoute/retire la classe .color-ready pour basculer
+               le bouton en vert accent selon le contexte : une
+               fois en mode triangle ET triangles selectionnes, le
+               bouton prend la classe .color-ready.
+               La classe permet de garder une separation stricte
+               avec le styled "disabled hover" global de la
+               toolbar (cursor:not-allowed, .opacity:0.35) : un
+               bouton colorier disabled LE RESTE tout en gagnant
+               l'indication visuelle que, dans un autre contexte,
+               il pourrait devenir actif (le hover d'un bouton
+               disabled reste gris, comme les autres boutons
+               .disabled). */
+            #toolbar #triangleColor.color-ready:not(:disabled) {
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border-color: rgba(55, 194, 0, 0.45);
+            }
+            #toolbar #triangleColor.color-ready:not(:disabled):hover {
+                background-color: rgba(55, 194, 0, 0.22);
+                border-color: rgb(55, 194, 0);
+                color: rgb(80, 220, 25);
+            }
+            #toolbar #triangleColor.color-ready:not(:disabled):active {
+                color: rgb(55, 194, 0);
+            }
+            /* Bouton Colorier : sur etat "actif" (panneau
+               actuellement ouvert), bordure vert pleine + scale
+               subtil pour confirmer que le panneau est deployé.
+               (Le bouton reste cliquable : il sert aussi a
+               refermer le panneau via toggleTriangleColorPanel.) */
+            #toolbar #triangleColor.color-panel-open:not(:disabled) {
+                box-shadow: 0 0 0 2px rgba(55, 194, 0, 0.55) inset;
+            }
 
             /* Disabled state partage par les boutons undo/redo (et
                futurs boutons lies a un etat de pile vide) : pile
@@ -588,6 +658,119 @@
                 background-color: rgba(255, 255, 255, 0.05);
                 border-color: rgba(255, 255, 255, 0.18);
                 color: rgb(220, 220, 220);
+            }
+
+            /* ========= Panneau flottant de couleur des triangles ========= */
+            /* Panneau popover ancre sous le bouton #triangleColor.
+               Style coherent avec les autres overlays (#toolbar,
+               #messageBoard) : fond sombre, bordure subtile, border-radius.
+               rganisation verticale :
+                 - 1 rangee de swatches preset (ronds colores
+                   definis en JS depuis TRIANGLE_COLOR_PRESETS)
+                 - 1 rangee "custom" avec <input type="color">
+                   (taille reduite + label texte court)
+                 - 1 bouton "Reset" (clear = supprime t.fill)
+               Le panneau est affiche/masque par
+               toggleTriangleColorPanel (editor.js). */
+            #triangleColorPanel {
+                position: absolute;
+                /* top / left sont regles par JS au moment de
+                   l'ouverture (getBoundingClientRect du bouton
+                   declencheur). z-index superieur a #toolbar
+                   (50) pour apparaitre au-dessus, inferieur aux
+                   modales (1000). */
+                z-index: 60;
+                background-color: rgba(15, 15, 15, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 4px;
+                padding: 8px 10px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                min-width: 200px;
+                backdrop-filter: blur(6px);
+                user-select: none;
+                font-family: monospace;
+                color: rgb(220, 220, 220);
+                box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+            }
+            #triangleColorPanel[hidden] {
+                display: none;
+            }
+            /* Rangee de swatches : flex wrap horizontal. Chaque
+               swatch est un bouton rond (22x22) avec la couleur
+               en bg + une legere bordure pour les couleurs
+               claires (blanc) sur fond sombre. Click = applique
+               immediatement la couleur (cf. wireTriangleColorPanel). */
+            #triangleColorSwatches {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            #triangleColorSwatches .swatch {
+                width: 22px;
+                height: 22px;
+                border-radius: 50%;
+                border: 1px solid rgba(255, 255, 255, 0.30);
+                cursor: pointer;
+                padding: 0;
+                /* transition discrete (couleur du ring) pour
+                   feedback "selection" : la classe .swatch-active
+                   ajoute une bordure verte brillante via JS. */
+                transition: box-shadow 0.10s, border-color 0.10s, transform 0.06s;
+            }
+            #triangleColorSwatches .swatch:hover {
+                border-color: rgba(255, 255, 255, 0.65);
+                transform: translateY(-1px);
+            }
+            #triangleColorSwatches .swatch.swatch-active {
+                border-color: rgb(55, 194, 0);
+                box-shadow: 0 0 0 2px rgba(55, 194, 0, 0.45);
+            }
+            /* Rangee custom : input color natif au look subtil.
+               Le picker par defaut (Webkit / Chromium) est ~40x25
+               ; on le rebadige pour qu'il s'integre au theme
+               sombre. Sur Firefox on a moins de controle, le picker
+               est OK fonctionnellement. */
+            #triangleColorCustom {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 11px;
+                color: rgba(220, 220, 220, 0.85);
+            }
+            #triangleColorInput {
+                width: 36px;
+                height: 22px;
+                padding: 0;
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                border-radius: 3px;
+                background-color: rgba(0, 0, 0, 0.4);
+                cursor: pointer;
+            }
+            /* Bouton Reset : meme langage btn secondaire que la
+               toolbar (fond gris fonce, bordure subtile). Click =
+               clear la couleur (supprime t.fill sur les triangles
+               selectionnes). */
+            #triangleColorReset {
+                font-family: monospace;
+                font-size: 11px;
+                padding: 4px 10px;
+                background-color: rgba(255, 255, 255, 0.05);
+                color: rgb(220, 220, 220);
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                border-radius: 3px;
+                cursor: pointer;
+                transition: background-color 0.10s, border-color 0.10s, color 0.10s;
+            }
+            #triangleColorReset:hover {
+                background-color: rgba(255, 255, 255, 0.12);
+                border-color: rgba(255, 255, 255, 0.40);
+                color: rgb(255, 255, 255);
+            }
+            #triangleColorReset:active {
+                color: rgb(55, 194, 0);
+                border-color: rgb(55, 194, 0);
             }
 
             /* ========= HUD bas-gauche : indicateur de zoom ========= */
@@ -663,6 +846,27 @@
                 padding: 18px 22px;
                 min-width: 380px;
                 max-width: 520px;
+                /* Cap la hauteur au viewport - marge (meme logique que
+                   #toolbar mobile-friendly : 100dvh suit le viewport
+                   visible apres repli de la barre d'URL mobile, 100vh
+                   en fallback pour les anciens browsers). Sans cette
+                   cap, une modale d'aide avec beaucoup de raccourcis
+                   OU un viewport mobile en portrait peut deborder
+                   verticalement (le contenu pousserait la box au-dela
+                   de la zone visible, impossible a scroller sans --
+                   en bavure, on coupe les raccourcis du bas ou le
+                   bouton Fermer sort de l'ecran).
+                   display:flex + flex-direction:column : prepare le
+                   terrain pour que les enfants puissent se repartir
+                   l'espace vertical (titre sticky en haut, contenu
+                   scrollable au milieu, boutons en bas). Les autres
+                   modales (import, reset) ont moins de contenu mais
+                   beneficient de la meme cap (= pas de regression,
+                   juste un cadre plus resistant sur petit viewport). */
+                max-height: calc(100vh - 32px);
+                max-height: calc(100dvh - 32px);
+                display: flex;
+                flex-direction: column;
                 box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
                 line-height: 1.4;
                 font-size: 13px;
@@ -749,6 +953,53 @@
                 flex-direction: column;
                 gap: 8px;
                 margin-bottom: 14px;
+                /* Au sein de .modal-box (flex column cf. ci-dessus),
+                   .help-list devient le flex item qui prend tout
+                   l'espace libre entre le titre (flex:0 0 auto) et
+                   les boutons Fermer (flex:0 0 auto).
+                   flex:1 1 auto + min-height:0 : la combinaison
+                   classique pour autoriser un flex item a shrinker
+                   sous la hauteur de son contenu (defaut flex =
+                   min-height:auto). Sans min-height:0, la flex item
+                   refuse de shrinker sur les modals a contenu long
+                   (= hauteur du contenu) et overflow-y resterait
+                   inoperant : le scroll n'apparaitrait jamais.
+                   overflow-y:auto : scrollbar n'apparait QUE si la
+                   liste depasse la cap imposée par .modal-box.
+                   Flat-design (pas de scrollbar permanente en mode
+                   inactif). */
+                flex: 1 1 auto;
+                min-height: 0;
+                overflow-y: auto;
+                /* Style de scrollbar minimaliste alignee sur le
+                   theme (vert accent 55,194,0 sur track noir
+                   transparent, opaquee +25% au hover pour signal
+                   affordance). Firefox gere via scrollbar-width /
+                   scrollbar-color (proprietes simples, pas de
+                   pseudo-elements). Chromium / Edge / Safari via
+                   ::-webkit-scrollbar. Les deux blocs sont
+                   appliques : si le browser ignore l'un, l'autre
+                   prend le relais. Webkit prefixe ne peut pas etre
+                   mis en /* @apply */ via une seule variable --
+                   d'ou la duplication. */
+                scrollbar-width: thin;
+                scrollbar-color: rgba(55, 194, 0, 0.5) rgba(0, 0, 0, 0.2);
+            }
+            .help-list::-webkit-scrollbar {
+                width: 10px;
+            }
+            .help-list::-webkit-scrollbar-track {
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 4px;
+            }
+            .help-list::-webkit-scrollbar-thumb {
+                background: rgba(55, 194, 0, 0.5);
+                border-radius: 4px;
+                border: 1px solid rgba(0, 0, 0, 0.3);
+                transition: background 0.12s;
+            }
+            .help-list::-webkit-scrollbar-thumb:hover {
+                background: rgba(55, 194, 0, 0.75);
             }
             .help-row {
                 display: flex;
@@ -808,6 +1059,39 @@
                      ("1" ou "2") ; vide quand off. Raccourci clavier R
                      pour cycler. -->
                 <button id="reticle" title="Réticule (R) : off / simple / projection symétrique"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.5"/><line x1="8" y1="1" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="15"/><line x1="1" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg><span id="reticleText"></span></button>
+                <!-- Mode de selection : cycle vertex / segment / triangle.
+                     Mode "vertex" = comportement actuel (clic sur un
+                     sommet). Mode "segment" = clic sur un edge
+                     selectionne ses 2 extremites. Mode "triangle" =
+                     clic dans un triangle selectionne ses 3 sommets.
+                     Le chiffre affiche (0/1/2) indique le palier
+                     actuel. Meme langage visuel que #grid / #reticle
+                     (texte subdued par defaut, vert accent quand le
+                     mode sort de la valeur par defaut). Place apres
+                     #reticle (meme groupe "Canvas ops") pour rester
+                     thematiquement groupe avec les toggles
+                     d'affichage/selection. -->
+                <!-- Mode de selection : cycle vertex / segment / triangle.
+                     Le tooltip precise les DEUX usages de ce mode :
+                       1) clic gauche court sur le canvas : la cible est
+                          determine par le mode (sommet / edge / triangle).
+                       2) clic droit sur l'entite geometrique : en mode
+                          triangle OU segment, raccourci ergonomique qui
+                          selectionne l'entite ENTIERE (3 sommets ou 2
+                          endpoints) et arme un grab pour la deplacer
+                          comme un groupe. Philosophie : le meme contrat
+                          mental (clic gauche = selection, clic droit =
+                          grab) s'applique a l'unite visible (vertex /
+                          edge / triangle) au lieu d'etre limite au
+                          sommet. En mode vertex, le clic droit garde
+                          le comportement historique (grab du sommet
+                          le plus proche). -->
+                <!-- Mode de selection : cycle vertex / segment / triangle.
+                     Le tooltip documente la fonction PROPRE du bouton
+                     (cycler le mode) + une mention courte du raccourci
+                     clic droit associe (= raccourci discoverable, le
+                     detail complet reste dans la modale d'aide). -->
+                <button id="selectionMode" title="Mode de sélection (cycle) : vertex / segment / triangle. Voir la modale d'aide pour le détail des raccourcis par mode."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="8" y1="2.5" x2="8" y2="4.5"/><line x1="8" y1="11.5" x2="8" y2="13.5"/><line x1="2.5" y1="8" x2="4.5" y2="8"/><line x1="11.5" y1="8" x2="13.5" y2="8"/></svg><span id="selectionModeText">0</span></button>
                 <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
                 <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
                 <!-- Bouton fusion : consomme state.selectedPoints (>=2)
@@ -832,6 +1116,17 @@
                      l'appel final dans doit() garantit "(0)" au boot meme
                      apres une scene restauree depuis localStorage. -->
                 <span id="selectionCount" title="Nombre de points sélectionnés">0</span>
+                <!-- Bouton Colorier : ouvre le panneau flottant de
+                     selection de couleur pour les triangles selectionnes
+                     (mode 'triangle' uniquement). Reste desactive
+                     hors mode triangle OU si aucun triangle
+                     selectionne : la pilule est grisee (claire) au
+                     lieu du look 'outil disponible' pour signaler
+                     l'indisponibilite. Le tooltip precise les 2
+                     prerequis. Place apres #selectionCount pour
+                     rester dans la meme thematique 'outils de
+                     selection'. -->
+                <button id="triangleColor" title="Colorier les triangles sélectionnés (mode triangle uniquement)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 12.2a1.7 1.7 0 01-2.4 0L9 10.1l-3.6-3.6a1.7 1.7 0 010-2.4l.4-.4a1.7 1.7 0 012.4 0L11.8 7l1.7 1.8a1.7 1.7 0 010 2.4z"/><path d="M2 14L7 9"/><circle cx="3.7" cy="12.3" r="1.1" fill="currentColor" stroke="none"/></svg></button>
             </div>
             <span class="toolbar-sep"></span>
             <!-- Groupe "Undo/redo" : miroite les raccourcis clavier
@@ -900,6 +1195,29 @@
             </div>
         </div>
         <canvas id="board" width="100" height="100"></canvas>
+        <!-- Panneau flottant de selection de couleur pour les
+             triangles (mode 'triangle' uniquement). Positionne en
+             absolu (ancre viewport) et apparie avec le bouton
+             #triangleColor en JS (editor.toggleTriangleColorPanel) :
+             on calcule getBoundingClientRect() du bouton au moment
+             de l'ouverture pour positionner top/left juste sous
+             l'icone. Cache par defaut (hidden).
+             Le contenu : 8 swatches preset rond (+ class .swatch)
+             alignes en grille compact, suivis d'un input color
+             natif (pour une couleur custom), et d'un bouton Reset
+             qui supprime la couleur custom (= revient au fill
+             default COLOR_TRIANGLE_FILL_ACTIVE).
+             Le clic en dehors du panneau (document-level mousedown
+             handler dans editor.js) ferme le panneau : on teste
+             e.target n'est pas un descendant du panneau ni du
+             bouton declencheur. -->
+        <div id="triangleColorPanel" hidden>
+            <div id="triangleColorSwatches"></div>
+            <div id="triangleColorCustom">
+                <input id="triangleColorInput" type="color" value="#ff5555" title="Couleur personnalisée (cliqué pour le picker natif)"/>
+            </div>
+            <button id="triangleColorReset" type="button" title="Effacer la couleur personnalisée">Reset</button>
+        </div>
         <div id="messageBoard">
             <!-- Bandeau de titre : un mousedown declenche un drag
                  (mouvement du cadre via mousemove document-level).
@@ -941,7 +1259,7 @@
             <div class="modal-box">
                 <div class="modal-title">Raccourcis clavier</div>
                 <div class="help-list">
-                    <div class="help-row"><kbd class="kbd">Backspace</kbd><span>supprimer le point sélectionne</span></div>
+                    <div class="help-row"><kbd class="kbd">Backspace</kbd><span>supprimer le point en mode vertex, les triangles dépendants du segment en mode segment, ou uniquement les triangles sélectionnés en mode triangle</span></div>
                     <div class="help-row"><kbd class="kbd">⇧</kbd><kbd class="kbd">Backspace</kbd><span>reinitialiser completement la scene (modale de confirmation)</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Z</kbd><span>annuler</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">Z</kbd><span>retablir</span></div>
@@ -962,6 +1280,47 @@
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd wide">Clic sur point</kbd><span>ajouter le point à la sélection (sans toggle, idempotent). <kbd class="kbd">Maj</kbd>+clic = toggle. Clic sans modifier = remplace la sélection. Cmd+clic (Mac) = équivalent Ctrl+clic.</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu + drag</kbd><span>deplacer le viewCenter dans le sens du drag (pan)</span></div>
                     <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Clic-droit + drag</kbd><span>deplacer toutes les formes ensemble (meme delta, quasi-mode). AltGr (Right Alt) declenche Ctrl+Alt sur la plupart des claviers.</span></div>
+                    <!-- Raccourci ergonomique en mode triangle / segment :
+                         clic droit sur l'entite geometrique survolee
+                         (triangle en mode triangle, edge en mode segment)
+                         = selectionne l'entite ENTIERE (3 sommets ou 2
+                         endpoints) et arme un grab pour la deplacer
+                         comme un groupe. Philosophie : unifier le
+                         contrat mental entre clic gauche (selection de
+                         l'entite) et clic droit (selection + grab de
+                         l'entite). Memes modifiers que le clic gauche
+                         appliquer au clic gauche -- identiques entre
+                         les 2 boutons pour eviter l'effet de surprise
+                         (cf. applySelectionModifiers du clic gauche
+                         en mode triangle/segment). Sans modifier =
+                         remplace ; Maj = toggle (ajoute si absent,
+                         retire si deja dans la selection, selon les
+                         points sous-jacents) ; Ctrl/Cmd (Mac) = ajout
+                         idempotent. En mode vertex, clic droit garde
+                         le comportement historique (grab du sommet
+                         le plus proche + cluster de shared-refs). -->
+                    <!-- Raccourci ergonomique en mode triangle / segment :
+                         clic droit sur l'entite geometrique survolee
+                         (triangle en mode triangle, edge en mode segment)
+                         = selectionne l'entite ENTIERE (3 sommets ou 2
+                         endpoints) et arme un grab pour la deplacer
+                         comme un groupe. Philosophie : unifier 'clic
+                         gauche = selection, clic droit = grab' au
+                         niveau de l'entite visible (pas du sommet
+                         seul) — l'utilisateur voit un triangle vert
+                         ou un edge gris, il agit dessus comme une
+                         unite, sans devoir repasser par un deuxieme
+                         clic gauche avant de drag. Memes modifiers
+                         que le clic gauche dans ces 2 modes (clic
+                         gauche -- clic droit en lock-step pour eviter
+                         l'effet de surprise) : sans modifier =
+                         remplace ; Maj = toggle (ajoute si absent,
+                         retire si deja dans la selection) ;
+                         Ctrl/Cmd (Mac) = ajout idempotent. En mode
+                         vertex, clic droit garde le comportement
+                         historique (grab du sommet le plus proche +
+                         cluster de shared-refs). -->
+                    <div class="help-row"><kbd class="kbd wide">Clic droit (triangle / segment)</kbd><span>Philosophie : unifier 'clic gauche selectionne, clic droit grab' au niveau de l'entite visible (triangle / edge), pas du sommet seul. Concretement : clic droit = selectionne les 3 sommets du triangle OU les 2 extremites de l'edge survole, puis demarre un grab pour la deplacer comme un groupe. Modifiers : Maj = toggle, Ctrl/Cmd = ajout idempotent, sans modifier = remplace. Meme contrat mental que le clic gauche dans ces 2 modes.</span></div>
                     <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Molette</kbd><span>rotation de chaque forme autour du curseur (5 deg/cran, cumulatif). Le pivot est la position de la souris dans la scene (= coords modele sous le curseur, suivi a chaque tick si elle bouge). Sans AltGr : molette pivote si 2+ points sont selectionnes, sinon zoom centre sur le curseur.</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">0</kbd><span>reinitialiser le zoom (100%, recentre sur l'origine)</span></div>
                     <div class="help-row"><kbd class="kbd">?</kbd><span>afficher / masquer cette aide</span></div>
@@ -1064,6 +1423,19 @@
              13) viewport (grid/reticle/console toggle/zoom/pan/wheel)
              14) io (persistence + import/export + resetAll)
              15) main (routeur + doit() au boot) -->
+        <!-- Les modules ES sont charges ici. Le serveur python
+             (test_server.py) envoie Cache-Control: no-store sur chaque
+             reponse (cf. NoCacheRequestHandler), donc AUCUN cache
+             disque ou navigateur -> un reload simple suffit pour
+             voir la derniere version des sources. Pas de ?v=... : un
+             query string sur le tag HTML mais PAS sur les imports
+             internes (import './viewport.js') peut creer une double
+             instanciation du meme module, ce qui mute des singletons
+             comme state en deux instances distinctes (= comportement
+             incoherent impossible a debugger). On laisse donc le
+             comportement natif du serveur. NE PAS modifier ce bloc
+             sans avoir relance le serveur python (Ctrl-C puis
+             python3 test_server.py). -->
         <script type="module" src="./constants.js"></script>
         <script type="module" src="./state.js"></script>
         <script type="module" src="./log.js"></script>

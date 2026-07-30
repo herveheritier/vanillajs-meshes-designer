@@ -24,7 +24,7 @@
 import { state } from './state.js'
 import { ACTION_NONE } from './constants.js'
 import { drawBoard } from './draw.js'
-import { updateShapeHud, updateSelectionHud } from './hud.js'
+import { updateShapeHud, updateSelectionHud, updateColorButtonState } from './hud.js'
 import { saveState } from './history.js'
 import { persistState } from './io.js'
 import { log } from './log.js'
@@ -45,11 +45,16 @@ export const goToShape = (newIndex) => {
     state.isWheelRotating = false
     state.activeShapeIndex = newIndex
     state.selectedPoints = []
+    // Selection de triangles invalidee : les indices stockes
+    // referencent des positions dans l'ancienne forme ; vider
+    // pour eviter une application de couleur cross-form.
+    state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.isSelectingBox = false
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
+    updateColorButtonState()
     drawBoard()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateShapeHud()
@@ -99,6 +104,12 @@ export const performDeleteShape = () => {
         if (state.activeShapeIndex >= state.shapes.length) state.activeShapeIndex = state.shapes.length - 1
     }
     state.selectedPoints = []
+    // Invalider la selection de triangles : les indices
+    // precedents referencent l'ANCIEN shapes[] qui vient d'etre
+    // splice ou remplace par une forme vide. Sans ce reset, un
+    // applyColor ulterieur (apres deleteShape) ciblerait des
+    // indices stale -> dessin incoherent ou index out of range.
+    state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.grabbedGroup = []
@@ -109,6 +120,7 @@ export const performDeleteShape = () => {
     clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
+    updateColorButtonState()
     drawBoard()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateShapeHud()

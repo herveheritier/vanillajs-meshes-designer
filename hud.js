@@ -62,6 +62,27 @@ export const updateReticleButton = () => {
     if (text) text.textContent = state.reticleMode === 0 ? '' : String(state.reticleMode)
 }
 
+// Bouton mode de selection : 3 etats cycliques (vertex /
+// segment / triangle). Comme le reticule, on affiche TOUJOURS
+// un texte ("0"/"1"/"2") et on met le bouton en etat actif
+// SAUF en mode vertex (mode par defaut). Le label "0" sur
+// vertex respecte la convention visuelle deja etablie par
+// #reticleText : "rien/etat 1/etat 2" -> "rien/etat 1/etat 2".
+// Justification du choix "toujours afficher le chiffre" :
+// la fonction de cycle est la meme que le reticule (clic = etat
+// suivant), et cacher le 0 sur vertex laisserait l'utilisateur
+// deviner "deux positions cliquables de plus" sans repere.
+export const updateSelectionModeButton = () => {
+    const btn = document.querySelector('#selectionMode')
+    const text = document.querySelector('#selectionModeText')
+    const idx = (
+        state.selectionMode === 'segment' ? 1 :
+        state.selectionMode === 'triangle' ? 2 : 0
+    )
+    if (btn) btn.classList.toggle('selection-mode-active', idx > 0)
+    if (text) text.textContent = String(idx)
+}
+
 // Bouton console : aria-pressed + display de #messageBoard.
 export const updateConsoleButton = () => {
     const btn = document.querySelector('#toggleConsole')
@@ -69,4 +90,28 @@ export const updateConsoleButton = () => {
     btn.classList.toggle('console-active', !!state.consoleVisible)
     btn.setAttribute('aria-pressed', state.consoleVisible ? 'true' : 'false')
     if (state.messageBoard) state.messageBoard.style.display = state.consoleVisible ? '' : 'none'
+}
+
+// Bouton Colorier : gere l'etat actif/inactif selon 2
+// pre-requis simultanes :
+//   1) selectionMode === 'triangle' (la feature n'a de sens
+//      qu'en mode triangle, cf. state.js).
+//   2) state.selectedTriangles.length > 0 (au moins 1 triangle
+//      selectionne : on ne sait pas colorier "rien").
+// Si l'un manque : bouton disabled (pilule grissee via le
+// theme global .disabled). Si les 2 sont reunis : retire
+// disabled, ajoute la classe .color-ready (vert accent via
+// CSS main.html) et, si le panneau est actuellement ouvert,
+// conserve la classe .color-panel-open pour le ring d'etat.
+// Appelee depuis editor.js apres chaque mutation de
+// state.selectedTriangles, et depuis viewport.js apres un
+// changement de mode (toggleSelectionMode). Idempotent :
+// peut etre appele plusieurs fois / frame sans risque.
+export const updateColorButtonState = () => {
+    const btn = document.querySelector('#triangleColor')
+    if (!btn) return
+    const ready = state.selectionMode === 'triangle' && (state.selectedTriangles && state.selectedTriangles.length > 0)
+    btn.disabled = !ready
+    btn.classList.toggle('color-ready', ready)
+    if (!ready) btn.classList.remove('color-panel-open')
 }

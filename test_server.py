@@ -7,6 +7,33 @@ import threading
 
 PORT = 8000
 
+# Handler custom : on surcharge end_headers pour envoyer
+# Cache-Control: no-store sur CHAQUE reponse. Justification :
+# python -m http.server (SimpleHTTPRequestHandler) n'envoie
+# AUCUN Cache-Control par defaut. Resultat : le navigateur peut
+# conserver en cache disque les modules ES (viewport.js, editor.js,
+# etc.) qui sont importes via <script type="module" src="...">.
+# Quand on modifie un module, un Ctrl+R simple sert souvent
+# l'ancienne version du cache disque, et le navigateur execute
+# du code perime (typiquement : ReferenceError sur une fonction
+# qui n'existait pas avant la modif).
+#
+# no-store = revalidation obligatoire a chaque hit. no-cache
+# seul laisse le navigateur revalider mais peut quand meme
+# servir du contenu stale si la revalidation est partielle.
+# no-store garantit l'absence totale de cache disque ou
+# memoire, ce qui correspond exactement a ce qu'on veut pour
+# un serveur de dev sans build step. Cout : ~0ms (1 header
+# ajoute par reponse, jamais reellement cache).
+#
+# En prod derriere un vrai serveur (nginx, Apache, etc.) on
+# remplacerait ca par du cache immutable + content-hash ; pas
+# applicable ici puisque le projet est 100% dev local.
+class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-store')
+        super().end_headers()
+
 # Évènement positionné par le thread daemon UNE FOIS le bind() réussi.
 # Le main thread l'attend avec un timeout borné : si l'évènement n'est
 # pas set dans les 2 s, c'est que start_server() a planté (port déjà
@@ -26,14 +53,17 @@ def start_server():
     retourne sans imprimer 'serving at port' — le main thread la lira."""
     global _server_error
     try:
-        httpd = socketserver.TCPServer(
-            ("", PORT), http.server.SimpleHTTPRequestHandler
+        # Disable allow_reuse_address to avoid TIME_WAIT races on hot reload
+        class _ReuseTCPServer(socketserver.TCPServer):
+            allow_reuse_address = True
+        httpd = _ReuseTCPServer(
+            ("", PORT), NoCacheRequestHandler
         )
     except OSError as e:
         with _server_error_lock:
             _server_error = e
         return
-    print(f"serving at port {PORT}", flush=True)
+    print(f"serving at port {PORT} (Cache-Control: no-store)", flush=True)
     _server_ready.set()
     httpd.serve_forever()
 

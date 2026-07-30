@@ -58,6 +58,14 @@ export const state = {
     // ===== Mouse / hover state =====
     nearestLine: undefined,
     nearestPoint: undefined,
+    // nearestTriangle : mis a jour a chaque mousemove (cf.
+    // updateMouseHover) en mode 'triangle'. Meme lifecycle que
+    // nearestPoint/nearestLine. Indique le triangle sous le
+    // curseur (point-in-polygon) pour highlight + selection.
+    // Indetermine hors mode triangle mais calcule out-of-the-box
+    // (cout O(n) negligeable) pour eviter une course conditionnelle
+    // a chaque changement de mode via le bouton toolbar.
+    nearestTriangle: undefined,
     lastMousePos: undefined,
     currentAction: undefined, // = ACTION_NONE au boot (= undefined)
     grabbedPoint: [],
@@ -68,8 +76,44 @@ export const state = {
     // 0 = off, 1 = simple, 2 = symetrique.
     reticleMode: 0,
 
+    // ===== Selection mode =====
+    // Definit ce qu'un clic court (mouseup dist < 5 px) selectionne
+    // sur le board. Cyclique via le bouton #selectionMode.
+    //   - 'vertex'   : clic sur un sommet (dist < 15 unites modele)
+    //                   selectionne le(s) sommet(s) au meme endroit ;
+    //                   clic en espace vide cree un point ou vide la
+    //                   selection. = comportement historique.
+    //   - 'segment'  : clic sur un edge d'un triangle (point projecte
+    //                   entre les 2 sommets) selectionne les 2
+    //                   extremites du segment ; clic sur un sommet
+    //                   retombe sur le comportement vertex. Sinon
+    //                   identique au mode vertex.
+    //   - 'triangle' : clic a L'INTERIEUR d'un triangle selectionne
+    //                   ses 3 sommets. Sinon retombe sur le
+    //                   comportement vertex (clic en espace vide).
+    // Toutes les operations (drag, grab, delete, merge, rotate,
+    // box-drag) operent sur state.selectedPoints (refs de points),
+    // donc le mode ne change QUE la facon dont un clic enrichit
+    // selectedPoints ; rien d'autre a modifier.
+    selectionMode: 'vertex',
+
     // ===== Selection / box =====
     selectedPoints: [],
+    // selectedTriangles : INDICES (dans la forme active) des
+    // triangles selectionnes en mode 'triangle'. Maintient
+    // une vue O(1) sur "quels triangles sont selectionnes"
+    // pour applyColorToSelectedTriangles : on itere
+    // directement sur les indices au lieu de re-scanner les
+    // 3-slots-pour-3 match de selectedPoints a chaque fois.
+    // Le tableau est reinitialise quand la selection de
+    // POINTS est videe (Cf. clearEditingTransientState dans
+    // history.js, goToShape, toggleSelectionMode, et resetAll).
+    selectedTriangles: [],
+    // isTriangleColorPanelOpen : etat du panneau flottant de
+    // coloration, ouverts/ferme par le bouton #triangleColor.
+    // Etat ephemere (pas persiste en localStorage), comme les
+    // autres overlays drag/resize.
+    isTriangleColorPanelOpen: false,
     isSelectingBox: false,
     selectionBoxStart: undefined,
     selectionBoxCurrent: undefined,
