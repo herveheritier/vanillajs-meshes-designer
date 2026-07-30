@@ -183,6 +183,33 @@ Trois modifiers × modes :
 | **Entité du mode** | Remplace la sélection | Toggle (déjà → retire, pas là → ajoute) | Ajoute SANS toggle (idempotent) |
 | **Espace vide**    | Vide + crée nouveau point | Préserve + crée nouveau point | Préserve, NE CRÉE PAS de point |
 
+**Exception mode `vertex`** : sur l'*entité du mode*, Ctrl/Meta-click
+bascule en *toggle add/remove* sur le même contrat que Shift. C'est
+l'alignement sur la convention UI standard *"ctrl+click toggles"* — sans
+cela, Ctrl+click sur un point déjà sélectionné n'a aucun effet visible
+et ressemble à un clic nu, ce qui déroute.
+
+Implémentation : `applySelectionModifiers(pointsAtPos, e, ctrlToggles)` dans
+`editor.js` accepte un 3ᵉ paramètre `ctrlToggles` (défaut `false`). Le seul
+site d'appel qui passe `true` aujourd'hui est la branche vertex du
+fallback dans `processMouseUpSelection` :
+`applySelectionModifiers(pointsAtPos, e, state.selectionMode === 'vertex')`.
+Le helper privé `toggleSelectionPoints(pointsAtPos)` (même fichier)
+factorise le bloc `anySelected / filter / push` entre la branche Shift et
+la branche Ctrl+`ctrlToggles` true.
+
+Modes `segment` et `triangle` : conservent *Ajoute SANS toggle*. Cette
+grille stable est partagée avec `beginGrabbing` (clic droit) qui n'a pas,
+lui, l'exception vertex — un passage ultérieur aux deux autres modes
+serait trivial via le même flag mais nécessiterait un même ajustement dans
+`beginGrabbing` pour rester cohérent (d'où le scope volontairement limité
+à cette itération).
+
+*Espace vide* : inchangé dans tous les modes — Ctrl/Meta-click =
+*préserve, NE CRÉE PAS de point* (les modifiers opèrent sur la sélection,
+pas sur la scène). Le toggle en espace vide est implicitement *no-op* (rien
+à toggler), donc le comportement existant est déjà conforme.
+
 ---
 
 ## §4. Règles de suppression (touche Backspace, par mode)

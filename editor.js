@@ -453,6 +453,16 @@ export const selectAllPoints = () => {
 //   - rien            : vide la selection, cree un nouveau
 //                       point.
 //
+// **Exception mode vertex (ctrl / meta sur l'entite du mode)** :
+// `applySelectionModifiers(pointsAtPos, e,
+// state.selectionMode === 'vertex')` passe `ctrlToggles =
+// state.selectionMode === 'vertex'` quand le mode est
+// vertex : ctrl / meta bascule alors en toggle add/remove
+// (meme contrat que shift), au lieu de l'add idempotent
+// historique. Modes segment / triangle : add idempotent
+// inchange (cf. §3.6 de DESIGN.md pour la grille
+// universelle et l'exception).
+//
 // Selection videe / mutee -> mise a jour de la pilule
 // selection via updateSelectionHud(). resolveMouseClickOnBoard
 // appelle addPoint (qui appelle saveState + persistState).
@@ -501,9 +511,16 @@ export const processMouseUpSelection = (e) => {
     }
 
     // Branche vertex (ou mode segment/triangle sans hit).
+    // Note ctrlToggles : limite au mode vertex pour aligner
+    // ctrl+click sur la convention UI 'toggle add/remove'
+    // (cf. applySelectionModifiers). Si segment/triangle
+    // tombent dans cette branche (hit-rate-perdu sur leur
+    // entite elargie respective), ctrl reste add idempotent
+    // — coherent avec beginGrabbing (clic droit) qui partage
+    // le meme contrat 'ctrl = add idempotent' dans ces modes.
     if (np && np.distance < 15) {
         const pointsAtPos = getPointsAtSamePosition(np.point)
-        applySelectionModifiers(pointsAtPos, e)
+        applySelectionModifiers(pointsAtPos, e, state.selectionMode === 'vertex')
     } else {
         // Clic en espace vide.
         if (e.shiftKey) {
@@ -598,31 +615,73 @@ const applyGrabTriangleSync = (grabPoints, e) => {
     state.selectedTriangles.sort((a, b) => a - b)
 }
 
+// Toggle add/remove des refs partageant la position d'un
+// cluster de points-bruts. Factorise le bloc 'anySelected /
+// filter / push' entre la branche shift et la branche
+// ctrl+ctrlToggles (toggle add/remove identique). Helper
+// prive, non exporte : reception explicite de pointsAtPos
+// en parametre (pas de capture par fermeture — la signature
+// reste plate et appelable depuis n'importe quel call site).
+// La tolerance adjacentPoints(., ., 0.01) doit rester
+// alignee avec celle de delete / grab pour eviter qu'un
+// point 'a la limite' du seuil soit vu comme selected
+// dans un flow et pas dans l'autre.
+const toggleSelectionPoints = (pointsAtPos) => {
+    const anySelected = pointsAtPos.some(p => isPointSelected(p))
+    if (anySelected) {
+        state.selectedPoints = state.selectedPoints.filter(sp => !pointsAtPos.some(p => adjacentPoints(sp, p, 0.01)))
+    } else {
+        pointsAtPos.forEach(p => {
+            if (!isPointSelected(p)) state.selectedPoints.push(p)
+        })
+    }
+}
+
 // Helper : applique les 3 modifiers (shift/ctrl/rien) a une
 // liste de points-bruts candidatos, en suivant les memes
 // regles que la branche vertex historique (cf. le tableau
 // "3 modifiers, 2 cibles" en tete de processMouseUpSelection).
 // Extrait pour eviter de dupliquer 3 fois la meme logique
 // entre les 3 modes.
-const applySelectionModifiers = (pointsAtPos, e) => {
+//
+// Param ctrlToggles (defaut false) : si true, ctrl/cmd
+// bascule en toggle add/remove sur le meme contrat que
+// shift (appelle toggleSelectionPoints), au lieu de l'add
+// idempotent historique. Mode vertex exclusivement :
+// aligne l'editeur sur la convention UI standard
+// 'ctrl+click toggles' attendue par l'utilisateur (sinon
+// ctrl+click sur un point deja selectionne n'a aucun effet
+// visible, ce qui ressemble a un clic nu et deroute).
+// Modes segment et triangle : on garde ctrl = add
+// idempotent, parce que leur grille mentale 'shift toggle /
+// ctrl add / rien replace' est stable et partagee avec
+// beginGrabbing (clic droit) qui n'a pas, lui, cette
+// exception vertex. Un passage ulterieur aux autres modes
+// serait trivial via le meme flag, mais necessiterait un
+// meme ajustement dans beginGrabbing pour rester coherent —
+// d'ou le scope volontairement limite pour cette iteration.
+const applySelectionModifiers = (pointsAtPos, e, ctrlToggles = false) => {
     if (e.shiftKey) {
         // shift teste en premier pour preserver sa priorite
-        // si l'utilisateur combine shift+ctrl.
-        const anySelected = pointsAtPos.some(p => isPointSelected(p))
-        if (anySelected) {
-            state.selectedPoints = state.selectedPoints.filter(sp => !pointsAtPos.some(p => adjacentPoints(sp, p, 0.01)))
+        // si l'utilisateur combine shift+ctrl (le bloc
+        // ctrlToggles ci-dessous ne s'execute alors jamais).
+        // Meme contrat que ctrl+ctrlToggles : tous deux
+        // routent vers toggleSelectionPoints() (helper ci-dessus).
+        toggleSelectionPoints(pointsAtPos)
+    } else if (e.ctrlKey || e.metaKey) {
+        if (ctrlToggles) {
+            // Mode vertex : ctrl = toggle add/remove sur le
+            // meme contrat que shift (cf. helper ci-dessus).
+            toggleSelectionPoints(pointsAtPos)
         } else {
+            // Modes segment/triangle : ajoute SANS toggle
+            // (comportement historique). Idempotent : si
+            // deja dans la selection, rien n'est ajoute
+            // (filtre isPointSelected).
             pointsAtPos.forEach(p => {
                 if (!isPointSelected(p)) state.selectedPoints.push(p)
             })
         }
-    } else if (e.ctrlKey || e.metaKey) {
-        // Ctrl/Cmd + click : ajoute SANS toggle.
-        // Idempotent : si deja dans la selection, rien
-        // n'est ajoute (filtre isPointSelected).
-        pointsAtPos.forEach(p => {
-            if (!isPointSelected(p)) state.selectedPoints.push(p)
-        })
     } else {
         // Click sans modifier : remplace la selection.
         state.selectedPoints = [...pointsAtPos]
@@ -1088,27 +1147,49 @@ export const resolveMouseMoveOnBoard = (e) => {
 
     if (state.isSelectingBox) {
         state.selectionBoxCurrent = mouseScreen
-        const m1 = screenToModel(state.selectionBoxStart)
-        const m2 = screenToModel(state.selectionBoxCurrent)
-        const minXM = Math.min(m1.x, m2.x)
-        const maxXM = Math.max(m1.x, m2.x)
-        const minYM = Math.min(m1.y, m2.y)
-        const maxYM = Math.max(m1.y, m2.y)
-        const activeShapeRef = state.shapes[state.activeShapeIndex]
-        const allV = []
-        activeShapeRef.triangles.forEach(t => {
-            [t.p1, t.p2, t.p3].forEach(p => {
-                if (p && !allV.some(v => adjacentPoints(v, p, 0.01))) allV.push(p)
+        // Click vs drag gate : on ne commit la wipe
+        // `state.selectedPoints = expanded` que si la souris
+        // a bouge >= 5 px en screen depuis selectionBoxStart.
+        // Meme seuil que la detection click vs drag sur mouseup
+        // dans main.js (`if (dist < 5)`). Sans cette garde,
+        // chaque mousemove meme de 1-2 px pendant un click
+        // REECRASE state.selectedPoints avec le contenu de
+        // la box a ce frame (= souvent [] ou juste la cible),
+        // ce qui WIPE silencieusement la selection precedente.
+        // Symptome observe : ctrl+click / shift+click en mode
+        // vertex perdent les points deja selectionnes parce que
+        // la micro-boite (1-2 px de drift souris) ne contient
+        // que la cible du click. Drag reel (>= 5 px) garde
+        // le comportement box selection attendu (la wipe finale
+        // survient au dernier frame dont dragDist >= 5, juste
+        // avant que mouseup laisse isSelectingBox = false).
+        const dragDist = Math.hypot(
+            mouseScreen.x - state.selectionBoxStart.x,
+            mouseScreen.y - state.selectionBoxStart.y
+        )
+        if (dragDist >= 5) {
+            const m1 = screenToModel(state.selectionBoxStart)
+            const m2 = screenToModel(state.selectionBoxCurrent)
+            const minXM = Math.min(m1.x, m2.x)
+            const maxXM = Math.max(m1.x, m2.x)
+            const minYM = Math.min(m1.y, m2.y)
+            const maxYM = Math.max(m1.y, m2.y)
+            const activeShapeRef = state.shapes[state.activeShapeIndex]
+            const allV = []
+            activeShapeRef.triangles.forEach(t => {
+                [t.p1, t.p2, t.p3].forEach(p => {
+                    if (p && !allV.some(v => adjacentPoints(v, p, 0.01))) allV.push(p)
+                })
             })
-        })
-        const inBox = allV.filter(p => p.x >= minXM && p.x <= maxXM && p.y >= minYM && p.y <= maxYM)
-        const expanded = []
-        inBox.forEach(p => {
-            getPointsAtSamePosition(p).forEach(q => {
-                if (!expanded.some(ev => ev === q)) expanded.push(q)
+            const inBox = allV.filter(p => p.x >= minXM && p.x <= maxXM && p.y >= minYM && p.y <= maxYM)
+            const expanded = []
+            inBox.forEach(p => {
+                getPointsAtSamePosition(p).forEach(q => {
+                    if (!expanded.some(ev => ev === q)) expanded.push(q)
+                })
             })
-        })
-        state.selectedPoints = expanded
+            state.selectedPoints = expanded
+        }
     } else if (grabbed()) {
         const curModel = screenToModel(mouseScreen)
         const startModel = screenToModel(state.grabStartMouse)
