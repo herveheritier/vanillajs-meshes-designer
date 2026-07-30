@@ -1,16 +1,3 @@
-// Module modals.js : modales "generiques" (Help + Reset).
-//
-// La modale d'import reste dans io.js (couplee a la
-// logique d'import : le callback declenche applyImport qui
-// depend de io). La modale de suppression de forme reste
-// dans shapes.js (couplee a performDeleteShape).
-//
-// Dependances :
-//   - state.js : state.shapes (legacy), state.ctx (rotation HUD)
-//   - log.js : import modal absent -> 'replace' par defaut
-//
-// Convention ES6 : tout en const.
-
 import { state } from './state.js'
 
 // ===== Help modal =====
@@ -29,9 +16,6 @@ export const hideHelp = () => {
     m.hidden = true
 }
 
-// Bouton "Fermer" + clic sur le backdrop ferment l'aide.
-// Voir modals associes (importModal, resetModal) pour le
-// pattern data-help-close.
 export const wireHelpModal = () => {
     const m = helpModal()
     if (!m) return
