@@ -1,18 +1,3 @@
-// Module history.js : undo/redo pour l'editeur.
-//
-// Dependances strictes (sens du flux d'imports, pas de cycle) :
-//   - state.js pour l'etat mutable (historyStack, redoStack, etc.)
-//   - constants.js pour MAX_HISTORY + ACTION_NONE
-//   - hud.js pour updateUndoRedoHud (sync du compteur HTML)
-//   - draw.js pour drawBoard (rendu apres restore)
-//   - editor.js pour updateMouseHover (rafraichir le hover apres
-//     restoration d'un etat precedent)
-//   - shapes.js pour updateShapeHud (compteur de forme)
-//
-// Pas de dep sur io.persistState : la persistance est geree par
-// les callers (editions, drags, rotations), pas par
-// saveState/undo/redo eux-memes. Separation des responsabilites.
-
 import { state } from './state.js'
 import { MAX_HISTORY, ACTION_NONE } from './constants.js'
 import { updateUndoRedoHud, updateSelectionHud, updateShapeHud, updateColorButtonState } from './hud.js'
@@ -22,15 +7,6 @@ import { persistState } from './io.js'
 
 // ===== Clonage =====
 
-// Clone profond d'un tableau de triangles. Preserve le partage
-// des references de point entre triangles d'un meme tableau (un
-// meme point physique reste un seul objet apres clonage).
-// Utilise une Map pour dedupliquer les points partages : si
-// t1.p1 === t2.p2 (meme reference), le clone garde un seul
-// objet copie.
-// Preserve aussi les metadonnees par-triangle : `fill`
-// (couleur optionnelle). Sans cette copie, undo/redo d'une
-// application de couleur perdrait la couleur custom.
 export const cloneTriArray = (triArray) => {
     const pointMap = new Map()
     return triArray.map(t => {
@@ -52,20 +28,12 @@ export const cloneTriArray = (triArray) => {
     })
 }
 
-// Clone toute la scene (toutes les formes + index actif).
-// Chaque forme est clonee avec ses propres points ; AUCUN
-// partage entre formes apres clonage, ce qui empeche une
-// future modification de fuiter entre formes via une
-// reference commune.
 export const cloneScene = (shapesArray) => {
     return shapesArray.map(s => ({ triangles: cloneTriArray(s.triangles) }))
 }
 
 // ===== Pile d'historique =====
 
-// Push un snapshot dans historyStack ; vide redoStack.
-// updateUndoRedoHud : toute mutation des deux piles synchronise
-// le HUD (#undoCount + disabled sur #undo/#redo).
 export const saveState = () => {
     state.historyStack.push({
         shapes: cloneScene(state.shapes),
@@ -78,14 +46,6 @@ export const saveState = () => {
     updateUndoRedoHud()
 }
 
-// Restaure l'etat precedent en depilant historyStack, et
-// empile l'etat courant dans redoStack.
-// L'entree empilee par saveState est `{shapes, activeShapeIndex}`
-// (PAS un `{state: {...}}`). Cette lecture `entry.state.shapes`
-// etait un bug latent qui n'avait jamais fired en pratique (les
-// tests browser du refactor ES6 ne touchaient pas undo/redo).
-// Le refactor a fait remonter l'erreur en mode strict ; fixe
-// ici.
 export const undo = () => {
     if (state.historyStack.length === 0) return
     state.currentAction = ACTION_NONE
