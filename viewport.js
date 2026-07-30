@@ -141,8 +141,6 @@ export const toggleReticle = () => {
     persistState()
 }
 
-// Lecture defensive depuis localStorage avec fallback a 0 :
-// cle corrompue / hors plage -> ignore.
 export const restoreReticleMode = () => {
     try {
         const stored = localStorage.getItem(RETICLE_MODE_STORAGE_KEY)
@@ -306,11 +304,7 @@ export const startPan = (mouseScreen) => {
     state.panStartViewCenter = { x: state.ctx.viewCenter.x, y: state.ctx.viewCenter.y }
 }
 
-// Mise a jour du viewCenter pendant le drag souris.
-// Convention "drag content" : drag a droite -> viewCenter.x
-// DECROIT (model content suit le curseur). Le delta est
-// divise par zoomLevel pour rendre le pan homogene : 100 px
-// screen -> 100 unites model a zoom 1, 20 unites a zoom 5.
+// Rationale : voir DESIGN.md §2.3
 export const updatePan = (mouseScreen) => {
     if (!state.isPanning) return
     const dx = mouseScreen.x - state.panStartMouse.x

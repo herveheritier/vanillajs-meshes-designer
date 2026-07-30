@@ -59,8 +59,6 @@ export const hideResetModal = () => {
     m.hidden = true
 }
 
-// Validation : import du resetAll depuis io.js se fait
-// au boot (cycle evite).
 export const wireResetModal = (onValidate) => {
     const m = resetModal()
     if (!m) return

@@ -39,11 +39,7 @@ export const applyConsoleFrame = () => {
     } catch (e) { /* ignore */ }
 }
 
-// Ecrit la position / taille en px (parseInt extrait le
-// nombre, ignore 'px' ; 0 si absent/auto). IMPORTANT : on
-// ecrit MEME si l'utilisateur n'a pas bouge, pour que le
-// CSS default '1vw' soit converti en px exact (plus stable
-// au reload quelle que soit la largeur viewport).
+// Rationale : voir DESIGN.md §6
 export const persistConsoleFrame = () => {
     if (!state.messageBoard) return
     try {
@@ -59,16 +55,7 @@ export const persistConsoleFrame = () => {
 
 // ===== Drag/resize wiring =====
 
-// Mousedown sur le bandeau titre -> capture rect + position
-// initiale. delta en mousemove = (current - initial),
-// applique a mbLeft/mbTop.
-// La classe body.dragging-console set le cursor OS en
-// !important (le canvas a cursor: 'none' inline).
-//
-// Note : `document.body` (et non `document.state.body`). Le
-// bulk rename du refactor ES6 avait transforme en
-// `document.state.body` (10 sites) ; pattern qui n'a aucun
-// sens car `document.state` est undefined.
+// Rationale : voir DESIGN.md §3.1
 const onConsoleTitleMousedown = (e) => {
     if (e.button !== 0) return
     if (!state.messageBoard) return
@@ -123,9 +110,7 @@ const onConsoleMousemove = (e) => {
     }
 }
 
-// Mouseup document-level : reset flags + persist. Persist
-// uniquement a la fin du drag (pas pendant le mousemove) car
-// localStorage n'est pas concu pour du haut debit.
+// Rationale : voir DESIGN.md §1.1
 const onConsoleMouseup = (e) => {
     if (e.button !== 0) return
     if (!state.consoleMoving && !state.consoleResizing) return

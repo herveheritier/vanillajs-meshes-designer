@@ -1,26 +1,4 @@
-// Module state.js : encapsule TOUT l'etat mutable de l'application
-// dans un objet unique exporte. Pourquoi un objet plutot que des
-// `let` exports ?
-//
-//   - Les bindings ES module sont read-only pour les importers.
-//     `import { shapes } from './state.js'` ne permet PAS
-//     `shapes = []` chez l'importer ; il faut passer par state.shapes
-//     = [] (qui fonctionne, c'est une mutation de propriete, pas
-//     une reassignation de binding).
-//   - Un objet unique permet de regrouper l'etat sous une seule
-//     reference documentee. Les modules dependents importent
-//     `state` une fois et accedent aux sous-proprietes
-//     (`state.shapes`, `state.ctx`, etc.).
-//   - Tree-shaking : pas de pluralite de `let` top-level qui se
-//     promeneraient. Une seule entite.
-//
-// Note sur le wrapping : a la migration, on transforme chaque
-// `let foo = ...` en `state.foo = ...`. Les references `foo`
-// deviennent `state.foo`. Sed bulk replace dans main.js.
-//
-// Note sur les imports circulaires : state.js n'importe RIEN
-// d'autre (pure source de verite). Cela evite les cycles et les
-// surprises d'ordre d'initialisation.
+// Rationale : voir DESIGN.md §1.1
 
 import { DEFAULT_GRID_STEP } from './constants.js'
 

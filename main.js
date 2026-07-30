@@ -1,26 +1,4 @@
-// Module main.js : point d'entree / routeur.
-//
-// Avant le refactor, ce fichier faisait ~2500 LOC et portait
-// l'integralite de la logique applicative. Apres, il est un
-// thin orchestrateur qui :
-//   1. importe les modules metiers ;
-//   2. init les refs DOM (state.initDomRefs)
-//   3. configure le canvas (_ctx, center, body styles)
-//   4. branche les listeners d'evenements GLOBAUX (document et
-//      board) qui dispatchent vers les modules ;
-//   5. branche les listeners de la toolbar (boutons toolbar) ;
-//   6. appelle doit() au boot (loadState + draw initial + HUD).
-//
-// Convention : main.js est un "routeur". Les listeners
-// globaux sont ici parce qu'ils sont partages entre plusieurs
-// modules (mousedown sur board -> shape management + grab +
-// pan selon le bouton ; keydown -> shortcuts clavier).
-// Les listeners locaux a un module vivent dans leur module
-// (wireGridControl, wireHelpModal, etc) et sont appeles depuis
-// ici.
-//
-// Flux d'imports : main.js importe TOUT. Les modules
-// subordonnees n'importent PAS main.js (pas de cycle).
+// Rationale : voir DESIGN.md §4.1
 
 import { state, initDomRefs } from './state.js'
 import { drawBoard } from './draw.js'
