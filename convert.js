@@ -1,4 +1,4 @@
-// Rationale : voir DESIGN.md §3.2
+// Rationale : voir DESIGN.md §8
 
 import { log } from './log.js'
 import { importMeshFromText } from './io.js'
