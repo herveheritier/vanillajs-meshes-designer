@@ -483,6 +483,60 @@ d'action en cours". `ACTION_GRABBING = 1` (drag d'un point en cours).
 
 ---
 
+### §7.7 Alerte « pile de mêmes coordonnées » (multi-refs à la même position)
+
+`updateMouseHover` détecte `getPointsAtSamePosition(p).length > 1` au-
+dessus du sommet survolé — c'est l'unique façon dont le modèle peut
+accumuler plusieurs refs pointant une même position physique (chaque réf
+reste distincte ; cf. §3.2 la sémantique « cluster » de
+`state.selectedPoints`). Si le cluster trouvé dépasse 1, deux
+indicateurs apparaissent :
+
+- **Canvas** : un triangle équilatéral `r=10px` rempli
+  `COLOR_DUPLICATE_ALERT_FILL` (rouge `rgba(255, 0, 0, 0.95)`) reposant
+  sur un trait blanc 1.5px, centré 22px au-dessus du sommet. Glyphe «
+  `!` » blanc en gras `bold 11px sans-serif` centré dans le triangle
+  (cf. `drawDuplicateAlert(p)` dans `draw.js`).
+- **HUD bas-gauche** : `#selectionCount` reçoit `style.color =
+  COLOR_DUPLICATE_HUD` (`'#FF0000'`) tant que
+  `state.isDuplicateStackHover === true`. Réinitialisation à chaîne
+  vide dès que le hover quitte le stack.
+
+**Désynchronisation HUD / canvas** : `updateMouseHover` flip le flag à
+chaque mousemove (toggle selon le stack courant) — cohérence reposant
+sur le fait que le dernier mousemove a recalculé le flag. Edge case :
+utilisateur reste immobile sur un stack puis clique ailleurs sans
+bouger → le flag reste collé sur le dernier état. Acceptable car le
+mouseleave / mouseout suivant (sortie du canvas) re-trigger
+`updateMouseHover(undefined)` qui force `else { state.isDuplicateStackHover
+= false }`.
+
+**Pourquoi cette règle métier** : un sommet « empilé » est
+techniquement valide (chaque réf est unique, juste superposée). Mais
+c'est souvent le signe d'une opération mal réfléchie : deux sommets
+libres colocalisés cassent la sémantique du segment adjacent (lequel est
+lequel ?), ou un import `meshes` avec coordonnées dupliquées non-
+dédupliquées (cf. §3.2). L'alerte « triangle rouge + ! » est
+volontairement stridente (rouge plein, glyphe bold) pour signaler à
+l'utilisateur qu'il doit investiguer avant toute suite d'édition.
+
+**Pourquoi ne PAS auto-fusionner** : une fusion silencieuse (cf.
+`mergeSelectedPoints` dans `merge.js`) risquerait de déplacer une
+géométrie que l'utilisateur avait pensée à dessein. On préfère informer
+et laisser l'utilisateur déclencher la fusion explicitement via le
+bouton `#mergePoints` de la toolbar — approcher en signalant plutôt
+qu'en mutant.
+
+**Périmètre** : `getPointsAtSamePosition` n'itère que sur la forme
+active (`activeTriangles()`), donc des refs colocalisées entre formes
+distinctes ne déclenchent pas l'alerte. C'est cohérent avec le reste de
+l'app qui raisonne forme par forme (édition/select/delete ne
+concernerait jamais qu'un seul `activeShapeIndex` à la fois). Pour
+surveiller les doublons inter-formes il faudrait une fonction dédiée
+qui scanne `state.shapes[*].triangles[*]`.
+
+---
+
 ## §8. Conventions diverses
 
 - **Mouse buttons** : `e.button === 0` est le left-click canonique partout.

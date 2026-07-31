@@ -6,3 +6,6 @@ temp.json
 __pycache__/
 *.pyc
 .agents/
+
+# VS Code (config locale par-developpeur -- ne pas tracker dans le repo)
+.vscode/

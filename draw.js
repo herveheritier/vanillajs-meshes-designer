@@ -18,6 +18,9 @@ import {
     COLOR_SELECTED_POINT_DIMMED,
     COLOR_SELECTION_BOX_FILL,
     COLOR_SELECTION_BOX_STROKE,
+    COLOR_DUPLICATE_ALERT_FILL,
+    COLOR_DUPLICATE_ALERT_STROKE,
+    COLOR_DUPLICATE_ALERT_GLYPH,
     PATTERN_AXIS,
     PATTERN_LINES,
     PATTERN_LINES_INACTIVE,
@@ -40,6 +43,51 @@ export const drawMouse = (p) => {
     state._ctx.beginPath()
     state._ctx.arc(p.x, p.y, 3, 0, TAU)
     state._ctx.stroke()
+}
+
+// Avertisseur « pile de points » (DESIGN.md §7.7) : triangle rouge au-
+// dessus du sommet survolé quand `getPointsAtSamePosition(p).length > 1`.
+// Glyphe « ! » blanc centré dans le cercle inscrit (centroïde = cy pour
+// un triangle équilatéral, `textBaseline: middle` aligne le caractère).
+// Taille en pixels écran pour rester lisible à tous les niveaux de
+// zoom. Si le sommet est trop proche du bord haut (< 18 px sous la
+// limite), le triangle bascule sous le point pour éviter d'être
+// tronqué par le bord du canvas ; horizontalement il est clampé dans
+// `[halfWidth+margin, board.width-halfWidth-margin]` pour la même
+// raison aux bords gauche/droite.
+const DUPLICATE_ALERT_R = 10
+const DUPLICATE_ALERT_OFFSET = 22
+const DUPLICATE_ALERT_FLIP_THRESHOLD = 18
+const DUPLICATE_ALERT_MARGIN_PX = 2
+export const drawDuplicateAlert = (p) => {
+    if (!p) return
+    const sp = modelToScreen(p)
+    const r = DUPLICATE_ALERT_R
+    const halfWidth = r * 0.866
+    const margin = DUPLICATE_ALERT_MARGIN_PX
+    const cx = Math.max(halfWidth + margin, Math.min(state.board.width - halfWidth - margin, sp.x))
+    const above = sp.y - DUPLICATE_ALERT_OFFSET >= DUPLICATE_ALERT_FLIP_THRESHOLD
+    const cy = above ? sp.y - DUPLICATE_ALERT_OFFSET : sp.y + DUPLICATE_ALERT_OFFSET + r
+    state._ctx.setLineDash([])
+    state._ctx.fillStyle = COLOR_DUPLICATE_ALERT_FILL
+    state._ctx.strokeStyle = COLOR_DUPLICATE_ALERT_STROKE
+    state._ctx.lineWidth = 1.5
+    state._ctx.beginPath()
+    state._ctx.moveTo(cx, cy - r)
+    state._ctx.lineTo(cx - halfWidth, cy + r * 0.5)
+    state._ctx.lineTo(cx + halfWidth, cy + r * 0.5)
+    state._ctx.closePath()
+    state._ctx.fill()
+    state._ctx.stroke()
+    state._ctx.lineWidth = 1
+    state._ctx.fillStyle = COLOR_DUPLICATE_ALERT_GLYPH
+    state._ctx.font = 'bold 11px sans-serif'
+    state._ctx.textAlign = 'center'
+    state._ctx.textBaseline = 'middle'
+    // Centroïde géométrique du triangle équilatéral = cy (calculé à partir
+    // des sommets `(cy - r)`, `(cy + 0.5r)`, `(cy + 0.5r)`), donc on centre
+    // le glyphe directement à cy sans offset résiduel.
+    state._ctx.fillText('!', cx, cy)
 }
 
 export const drawBoard = () => {

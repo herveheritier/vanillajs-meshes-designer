@@ -9,7 +9,7 @@ import {
     TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU,
     POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
 } from './constants.js'
-import { drawBoard, drawPoint, drawMouse } from './draw.js'
+import { drawBoard, drawPoint, drawMouse, drawDuplicateAlert } from './draw.js'
 import { updateSelectionHud, updateColorButtonState } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
@@ -151,7 +151,12 @@ export const findSelectedLine = (point) => {
 
 export const updateMouseHover = (cursorScreen) => {
     updateCoordsDisplay(cursorScreen)
-    if (!cursorScreen) return
+    if (!cursorScreen) {
+        // DESIGN.md §7.7 — reset le flag sur mouseleave/unmount pour que le
+        // HUD bas-gauche (compteur rouge) ne reste pas collé après sortie.
+        state.isDuplicateStackHover = false
+        return
+    }
     const actionModel = screenToModel(cursorScreen)
     const target = state.activeGrid ? snapToGrid(actionModel) : actionModel
     state.nearestPoint = findNearestPoint(target)
@@ -172,6 +177,16 @@ export const updateMouseHover = (cursorScreen) => {
 
     if (state.nearestPoint && state.nearestPoint.point) {
         drawPoint(state.nearestPoint.point, 5, COLOR_HOVER_NEAREST_POINT)
+        // DESIGN.md §7.7 — alerte pile : si plusieurs refs partagent cette
+        // position physique, on bascule le flag et on rend le triangle rouge
+        // « ! » au-dessus du sommet. getPointsAtSamePosition itère uniquement
+        // sur la forme active (cf. §3.2 cluster), donc des doublons inter-
+        // formes ne déclenchent pas l'alerte.
+        const stackCount = getPointsAtSamePosition(state.nearestPoint.point).length
+        state.isDuplicateStackHover = stackCount > 1
+        if (state.isDuplicateStackHover) drawDuplicateAlert(state.nearestPoint.point)
+    } else {
+        state.isDuplicateStackHover = false
     }
     if (state.selectionMode === 'segment' || state.selectionMode === 'vertex') {
         if (state.nearestLine && state.nearestLine.firstPoint && state.nearestLine.secondPoint) {

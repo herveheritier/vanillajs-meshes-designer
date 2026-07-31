@@ -15,6 +15,12 @@ export const COLOR_HOVER_NEAREST_POINT = '#00FF00'
 export const COLOR_HOVER_NEAREST_TRIANGLE_STROKE = 'rgba(0, 255, 0, 0.6)'
 export const COLOR_HOVER_NEAREST_TRIANGLE_FILL = 'rgba(0, 255, 0, 0.18)'
 
+// Rationale : voir DESIGN.md §7.7
+export const COLOR_DUPLICATE_ALERT_FILL = 'rgba(255, 0, 0, 0.95)'
+export const COLOR_DUPLICATE_ALERT_STROKE = '#FFFFFF'
+export const COLOR_DUPLICATE_ALERT_GLYPH = '#FFFFFF'
+export const COLOR_DUPLICATE_HUD = '#FF0000'
+
 // Rationale : voir DESIGN.md §7.2
 export const POINT_COLOR_ACTIVE = '#FFFF00'
 // Rationale : voir DESIGN.md §7.6
