@@ -23,6 +23,7 @@ export const goToShape = (newIndex) => {
     state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
+    state.activeConstructionTriangle = undefined
     state.isSelectingBox = false
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
@@ -68,6 +69,7 @@ export const performDeleteShape = () => {
     state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
+    state.activeConstructionTriangle = undefined
     state.grabbedGroup = []
     state.currentAction = ACTION_NONE
     state.isSelectingBox = false

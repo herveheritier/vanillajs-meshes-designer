@@ -45,6 +45,7 @@ export const state = {
     grabStartMouse: undefined,
     grabHistorySaved: false,
     hasDragged: false,
+    activeConstructionTriangle: undefined,
 
     // ===== Move-all (AltGr grab) =====
     moveAllActive: false,

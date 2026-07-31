@@ -249,6 +249,7 @@ export const loadState = () => {
         }
         const loaded = buildShapesFromPayload(data)
         if (loaded) {
+            state.activeConstructionTriangle = undefined
             state.shapes = loaded
             if (typeof data.activeShapeIndex === 'number' && data.activeShapeIndex >= 0 && data.activeShapeIndex < state.shapes.length) {
                 state.activeShapeIndex = data.activeShapeIndex
@@ -435,6 +436,7 @@ const resetEphemeralState = () => {
     state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
+    state.activeConstructionTriangle = undefined
     state.grabbedGroup = []
     state.currentAction = undefined
     state.isSelectingBox = false
@@ -518,6 +520,7 @@ export const resetAll = () => {
     state.redoStack = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
+    state.activeConstructionTriangle = undefined
     state.grabbedGroup = []
     state.currentAction = undefined
     state.isSelectingBox = false

@@ -289,14 +289,23 @@ indispensable depuis que `hasModifier` ouvre le chemin « clic-droit + shift
 
 ### §4.3 Refresh `nearestLine` au point de clic dans `addPoint`
 
-`addPoint()` recalcule `state.nearestLine` au moment du clic (pas depuis la
-valeur cachée par `updateMouseHover` au dernier mousemove). Sans ça, un
-nouveau triangle pouvait être créé sur une edge qui n'est plus sous le
-curseur (cas souris immobile, déplacement rapide, ou clic sans mousemove
-intermédiaire).
+`resolveMouseClickOnBoard()` recalcule `state.nearestLine` au moment du clic
+(et non depuis une valeur cachée par `updateMouseHover` au dernier mousemove).
+Sans ça, un nouveau triangle pouvait être créé sur une edge qui n'est plus
+sous le curseur (cas souris immobile, déplacement rapide, ou clic sans
+mousemove intermédiaire).
+
+Quand le dernier triangle est partiel (`p1`/`p2` sans `p3`), une ligne valide
+calculée pour le clic courant est prioritaire : `addPoint()` crée alors un
+nouveau triangle sur ce segment, au lieu de réutiliser le triangle partiel.
+Cette règle est nécessaire après la suppression d'un point, qui conserve le
+segment opposé sous forme partielle pour préserver la géométrie visible ; ce
+reliquat ne doit pas être interprété comme la construction active suivante.
+En l'absence de segment détecté, un triangle partiel réellement en cours de
+construction peut encore être complété.
 
 `state.nearestPoint` n'est PAS re-touché dans `addPoint` — sa propre mise à
-jour suit son cycle de hover et n'est pas consommé par l'ajout.
+jour suit son cycle de hover et n'est pas consommée par l'ajout.
 
 ---
 

@@ -105,6 +105,7 @@ const clearEditingTransientState = () => {
     state.grabbedGroup = []
     state.grabHistorySaved = false
     state.hasDragged = false
+    state.activeConstructionTriangle = undefined
     clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false

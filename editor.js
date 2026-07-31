@@ -257,21 +257,35 @@ export const addPoint = (point) => {
         log('addPoint: clic trop loin d\'un segment - triangle ignore')
         return
     }
+    const nearestLine = state.nearestLine && state.nearestLine.firstPoint && state.nearestLine.secondPoint
+        ? state.nearestLine
+        : undefined
+    const lastTriangle = tris.at(-1)
+    const isActivePartial = lastTriangle && lastTriangle === state.activeConstructionTriangle
+    if (lastTriangle && lastTriangle.p2 !== undefined && lastTriangle.p3 === undefined && !isActivePartial && !nearestLine) {
+        log('addPoint: triangle partiel inactif - clic ignore')
+        return
+    }
     saveState()
     if (tris.length === 0) {
-        tris.push({ p1: point })
+        const partial = { p1: point }
+        tris.push(partial)
+        state.activeConstructionTriangle = partial
     } else {
-        const triangle = tris.at(-1)
+        const triangle = lastTriangle
         if (triangle.p2 === undefined) {
             triangle.p2 = point
-        } else if (triangle.p3 === undefined) {
+            state.activeConstructionTriangle = triangle
+        } else if (triangle.p3 === undefined && isActivePartial && !nearestLine) {
             triangle.p3 = point
-        } else {
+            state.activeConstructionTriangle = undefined
+        } else if (nearestLine) {
             tris.push({
-                p1: state.nearestLine.firstPoint,
-                p2: state.nearestLine.secondPoint,
+                p1: nearestLine.firstPoint,
+                p2: nearestLine.secondPoint,
                 p3: point,
             })
+            state.activeConstructionTriangle = undefined
         }
     }
     state.ctx.workIsSaved = 0
@@ -504,6 +518,8 @@ export const deleteSelectedPoint = () => {
     state.selectedPoints = []
     state.selectedTriangles = []
     state.nearestPoint = undefined
+    state.nearestLine = undefined
+    state.activeConstructionTriangle = undefined
     drawBoard()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
@@ -541,6 +557,7 @@ export const deleteSelectedSegment = () => {
     state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
+    state.activeConstructionTriangle = undefined
     drawBoard()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
