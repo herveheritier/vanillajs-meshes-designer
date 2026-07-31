@@ -258,6 +258,64 @@ indispensable depuis que `hasModifier` ouvre le chemin « clic-droit + shift
 + triangle dont les 3 sommets sont déjà sélectionnés » (que
 `preserveExisting=true` masquait avant).
 
+### §3.6.1 Clic-droit propre vs clic-droit-drag : parité sparse-replace WYSIWYG
+
+Le clic-droit propre (sans drag) suit la table §3.6 Plain-click — il
+remplace la sélection. Le clic-droit-drag suit historiquement une
+règle divergente — « drag depuis n'importe quel point du canvas déplace
+la sélection engagée » — qui **préserve** la sélection même quand le
+mousedown vise une autre entité. Cette divergence est piégeuse : selon
+qu'un drag fasse 2 px ou 50 px, la sélection survit ou est écrasée. La
+règle suivante unifie les deux gestes pour le cas sparse :
+
+| Sélection actuelle  | Clic-droit propre (sans drag)         | Clic-droit + drag (mousedown + 5+ px) |
+|---|---|---|
+| **0 élément**       | `selectedPoints = [under-cursor]`     | `selectedPoints = [under-cursor]` puis drag (idem clic propre) |
+| **1 élément**       | Plain-click replace → `[under-cursor]` | §3.6.1 sparse-replace → `[under-cursor]` puis drag (parité stricte) |
+| **≥ 2 éléments**    | Plain-click replace → toute la sélection groupée perdue | PRÉSERVÉ (filet défensif — drag déplace le groupe engagé depuis n'importe où) |
+
+Implémentation : `beginGrabbing` insère une **pre-branch §3.6.1** juste
+avant l'early branch « selectedPoints.length > 0 grab-from-selection ».
+Cette pre-branch ne déclenche un replace QUE si les trois conditions
+suivantes sont réunies :
+
+1. `state.selectedPoints.length === 1` (sparse — exclusive du 0 qui est
+   déjà traité par le fall-through de `beginGrabbing` via
+   `applySelectionModifiers`).
+2. Le curseur vise une entité (mode-aware : `findNearestTriangle` >
+   `findSelectedLine` > `findNearestPoint`, chacun avec sa
+   tolérance hit-radius en pixels écran).
+3. Cette entité n'est PAS déjà intégralement dans `state.selectedPoints`
+   (`!cursorGrabPoints.every(p => isPointSelected(p))`) — sans cette
+   garde, un drag à 1 px du point engagé re-replace flickerait la
+   sélection (anti-flicker).
+
+Le replace passe par `applySelectionModifiers(... ctrlKey=false metaKey=false)`
+qui ré-utilise exactement le même chemin que le clic-droit propre — donc
+parité stricte click/drag sur la sémantique de remplacement. Pour les
+modes `triangle` et `segment`, `applyGrabTriangleSync` est appelé
+après le replace pour réconcilier `selectedTriangles` ↔
+`selectedPoints` (sa propre garde « ne push un index que si les 3
+sommets sont en sélection post-toggle » assure la cohérence, cf. §3.6).
+
+Les modifiers Shift/Ctrl/Cmd restent indépendants de §3.6.1 :
+`hasCtrlSelectionModifier` court-circuite bien avant dans
+`beginGrabbing` (Ctrl/Cmd + clic-droit = `selectAtRightClick`
+additif et retour sans grab), donc la pre-branch §3.6.1 ne concerne
+que le clic-droit SEUL sans modifier. `e.shiftKey` est transmis
+tel quel à `applySelectionModifiers` mais n'a aucun effet ici
+puisque le replace passe la branche « else » (`!shiftKey &&
+!ctrlKey && !metaKey`) — Shift ne toggle pas à ce niveau.
+
+La pre-branch ne fait pas `saveState()` : un mousedown qui ne
+démenche aucun mouvement (drag-distance < 5 px selon `hasDragged`
+dans `resolveMouseMoveOnBoard`) ne pollue pas l'historique. Pour
+un drag qui bouge, `resolveMouseMoveOnBoard` appelle
+`saveState()` au premier tick significatif via le flag
+`state.grabHistorySaved` — donc l'undo couvre bien le déplacement
+final post-replace (l'état pré-drag, qui inclut ou non l'ancien
+point sélectionné selon le cas, est dans la pile).
+
 ---
 
 ## §4. Règles de suppression (touche Backspace, par mode)
@@ -480,60 +538,6 @@ confondrait les deux états, et un screenshot sans contexte
 `ACTION_NONE = undefined` (intentionnel, pas `0`) : idiome
 `currentAction === undefined` comparable sans cast et exprime clairement "pas
 d'action en cours". `ACTION_GRABBING = 1` (drag d'un point en cours).
-
----
-
-### §7.7 Alerte « pile de mêmes coordonnées » (multi-refs à la même position)
-
-`updateMouseHover` détecte `getPointsAtSamePosition(p).length > 1` au-
-dessus du sommet survolé — c'est l'unique façon dont le modèle peut
-accumuler plusieurs refs pointant une même position physique (chaque réf
-reste distincte ; cf. §3.2 la sémantique « cluster » de
-`state.selectedPoints`). Si le cluster trouvé dépasse 1, deux
-indicateurs apparaissent :
-
-- **Canvas** : un triangle équilatéral `r=10px` rempli
-  `COLOR_DUPLICATE_ALERT_FILL` (rouge `rgba(255, 0, 0, 0.95)`) reposant
-  sur un trait blanc 1.5px, centré 22px au-dessus du sommet. Glyphe «
-  `!` » blanc en gras `bold 11px sans-serif` centré dans le triangle
-  (cf. `drawDuplicateAlert(p)` dans `draw.js`).
-- **HUD bas-gauche** : `#selectionCount` reçoit `style.color =
-  COLOR_DUPLICATE_HUD` (`'#FF0000'`) tant que
-  `state.isDuplicateStackHover === true`. Réinitialisation à chaîne
-  vide dès que le hover quitte le stack.
-
-**Désynchronisation HUD / canvas** : `updateMouseHover` flip le flag à
-chaque mousemove (toggle selon le stack courant) — cohérence reposant
-sur le fait que le dernier mousemove a recalculé le flag. Edge case :
-utilisateur reste immobile sur un stack puis clique ailleurs sans
-bouger → le flag reste collé sur le dernier état. Acceptable car le
-mouseleave / mouseout suivant (sortie du canvas) re-trigger
-`updateMouseHover(undefined)` qui force `else { state.isDuplicateStackHover
-= false }`.
-
-**Pourquoi cette règle métier** : un sommet « empilé » est
-techniquement valide (chaque réf est unique, juste superposée). Mais
-c'est souvent le signe d'une opération mal réfléchie : deux sommets
-libres colocalisés cassent la sémantique du segment adjacent (lequel est
-lequel ?), ou un import `meshes` avec coordonnées dupliquées non-
-dédupliquées (cf. §3.2). L'alerte « triangle rouge + ! » est
-volontairement stridente (rouge plein, glyphe bold) pour signaler à
-l'utilisateur qu'il doit investiguer avant toute suite d'édition.
-
-**Pourquoi ne PAS auto-fusionner** : une fusion silencieuse (cf.
-`mergeSelectedPoints` dans `merge.js`) risquerait de déplacer une
-géométrie que l'utilisateur avait pensée à dessein. On préfère informer
-et laisser l'utilisateur déclencher la fusion explicitement via le
-bouton `#mergePoints` de la toolbar — approcher en signalant plutôt
-qu'en mutant.
-
-**Périmètre** : `getPointsAtSamePosition` n'itère que sur la forme
-active (`activeTriangles()`), donc des refs colocalisées entre formes
-distinctes ne déclenchent pas l'alerte. C'est cohérent avec le reste de
-l'app qui raisonne forme par forme (édition/select/delete ne
-concernerait jamais qu'un seul `activeShapeIndex` à la fois). Pour
-surveiller les doublons inter-formes il faudrait une fonction dédiée
-qui scanne `state.shapes[*].triangles[*]`.
 
 ---
 

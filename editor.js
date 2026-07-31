@@ -9,13 +9,13 @@ import {
     TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU,
     POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
 } from './constants.js'
-import { drawBoard, drawPoint, drawMouse, drawDuplicateAlert } from './draw.js'
+import { drawBoard, drawPoint, drawMouse, drawVertexLabel, drawStackList } from './draw.js'
 import { updateSelectionHud, updateColorButtonState } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
 import {
     screenToModel, snapToGrid,
-    activeTriangles, getAllVertices, getPointsAtSamePosition, isPointSelected,
+    activeTriangles, getAllVertices, getPointsAtSamePosition, getVertexIndex, getStackTriangleRefs, isPointSelected,
     adjacentPoints, computeOrthogonalProjection, isInsideSegmentByDot,
 } from './geometry.js'
 import { saveState } from './history.js'
@@ -151,12 +151,7 @@ export const findSelectedLine = (point) => {
 
 export const updateMouseHover = (cursorScreen) => {
     updateCoordsDisplay(cursorScreen)
-    if (!cursorScreen) {
-        // DESIGN.md §7.7 — reset le flag sur mouseleave/unmount pour que le
-        // HUD bas-gauche (compteur rouge) ne reste pas collé après sortie.
-        state.isDuplicateStackHover = false
-        return
-    }
+    if (!cursorScreen) return
     const actionModel = screenToModel(cursorScreen)
     const target = state.activeGrid ? snapToGrid(actionModel) : actionModel
     state.nearestPoint = findNearestPoint(target)
@@ -177,16 +172,20 @@ export const updateMouseHover = (cursorScreen) => {
 
     if (state.nearestPoint && state.nearestPoint.point) {
         drawPoint(state.nearestPoint.point, 5, COLOR_HOVER_NEAREST_POINT)
-        // DESIGN.md §7.7 — alerte pile : si plusieurs refs partagent cette
-        // position physique, on bascule le flag et on rend le triangle rouge
-        // « ! » au-dessus du sommet. getPointsAtSamePosition itère uniquement
-        // sur la forme active (cf. §3.2 cluster), donc des doublons inter-
-        // formes ne déclenchent pas l'alerte.
-        const stackCount = getPointsAtSamePosition(state.nearestPoint.point).length
-        state.isDuplicateStackHover = stackCount > 1
-        if (state.isDuplicateStackHover) drawDuplicateAlert(state.nearestPoint.point)
-    } else {
-        state.isDuplicateStackHover = false
+        // DESIGN.md §7.8 — label d'identifiant stable du sommet surve.
+        // Affiche directement l'index 0-based retourne par
+        // getVertexIndex (= position dans getAllVertices()), convention
+        // dev-friendly alignee sur les arrays JS (idx sur state.nearestPoint,
+        // state.shapes, etc.). Si p est absent de la liste (defense,
+        // devrait pas arriver dans le call site normal), fallback '?'
+        // plutot que planter.
+        const vertexIdx = getVertexIndex(state.nearestPoint.point)
+        drawVertexLabel(state.nearestPoint.point, vertexIdx >= 0 ? vertexIdx : '?')
+        // DESIGN.md §7.9 — liste des slots triangles qui partagent cette
+        // position. N'affiche la pill 2-lignes que si > 1 ref (sinon la
+        // liste est triviale = 1 entree, redondante avec §7.8).
+        const stackRefs = getStackTriangleRefs(state.nearestPoint.point)
+        if (stackRefs.length > 1) drawStackList(state.nearestPoint.point, stackRefs)
     }
     if (state.selectionMode === 'segment' || state.selectionMode === 'vertex') {
         if (state.nearestLine && state.nearestLine.firstPoint && state.nearestLine.secondPoint) {
@@ -740,8 +739,54 @@ export const beginGrabbing = (e) => {
         return false
     }
 
-    // A right drag moves the committed selection as a group, regardless of
-    // the pointer position. AltGr was handled above and remains move-all.
+    // §3.6.1 sparse-replace WYSIWYG : si la sélection est sparse (0 ou 1
+    // élément) et que le mousedown right vise une entité DIFFÉRENTE de
+    // l'éventuelle 1-sélection, on REMPLACE la sélection avant de grab,
+    // parité stricte avec le clic-droit propre (qui passe par
+    // processRightClickSelection et applique déjà la règle Plain-click
+    // "remplace"). Multi-éléments PRÉSERVÉS (filet défensif contre la
+    // perte accidentelle d'une sélection groupée par un drag maladroit).
+    // Drag sur le MÊME point engagé : pas d'action (anti-flicker).
+    // AltGr a déjà court-circuité plus haut ; il reste neutre ici.
+    let sparseCursorGrabPoints = []
+    if (state.selectedPoints.length <= 1) {
+        const sparseTargetModel = screenToModel(mouseScreen)
+        if (state.selectionMode === 'triangle') {
+            const nt = findNearestTriangle(sparseTargetModel)
+            if (nt) sparseCursorGrabPoints = collectUnderlyingPoints([nt.p1, nt.p2, nt.p3])
+        } else if (state.selectionMode === 'segment') {
+            const ns = findSelectedLine(sparseTargetModel)
+            if (ns && ns.distance <= lineHitRadiusModel() && ns.firstPoint && ns.secondPoint && !adjacentPoints(ns.firstPoint, ns.secondPoint, 0.01)) {
+                sparseCursorGrabPoints = collectUnderlyingPoints([ns.firstPoint, ns.secondPoint])
+            }
+        } else {
+            const np = findNearestPoint(sparseTargetModel)
+            if (np && np.distance <= pointHitRadiusModel() && np.point) {
+                sparseCursorGrabPoints = getPointsAtSamePosition(np.point)
+            }
+        }
+        if (
+            state.selectedPoints.length === 1 &&
+            sparseCursorGrabPoints.length > 0 &&
+            !sparseCursorGrabPoints.every(p => isPointSelected(p))
+        ) {
+            applySelectionModifiers(sparseCursorGrabPoints, e, state.selectionMode === 'vertex')
+            if (state.selectionMode === 'triangle') {
+                applyGrabTriangleSync(sparseCursorGrabPoints, e)
+            } else if (state.selectionMode === 'segment') {
+                state.selectedTriangles = []
+            }
+            if (state.selectionMode === 'triangle' || state.selectionMode === 'segment') {
+                updateColorButtonState()
+            }
+            updateSelectionHud()
+        }
+    }
+
+    // A right drag moves the committed selection as a group. The sparse
+    // case (1 point + cursor on a different entity) has already been
+    // replaced above §3.6.1 ; what remains here preserves multi-element
+    // selections per the original drag-from-anywhere contract.
     if (state.selectedPoints.length > 0) {
         state.currentAction = ACTION_GRABBING
         state.grabStartMouse = mouseScreen
