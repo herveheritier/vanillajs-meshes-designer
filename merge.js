@@ -19,12 +19,21 @@ export const showMergeErrorModal = (info) => {
     const infoEl = mergeErrorModalInfo()
     if (!m || !infoEl) return
     infoEl.textContent = info
+    state.lastFocusedElement = document.activeElement
     m.hidden = false
+    m.setAttribute('aria-hidden', 'false')
+    const closeBtn = document.querySelector('#mergeErrorModalClose')
+    if (closeBtn) closeBtn.focus()
 }
 
 export const hideMergeErrorModal = () => {
     const m = mergeErrorModal()
-    if (m) m.hidden = true
+    if (m) {
+        m.hidden = true
+        m.setAttribute('aria-hidden', 'true')
+    }
+    if (state.lastFocusedElement && typeof state.lastFocusedElement.focus === 'function') state.lastFocusedElement.focus()
+    state.lastFocusedElement = undefined
 }
 
 export const wireMergeErrorModal = () => {
@@ -91,6 +100,7 @@ const computeMergeCentroid = () => {
 // ===== Merge =====
 
 export const mergeSelectedPoints = () => {
+    if (state.editingMode === 'construction') return
     const selected = state.selectedPoints
 
     if (selected.length < 2) {
@@ -115,6 +125,9 @@ export const mergeSelectedPoints = () => {
         return false
     }
 
+    // Capture the pre-mutation scene so undo restores the actual state
+    // before the merge, not the already-mutated geometry.
+    saveState()
     const centroid = computeMergeCentroid()
     const target = selected[0]
 
@@ -132,7 +145,6 @@ export const mergeSelectedPoints = () => {
     target.x = centroid.x
     target.y = centroid.y
 
-    saveState()
     state.selectedPoints = []
     state.nearestPoint = undefined
     state.nearestLine = undefined

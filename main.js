@@ -4,31 +4,32 @@ import { state, initDomRefs } from './state.js'
 import { drawBoard } from './draw.js'
 import { CANVAS_BACKGROUND } from './constants.js'
 import {
-    updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton, updateSelectionModeButton,
-    updateColorButtonState,
+    updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton, updateEditingModeButton,
+    updateSelectionModeButton, updateColorButtonState, updateAccessibilityLabels, updateSceneStatus,
 } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import {
     selectAllPoints, deleteSelectedPoint, deleteSelectedSegment, deleteSelectedTriangle,
     endGrabbing, grabbed, resolveMouseMoveOnBoard, beginGrabbing,
-    processMouseUpSelection, wireBoardDrop,
+    processMouseUpSelection, processRightClickSelection, wireBoardDrop,
     wireTriangleColorPanel, hideTriangleColorPanel,
 } from './editor.js'
 import { undo, redo } from './history.js'
 import {
     importMeshFromFile, saveMesh, loadState, resetAll, wireBeforeUnload,
 } from './io.js'
+import { importMeshesFromFile } from './convert.js'
 import {
     restoreReticleMode, wireReticleControl, wireConsoleToggle, restoreConsoleVisible,
     wireBoardWheel, toggleGrid, toggleReticle, resetZoom,
     startPan, updatePan, endPan,
-    restoreSelectionMode, wireSelectionModeControl,
+    restoreEditingMode, wireEditingModeControl, restoreSelectionMode, wireSelectionModeControl,
 } from './viewport.js'
 import { wireGridControl } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
 import { showHelp, hideHelp, wireHelpModal, showResetModal, hideResetModal, wireResetModal } from './modals.js'
 import {
-    prevShape, nextShape, addShape, deleteShape, wireDeleteShapeModal,
+    prevShape, nextShape, addShape, deleteShape, hideDeleteShapeModal, wireDeleteShapeModal,
 } from './shapes.js'
 import { mergeSelectedPoints, wireMergeErrorModal, hideMergeErrorModal } from './merge.js'
 import { log } from './log.js'
@@ -52,6 +53,7 @@ state._ctx.fillRect(0, 0, state.board.width, state.board.height)
 // ===== Restore localStorage + wire UI controls =====
 
 restoreReticleMode()
+restoreEditingMode()
 restoreSelectionMode()
 restoreConsoleVisible()
 
@@ -59,6 +61,7 @@ restoreConsoleVisible()
 
 wireGridControl()
 wireReticleControl()
+wireEditingModeControl()
 wireSelectionModeControl()
 wireConsoleToggle()
 wireConsoleOverlay()
@@ -108,7 +111,7 @@ if (importMeshesBtn) {
             document.body.appendChild(input)
             input.addEventListener('change', (evt) => {
                 const f = evt.target.files && evt.target.files[0]
-                if (f) importMeshFromFile(f)
+                if (f) importMeshesFromFile(f)
                 evt.target.value = ''
             })
         }
@@ -153,9 +156,10 @@ document.addEventListener('mousedown', (e) => {
     if (e.button === 2) {
         beginGrabbing(e)
     } else if (e.button === 0) {
+        // Left drag is reserved for selection/lasso; it never moves geometry.
         state.selectionBoxStart = mousePos
         state.selectionBoxCurrent = mousePos
-        state.isSelectingBox = true
+        state.isSelectingBox = state.editingMode !== 'construction'
     } else if (e.button === 1) {
         startPan(mousePos)
     }
@@ -173,23 +177,38 @@ document.addEventListener('mousemove', (e) => {
 })
 
 document.addEventListener('mouseup', (e) => {
-    if (grabbed()) endGrabbing(e)
+    const wasGrabbing = grabbed()
+    if (wasGrabbing) endGrabbing(e)
     if (state.isPanning && e.button === 1) endPan()
-    if (e.target.id === 'board' && e.button === 0) {
-        if (state.isSelectingBox) {
-            const dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
-            state.isSelectingBox = false
-            if (dist < 5) {
-                processMouseUpSelection(e)
-                drawBoard()
-                updateSelectionHud()
+    const boardTarget = e.target && e.target.id === 'board'
+    if (!wasGrabbing && e.button === 0) {
+        if (state.editingMode !== 'construction' && state.isSelectingBox) {
+            if (boardTarget && state.selectionBoxStart && state.selectionBoxCurrent) {
+                const dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
+                if (dist < 5) {
+                    processMouseUpSelection(e)
+                    drawBoard()
+                    updateSelectionHud()
+                }
             }
+            // Always clear the gesture, including a release outside the canvas.
+            state.isSelectingBox = false
+            state.selectionBoxStart = undefined
+            state.selectionBoxCurrent = undefined
+        } else if (boardTarget && (state.editingMode === 'construction' || state.editingMode === 'edition')) {
+            processMouseUpSelection(e)
+            drawBoard()
         }
+    } else if (!wasGrabbing && boardTarget && e.button === 2 && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+        // If no grab target was armed, a plain right click still has
+        // selection semantics in edition mode (including empty-space
+        // deselection).
+        processRightClickSelection(e)
     }
 })
 
 document.addEventListener('keydown', (e) => {
-    if (e.code === 'Backspace') {
+    if (e.code === 'Backspace' && state.editingMode !== 'construction') {
         if (e.shiftKey) {
             showResetModal()
         } else if (state.selectionMode === 'segment') {
@@ -212,6 +231,11 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault()
         toggleReticle()
     }
+    if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyE') {
+        e.preventDefault()
+        const editMode = document.querySelector('#editMode')
+        if (editMode) editMode.click()
+    }
     const helpM = document.querySelector('#helpModal')
     const isHelpOpen = helpM && !helpM.hidden
     const wantsHelp = !typing && (e.key === '?' || e.code === 'Help')
@@ -230,10 +254,7 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault()
         if (isHelpOpen) hideHelp()
         if (isResetOpen) hideResetModal()
-        if (isDeleteShapeOpen) {
-            const m = document.querySelector('#deleteShapeModal')
-            if (m) m.hidden = true
-        }
+        if (isDeleteShapeOpen) hideDeleteShapeModal()
         if (isMergeErrorOpen) hideMergeErrorModal()
     }
     if (e.code === 'Escape' && !e.repeat && state.isTriangleColorPanelOpen && !isHelpOpen && !isResetOpen && !isDeleteShapeOpen && !isMergeErrorOpen) {
@@ -261,8 +282,10 @@ document.addEventListener('keydown', (e) => {
 
 // ===== Apply console frame restored from localStorage =====
 applyConsoleFrame()
-
 updateConsoleButton()
+updateAccessibilityLabels()
+updateEditingModeButton()
+updateSceneStatus()
 
 // ===== Boot =====
 
@@ -274,6 +297,9 @@ const doit = () => {
     updateUndoRedoHud()
     updateSelectionHud()
     updateSelectionModeButton()
+    updateEditingModeButton()
+    updateAccessibilityLabels()
+    updateSceneStatus()
     updateColorButtonState()
     log('App ready')
 }

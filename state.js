@@ -29,8 +29,10 @@ export const state = {
     // ===== Reticule mode =====
     reticleMode: 0,
 
-    // ===== Selection mode =====
+    // ===== Interaction modes =====
+    editingMode: 'edition',
     selectionMode: 'vertex',
+    sceneDirty: false,
 
     // ===== Selection / box =====
     selectedPoints: [],
@@ -41,6 +43,9 @@ export const state = {
     selectionBoxCurrent: undefined,
     grabbedGroup: [],
     grabStartMouse: undefined,
+    grabHistorySaved: false,
+    hasDragged: false,
+    activeConstructionTriangle: undefined,
 
     // ===== Move-all (AltGr grab) =====
     moveAllActive: false,
@@ -75,6 +80,9 @@ export const state = {
     consoleMoving: false,
     consoleResizing: false,
     consoleDragStart: null,
+
+    // ===== Modal focus restoration =====
+    lastFocusedElement: undefined,
 
     // ===== DOM refs (queries faites au boot depuis main.js) =====
     board: undefined,

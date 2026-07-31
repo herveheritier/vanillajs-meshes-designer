@@ -37,6 +37,20 @@ export const updateReticleButton = () => {
     if (text) text.textContent = state.reticleMode === 0 ? '' : String(state.reticleMode)
 }
 
+export const updateEditingModeButton = () => {
+    const btn = document.querySelector('#editMode')
+    const text = document.querySelector('#editModeText')
+    const labels = { edition: 'édition', construction: 'construction', selection: 'sélection' }
+    const names = { edition: 'édition', construction: 'construction', selection: 'sélection' }
+    const mode = names[state.editingMode] ? state.editingMode : 'edition'
+    if (btn) {
+        btn.classList.toggle('editing-mode-active', mode !== 'edition')
+        btn.removeAttribute('aria-pressed')
+        btn.setAttribute('aria-label', `Mode d'édition actif : ${names[mode]}. Cliquer pour passer au mode suivant.`)
+    }
+    if (text) text.textContent = labels[mode]
+}
+
 export const updateSelectionModeButton = () => {
     const btn = document.querySelector('#selectionMode')
     const text = document.querySelector('#selectionModeText')
@@ -54,6 +68,23 @@ export const updateConsoleButton = () => {
     btn.classList.toggle('console-active', !!state.consoleVisible)
     btn.setAttribute('aria-pressed', state.consoleVisible ? 'true' : 'false')
     if (state.messageBoard) state.messageBoard.style.display = state.consoleVisible ? '' : 'none'
+}
+
+export const updateAccessibilityLabels = () => {
+    document.querySelectorAll('#toolbar button, .modal button, #triangleColorPanel button').forEach((button) => {
+        if (!button.getAttribute('aria-label')) {
+            const label = button.getAttribute('title') || button.textContent.trim()
+            if (label) button.setAttribute('aria-label', label)
+        }
+    })
+}
+
+export const updateSceneStatus = () => {
+    const status = document.querySelector('#sceneStatus')
+    if (!status) return
+    status.textContent = state.sceneDirty ? 'modifiée' : 'sauvegardée'
+    status.dataset.dirty = state.sceneDirty ? 'true' : 'false'
+    status.setAttribute('aria-label', state.sceneDirty ? 'Scène modifiée' : 'Scène sauvegardée')
 }
 
 export const updateColorButtonState = () => {

@@ -59,7 +59,21 @@ export const ZOOM_STORAGE_KEY = 'meshesDesigner.zoom'
 export const VIEW_CENTER_STORAGE_KEY = 'meshesDesigner.viewCenter'
 export const RETICLE_MODE_STORAGE_KEY = 'meshesDesigner.reticleMode'
 export const SELECTION_MODE_STORAGE_KEY = 'meshesDesigner.selectionMode'
+export const EDITING_MODE_STORAGE_KEY = 'meshesDesigner.editingMode'
+// The first mode is the frictionless default: it combines creation and selection.
+export const EDITING_MODES = ['edition', 'construction', 'selection']
 export const SELECTION_MODES = ['vertex', 'segment', 'triangle']
+
+// Hit-testing tolerances stay constant in screen pixels, so selection feels
+// equally precise at every zoom level.
+export const POINT_HIT_RADIUS_PX = 36
+export const LINE_HIT_RADIUS_PX = 60
+export const TRIANGLE_CENTROID_HIT_RADIUS_PX = 20
+
+// Stable envelope for exported JSON scenes. Legacy payloads without these
+// fields remain readable for backwards compatibility.
+export const SCENE_FORMAT = 'meshes-designer'
+export const SCENE_FORMAT_VERSION = 1
 // Rationale : voir DESIGN.md §7.3
 const triangleAlpha = 0.45
 export const TRIANGLE_COLOR_PRESETS = [

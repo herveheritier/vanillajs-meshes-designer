@@ -85,6 +85,40 @@ au boot, après quoi les références DOM sont figées.
 
 ---
 
+## §1.3 Modes d’édition explicites
+
+`state.editingMode` expose trois contrats de clic persistés dans
+`meshesDesigner.editingMode`, avec **`edition` comme valeur par défaut** :
+
+- **`edition`** : mode fluide de création, sélection et déplacement. Un clic
+  gauche simple conserve le geste de création/sélection ; un clic gauche-glissé
+  délimite uniquement un lasso. Un clic droit simple sélectionne uniquement
+  l'entité la plus proche selon `state.selectionMode` et désélectionne les
+  autres ; un clic droit + drag déplace toute la sélection depuis n'importe
+  quel point du canvas. S'il n'y a pas de sélection, le clic droit conserve le
+  grab direct de la cible sous le curseur.
+- **`construction`** : un clic dans le vide crée ou complète un triangle ; un
+  clic sur une entité existante ne modifie pas la sélection et le déplacement
+  n'est pas activé.
+- **`selection`** : un clic dans le vide ne crée jamais de géométrie ; la
+  sélection et le déplacement se font selon `state.selectionMode`.
+
+Le bouton `#editMode` et le raccourci `E` cyclent `edition → construction →
+selection`. Le bouton porte directement le libellé court du mode actif (`É`, `C`
+ou `S`) et son intitulé accessible décrit le cycle complet. Les actions de suppression, fusion et sélection
+globale sont disponibles dans `edition` et `selection`, mais restent bloquées
+en `construction`.
+
+### §1.4 Hit-testing en pixels écran
+
+Les seuils de détection sont définis en pixels (`POINT_HIT_RADIUS_PX`,
+`LINE_HIT_RADIUS_PX`, `TRIANGLE_CENTROID_HIT_RADIUS_PX`) puis convertis en
+unités modèle par division par `state.ctx.zoomLevel`. Ainsi la zone de clic
+visuelle reste stable lorsque l’utilisateur zoome ou dézoome. Les résultats de
+`findNearestPoint` et `findSelectedLine` exposent leur distance modèle pour
+permettre au caller d’appliquer le seuil correspondant. Les arêtes dégénérées
+sont projetées sans division par zéro.
+
 ## §2. Système de coordonnées
 
 ### §2.1 Inversion Y entre MODÈLE et SCREEN
@@ -146,9 +180,9 @@ sur un edge existant).
 
 | Mode        | Cible du clic                                                       | Sélectionne                                                          |
 |-------------|---------------------------------------------------------------------|----------------------------------------------------------------------|
-| **vertex**  | Point le + proche (rayon < 15 unités MODÈLE)                        | Cluster de refs partageant cette position                            |
-| **segment** | Edge (projection orthogonale entre 2 sommets)                       | Tous les points dans les 2 endpoints via `collectUnderlyingPoints`   |
-| **triangle**| Hit `pointInTriangle` (inclusif sur edge) + tolérance centroïde 20  | 3 sommets du triangle hovered                                       |
+| **vertex**  | Point le + proche dans un rayon de `POINT_HIT_RADIUS_PX` pixels écran | Cluster de refs partageant cette position                         |
+| **segment** | Edge (projection orthogonale entre 2 sommets), dans `LINE_HIT_RADIUS_PX` pixels | Tous les points dans les 2 endpoints via `collectUnderlyingPoints` |
+| **triangle**| Hit `pointInTriangle` (inclusif sur edge) + tolérance centroïde de `TRIANGLE_CENTROID_HIT_RADIUS_PX` pixels | 3 sommets du triangle hovered |
 
 ### §3.3 Hiérarchie de hit pour `findNearestTriangle`
 
@@ -160,11 +194,12 @@ unités — alors que l'utilisateur a cliqué DANS T_inside.
 Au sein d'une même priorité (inside-inside ou near-near), **centroïde le plus
 proche gagne** (utile pour triangles voisins ou overlapping).
 
-### §3.4 Tolérance centroïde (`CENTROID_HIT_RADIUS = 20`)
+### §3.4 Tolérance centroïde (`TRIANGLE_CENTROID_HIT_RADIUS_PX = 20`)
 
 Confort UX : un clic à 1-2 px d'une edge (snap, perception humaine) doit
-quand même sélectionner le triangle élargi. Plus permissif que le rayon
-vertex (15) — un tiers plus large.
+quand même sélectionner le triangle élargi. Cette tolérance, comme les
+rayons vertex et segment, est exprimée en pixels écran puis convertie en
+unités modèle selon le zoom.
 
 ### §3.5 Test point-in-triangle
 
@@ -176,58 +211,41 @@ floating-point où un des `d1/d2/d3` peut être 0).
 
 ### §3.6 Modificateurs de clic (Shift / Ctrl / Cmd / rien)
 
-Trois modifiers × modes :
+Les gestes sont séparés par bouton pour éviter toute ambiguïté entre
+sélection et déplacement :
 
-| Mode        | Plain-click          | Shift-click                 | Ctrl/Meta-click              |
-|-------------|----------------------|------------------------------|------------------------------|
-| **Entité du mode** | Remplace la sélection | Toggle (déjà → retire, pas là → ajoute) | Ajoute SANS toggle (idempotent) |
-| **Espace vide**    | Vide + crée nouveau point | Préserve + crée nouveau point | Préserve, NE CRÉE PAS de point |
+| Geste | Effet |
+|---|---|
+| **Clic gauche** sur une entité | Remplace la sélection (ou toggle avec Shift) |
+| **Clic gauche + drag** | Délimite uniquement le lasso ; ne déplace jamais la géométrie |
+| **Ctrl/Cmd + clic droit** sur une entité | Ajoute la sélection sans toggle et sans déplacer la géométrie |
+| **Clic droit + drag** | Déplace la sélection existante, depuis n'importe quel point du canvas |
 
-**Exception mode `vertex`** : sur l'*entité du mode*, Ctrl/Meta-click
-bascule en *toggle add/remove* sur le même contrat que Shift. C'est
-l'alignement sur la convention UI standard *"ctrl+click toggles"* — sans
-cela, Ctrl+click sur un point déjà sélectionné n'a aucun effet visible
-et ressemble à un clic nu, ce qui déroute.
+Le clic droit Ctrl/Cmd est traité comme une action de sélection immédiate,
+avant l'initialisation du grab. Il ne crée donc aucune entrée d'historique,
+ne mute aucune coordonnée et ne peut pas déplacer accidentellement la sélection.
+En mode `triangle`, l'index du triangle est ajouté de façon idempotente dans
+`selectedTriangles`; en mode `segment`, les points des deux endpoints sont
+ajoutés. En mode `vertex`, le cluster de références partageant la position est
+ajouté sans doublon.
 
-Implémentation : `applySelectionModifiers(pointsAtPos, e, ctrlToggles)` dans
-`editor.js` accepte un 3ᵉ paramètre `ctrlToggles` (défaut `false`). Deux
-sites d'appel propagent `state.selectionMode === 'vertex'` :
+Implémentation : `processMouseUpSelection` reçoit uniquement le geste gauche
+et neutralise Ctrl/Cmd pour les appels de sélection ; le geste
+`Ctrl/Cmd + clic droit` passe par `selectAtRightClick` dans `editor.js`, puis
+`beginGrabbing` retourne immédiatement sans armer `ACTION_GRABBING`.
 
-1. Fallback vertex dans `processMouseUpSelection` (clic gauche) :
-   `applySelectionModifiers(pointsAtPos, e, state.selectionMode === 'vertex')`.
-2. `beginGrabbing` (clic droit, branche `!preserveExisting`) :
-   `applySelectionModifiers(grabPoints, e, state.selectionMode === 'vertex')`.
+Le helper `applySelectionModifiers(pointsAtPos, e, ctrlToggles)` reste la
+source commune des règles Shift / ajout idempotent. Le Shift gauche conserve
+le toggle de sélection ; le Ctrl/Cmd gauche n'est plus un geste d'ajout.
+Sur espace vide, le clic gauche en mode `edition` conserve la création fluide
+préexistante ; le clic droit simple efface la sélection s'il ne trouve aucune
+entité. Le mode `construction` reste le geste dédié à la création seule.
 
-Avant l'extension à `beginGrabbing` (commit `feat(editor): extend §3.6 ctrl
-toggle to beginGrabbing`), la branche vertex de `beginGrabbing` n'avait pas
-de cas `ctrl` — ctrl+clic-droit en mode vertex faisait juste
-`state.selectedPoints = [...grabPoints]` (replace silencieux). Le bloc a
-été refactoré en un seul appel à `applySelectionModifiers` qui mutualise
-les 3 modifiers et propage `ctrlToggles`, garantissant une grille cognitive
-identique entre clic gauche et clic droit en mode vertex.
-
-Le helper privé `toggleSelectionPoints(pointsAtPos)` (même fichier)
-factorise le bloc `anySelected / filter / push` entre la branche Shift et
-la branche Ctrl+`ctrlToggles` true.
-
-Modes `segment` et `triangle` : conservent *Ajoute SANS toggle* — la grille
-universelle `applySelectionModifiers(..., ctrlToggles=false)` y produit
-strictement le même comportement qu'avant le refactor (vérifié via
-lecture/écriture manuelles + `node --check --input-type=module`).
-
-*Espace vide* : inchangé dans tous les modes — Ctrl/Meta-click =
-*préserve, NE CRÉE PAS de point* (les modifiers opèrent sur la sélection,
-pas sur la scène). Le toggle en espace vide est implicitement *no-op* (rien
-à toggler), donc le comportement existant est déjà conforme.
-
-**Nuance clic-droit (`beginGrabbing`)** : le verrou `preserveExisting` (qui
-protège un clic-droit *basique* sur entité déjà sélectionnée du flicker de
-sélection) ne s'active **jamais** quand un modifier est tenu —
-`hasModifier = e.shiftKey || e.ctrlKey || e.metaKey` dans `editor.js:593`
-court-circuite le verrou. Conséquence : clic-droit + modifier sur entité
-déjà sélectionnée déclenche le toggle §3.6 comme le clic-gauche (parité
-stricte). AltGr est exclu de cette liste : early-return plus haut dans
-`beginGrabbing` traite AltGr comme « déplacer toutes les formes ».
+Le clic droit sans Ctrl/Cmd conserve son contrat de déplacement : avec une
+sélection existante, il la déplace depuis la position de départ ; sans
+sélection, il peut sélectionner l'entité sous le pointeur et armer son grab.
+AltGr est exclu du Ctrl/Cmd de sélection : le chemin AltGr + clic droit reste
+le déplacement de toutes les formes.
 
 **Cohérence `selectedTriangles` ↔ `selectedPoints`** : la branche shift de
 `applyGrabTriangleSync` ne pousse un index `i` dans
@@ -271,14 +289,23 @@ indispensable depuis que `hasModifier` ouvre le chemin « clic-droit + shift
 
 ### §4.3 Refresh `nearestLine` au point de clic dans `addPoint`
 
-`addPoint()` recalcule `state.nearestLine` au moment du clic (pas depuis la
-valeur cachée par `updateMouseHover` au dernier mousemove). Sans ça, un
-nouveau triangle pouvait être créé sur une edge qui n'est plus sous le
-curseur (cas souris immobile, déplacement rapide, ou clic sans mousemove
-intermédiaire).
+`resolveMouseClickOnBoard()` recalcule `state.nearestLine` au moment du clic
+(et non depuis une valeur cachée par `updateMouseHover` au dernier mousemove).
+Sans ça, un nouveau triangle pouvait être créé sur une edge qui n'est plus
+sous le curseur (cas souris immobile, déplacement rapide, ou clic sans
+mousemove intermédiaire).
+
+Quand le dernier triangle est partiel (`p1`/`p2` sans `p3`), une ligne valide
+calculée pour le clic courant est prioritaire : `addPoint()` crée alors un
+nouveau triangle sur ce segment, au lieu de réutiliser le triangle partiel.
+Cette règle est nécessaire après la suppression d'un point, qui conserve le
+segment opposé sous forme partielle pour préserver la géométrie visible ; ce
+reliquat ne doit pas être interprété comme la construction active suivante.
+En l'absence de segment détecté, un triangle partiel réellement en cours de
+construction peut encore être complété.
 
 `state.nearestPoint` n'est PAS re-touché dans `addPoint` — sa propre mise à
-jour suit son cycle de hover et n'est pas consommé par l'ajout.
+jour suit son cycle de hover et n'est pas consommée par l'ajout.
 
 ---
 
@@ -306,6 +333,18 @@ frontière d'io**, que ce soit par reload ou par import — et symétriquement
 pour ne pas polluer la sortie.
 
 ---
+
+## §4.5 Contrat JSON versionné et validation
+
+Les exports portent `format: "meshes-designer"` et `version: 1`. Les imports
+acceptent les anciens fichiers sans ces champs, mais refusent un format inconnu,
+une version future, des coordonnées non numériques et des indices hors limites.
+Le modal d'import affiche la scène avant de donner le focus à son bouton primaire ;
+Échap et le clic sur le backdrop annulent en restaurant le focus précédent.
+La scène n’est pas modifiée lorsque la validation échoue. Le statut HUD
+`#sceneStatus` indique `modifiée` après une mutation de géométrie, de forme ou de
+couleur et `sauvegardée` après export ou restauration. Les changements de vue
+(zoom, pan, grille) sont persistés mais ne marquent pas la scène comme modifiée.
 
 ## §5. Persistance
 
@@ -463,3 +502,5 @@ d'action en cours". `ACTION_GRABBING = 1` (drag d'un point en cours).
   `zoomLevel` clampé `[0.1, 10]`, snapé à 0.1 près pour que valeur réelle,
   persistée et affichée matchent.
 - **No build / no transpile** : édits + reload = itération. Pas de HMR.
+- **Validation syntaxique** : utiliser `node --experimental-default-type=module --check` sur chaque fichier `.js` ; un simple `node --check` traite ces fichiers comme CommonJS et produit une fausse erreur sur `import`.
+- **Import meshes** : le bouton dédié passe par `convert.js` ; un triangle complet est valide dès deux séparateurs `;` (trois sommets). Les reliquats partiels restent représentables par le parseur texte, mais sont filtrés à la frontière IO et ne sont pas hydratés dans la scène. Le hit-testing de hover, clic gauche et clic droit utilise la même cible accrochée à la grille lorsque celle-ci est active.

@@ -85,7 +85,9 @@ export const adjacentPoints = (a, b, tolerance = 0.01) => {
 export const computeOrthogonalProjection = (p, p1, p2) => {
     const dx = p2.x - p1.x
     const dy = p2.y - p1.y
-    const t = ((p.x - p1.x) * dx + (p.y - p1.y) * dy) / (dx * dx + dy * dy)
+    const denominator = dx * dx + dy * dy
+    if (denominator === 0) return { x: p1.x, y: p1.y }
+    const t = ((p.x - p1.x) * dx + (p.y - p1.y) * dy) / denominator
     return {
         x: p1.x + t * dx,
         y: p1.y + t * dy,

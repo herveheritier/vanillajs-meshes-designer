@@ -1,6 +1,6 @@
 import { state } from './state.js'
 import { MAX_HISTORY, ACTION_NONE } from './constants.js'
-import { updateUndoRedoHud, updateSelectionHud, updateShapeHud, updateColorButtonState } from './hud.js'
+import { updateUndoRedoHud, updateSelectionHud, updateShapeHud, updateColorButtonState, updateSceneStatus } from './hud.js'
 import { drawBoard } from './draw.js'
 import { updateMouseHover } from './editor.js'
 import { persistState } from './io.js'
@@ -35,6 +35,8 @@ export const cloneScene = (shapesArray) => {
 // ===== Pile d'historique =====
 
 export const saveState = () => {
+    state.sceneDirty = true
+    updateSceneStatus()
     state.historyStack.push({
         shapes: cloneScene(state.shapes),
         activeShapeIndex: state.activeShapeIndex,
@@ -101,6 +103,9 @@ const clearEditingTransientState = () => {
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
     state.grabbedGroup = []
+    state.grabHistorySaved = false
+    state.hasDragged = false
+    state.activeConstructionTriangle = undefined
     clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false

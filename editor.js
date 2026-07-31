@@ -7,6 +7,7 @@ import {
     COLOR_HOVER_NEAREST_POINT,
     COLOR_HOVER_NEAREST_TRIANGLE_STROKE, COLOR_HOVER_NEAREST_TRIANGLE_FILL,
     TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU,
+    POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
 } from './constants.js'
 import { drawBoard, drawPoint, drawMouse } from './draw.js'
 import { updateSelectionHud, updateColorButtonState } from './hud.js'
@@ -57,7 +58,10 @@ export const findNextNearestPoint = (nearestPoint) => {
     }
 }
 
-const CENTROID_HIT_RADIUS = 20
+const modelToleranceForPixels = (pixels) => pixels / Math.max(state.ctx.zoomLevel, 0.0001)
+const pointHitRadiusModel = () => modelToleranceForPixels(POINT_HIT_RADIUS_PX)
+const lineHitRadiusModel = () => modelToleranceForPixels(LINE_HIT_RADIUS_PX)
+const triangleCentroidHitRadiusModel = () => modelToleranceForPixels(TRIANGLE_CENTROID_HIT_RADIUS_PX)
 export const findNearestTriangle = (point) => {
     const tris = activeTriangles()
     let bestInside = undefined
@@ -76,7 +80,7 @@ export const findNearestTriangle = (point) => {
                 bestInsideDist = distToCentroid
                 bestInside = candidate
             }
-        } else if (distToCentroid <= CENTROID_HIT_RADIUS) {
+        } else if (distToCentroid <= triangleCentroidHitRadiusModel()) {
             if (distToCentroid < bestNearDist) {
                 bestNearDist = distToCentroid
                 bestNear = candidate
@@ -139,6 +143,7 @@ export const findSelectedLine = (point) => {
         secondPointId,
         firstPoint: trisRef[shortTriangleIndex][firstPointId],
         secondPoint: trisRef[shortTriangleIndex][secondPointId],
+        distance: shortDistance,
     }
 }
 
@@ -150,6 +155,7 @@ export const updateMouseHover = (cursorScreen) => {
     const actionModel = screenToModel(cursorScreen)
     const target = state.activeGrid ? snapToGrid(actionModel) : actionModel
     state.nearestPoint = findNearestPoint(target)
+    if (!state.nearestPoint || state.nearestPoint.distance > pointHitRadiusModel()) state.nearestPoint = undefined
 
     if (state.selectedPoints.length > 0 && state.nearestPoint && state.nearestPoint.point && !isPointSelected(state.nearestPoint.point)) {
         state.isSelectionDimmed = true
@@ -158,6 +164,7 @@ export const updateMouseHover = (cursorScreen) => {
     }
 
     state.nearestLine = findSelectedLine(target)
+    if (!state.nearestLine || state.nearestLine.distance > lineHitRadiusModel()) state.nearestLine = undefined
     state.nearestTriangle = findNearestTriangle(target)
 
     drawBoard()
@@ -227,6 +234,7 @@ export const resolveMouseClickOnBoard = (e) => {
     }
     const pointToAdd = snapToGrid(screenToModel(mouseScreen))
     state.nearestLine = findSelectedLine(pointToAdd)
+    if (!state.nearestLine || state.nearestLine.distance > lineHitRadiusModel()) state.nearestLine = undefined
     addPoint(pointToAdd)
     drawBoard()
     drawMouse(mouseScreen)
@@ -249,21 +257,35 @@ export const addPoint = (point) => {
         log('addPoint: clic trop loin d\'un segment - triangle ignore')
         return
     }
+    const nearestLine = state.nearestLine && state.nearestLine.firstPoint && state.nearestLine.secondPoint
+        ? state.nearestLine
+        : undefined
+    const lastTriangle = tris.at(-1)
+    const isActivePartial = lastTriangle && lastTriangle === state.activeConstructionTriangle
+    if (lastTriangle && lastTriangle.p2 !== undefined && lastTriangle.p3 === undefined && !isActivePartial && !nearestLine) {
+        log('addPoint: triangle partiel inactif - clic ignore')
+        return
+    }
     saveState()
     if (tris.length === 0) {
-        tris.push({ p1: point })
+        const partial = { p1: point }
+        tris.push(partial)
+        state.activeConstructionTriangle = partial
     } else {
-        const triangle = tris.at(-1)
+        const triangle = lastTriangle
         if (triangle.p2 === undefined) {
             triangle.p2 = point
-        } else if (triangle.p3 === undefined) {
+            state.activeConstructionTriangle = triangle
+        } else if (triangle.p3 === undefined && isActivePartial && !nearestLine) {
             triangle.p3 = point
-        } else {
+            state.activeConstructionTriangle = undefined
+        } else if (nearestLine) {
             tris.push({
-                p1: state.nearestLine.firstPoint,
-                p2: state.nearestLine.secondPoint,
+                p1: nearestLine.firstPoint,
+                p2: nearestLine.secondPoint,
                 p3: point,
             })
+            state.activeConstructionTriangle = undefined
         }
     }
     state.ctx.workIsSaved = 0
@@ -272,6 +294,7 @@ export const addPoint = (point) => {
 }
 
 export const selectAllPoints = () => {
+    if (state.editingMode === 'construction') return
     const result = []
     const vertices = getAllVertices()
     vertices.forEach(p => {
@@ -303,33 +326,60 @@ export const processMouseUpSelection = (e) => {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
     }
-    const targetModel = screenToModel(mouseScreen)
+    const rawTargetModel = screenToModel(mouseScreen)
+    const targetModel = state.activeGrid ? snapToGrid(rawTargetModel) : rawTargetModel
     const np = findNearestPoint(targetModel)
+    const pointHit = np && np.distance <= pointHitRadiusModel() ? np : undefined
+    // Ctrl/Cmd is reserved for additive selection on right-click. A left
+    // click keeps its plain selection/lasso contract; Shift remains its
+    // toggle modifier.
+    const leftSelectionEvent = { ...e, ctrlKey: false, metaKey: false }
 
-    if (state.selectionMode === 'segment') {
+    if (state.editingMode !== 'construction' && state.selectionMode === 'segment') {
         const ns = findSelectedLine(targetModel)
-        if (ns && ns.firstPoint && ns.secondPoint && !adjacentPoints(ns.firstPoint, ns.secondPoint, 0.01)) {
+        if (ns && ns.distance <= lineHitRadiusModel() && ns.firstPoint && ns.secondPoint && !adjacentPoints(ns.firstPoint, ns.secondPoint, 0.01)) {
             const cluster = collectUnderlyingPoints([ns.firstPoint, ns.secondPoint])
-            applySelectionModifiers(cluster, e)
+            state.selectedTriangles = []
+            applySelectionModifiers(cluster, leftSelectionEvent)
+            updateColorButtonState()
             return
         }
-    } else if (state.selectionMode === 'triangle') {
+    } else if (state.editingMode !== 'construction' && state.selectionMode === 'triangle') {
         const nt = findNearestTriangle(targetModel)
         if (nt) {
             const cluster = collectUnderlyingPoints([nt.p1, nt.p2, nt.p3])
-            applySelectionModifiers(cluster, e)
-            applyTriangleIndexModifier(nt.triangleIndex, e)
+            applySelectionModifiers(cluster, leftSelectionEvent)
+            applyTriangleIndexModifier(nt.triangleIndex, leftSelectionEvent)
             return
         }
     }
 
-    if (np && np.distance < 15) {
-        const pointsAtPos = getPointsAtSamePosition(np.point)
-        applySelectionModifiers(pointsAtPos, e, state.selectionMode === 'vertex')
-    } else {
-        if (e.shiftKey) {
+    if (state.editingMode !== 'construction') {
+        if (pointHit) {
+            const pointsAtPos = getPointsAtSamePosition(pointHit.point)
+            if (state.selectionMode !== 'triangle') state.selectedTriangles = []
+            applySelectionModifiers(pointsAtPos, leftSelectionEvent, state.selectionMode === 'vertex')
+        } else if (state.editingMode === 'selection') {
+            // Specialized selection mode never creates geometry.
+            if (!leftSelectionEvent.shiftKey) state.selectedPoints = []
+            state.selectedTriangles = []
+            updateSelectionHud()
+            updateColorButtonState()
+        } else if (leftSelectionEvent.shiftKey) {
+            // Shift preserves the current selection and suppresses creation.
+        } else {
+            // Edition mode remains fluid: an empty click creates the next
+            // point without requiring a mode switch.
+            state.selectedPoints = []
+            state.selectedTriangles = []
+            updateSelectionHud()
+            updateColorButtonState()
             resolveMouseClickOnBoard(e)
-        } else if (e.ctrlKey || e.metaKey) {
+        }
+    } else if (!pointHit) {
+        if (leftSelectionEvent.shiftKey) {
+            // Shift in construction mode preserves the selection and
+            // deliberately does not create a point on empty space.
         } else {
             state.selectedPoints = []
             resolveMouseClickOnBoard(e)
@@ -442,6 +492,7 @@ const applyTriangleIndexModifier = (triangleIndex, e) => {
 
 // Rationale : voir DESIGN.md §1.1
 export const deleteSelectedPoint = () => {
+    if (state.editingMode === 'construction') return
     let targets = []
     if (state.selectedPoints.length > 0) {
         targets = [...state.selectedPoints]
@@ -467,6 +518,8 @@ export const deleteSelectedPoint = () => {
     state.selectedPoints = []
     state.selectedTriangles = []
     state.nearestPoint = undefined
+    state.nearestLine = undefined
+    state.activeConstructionTriangle = undefined
     drawBoard()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
@@ -478,6 +531,7 @@ export const deleteSelectedPoint = () => {
 
 // Rationale : voir DESIGN.md §8
 export const deleteSelectedSegment = () => {
+    if (state.editingMode === 'construction') return
     let targets = []
     if (state.selectedPoints.length > 0) {
         targets = [...state.selectedPoints]
@@ -503,6 +557,7 @@ export const deleteSelectedSegment = () => {
     state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
+    state.activeConstructionTriangle = undefined
     drawBoard()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
@@ -514,6 +569,7 @@ export const deleteSelectedSegment = () => {
 
 // Rationale : voir DESIGN.md §7.1
 export const deleteSelectedTriangle = () => {
+    if (state.editingMode === 'construction') return
     let targets = []
     if (state.selectedPoints.length > 0) {
         targets = [...state.selectedPoints]
@@ -550,17 +606,86 @@ export const deleteSelectedTriangle = () => {
 
 export const grabbed = () => state.currentAction === ACTION_GRABBING
 
+const selectAtRightClick = (e, targetModel, additive = true) => {
+    let points = []
+    let triangleIndex = -1
+
+    if (state.selectionMode === 'triangle') {
+        const nt = findNearestTriangle(targetModel)
+        if (nt) {
+            points = collectUnderlyingPoints([nt.p1, nt.p2, nt.p3])
+            triangleIndex = nt.triangleIndex
+        }
+    } else if (state.selectionMode === 'segment') {
+        const ns = findSelectedLine(targetModel)
+        if (ns && ns.distance <= lineHitRadiusModel() && ns.firstPoint && ns.secondPoint && !adjacentPoints(ns.firstPoint, ns.secondPoint, 0.01)) {
+            points = collectUnderlyingPoints([ns.firstPoint, ns.secondPoint])
+        }
+    } else {
+        const np = findNearestPoint(targetModel)
+        if (np && np.distance <= pointHitRadiusModel() && np.point) {
+            points = getPointsAtSamePosition(np.point)
+        }
+    }
+
+    if (points.length === 0) {
+        if (!additive) {
+            state.selectedPoints = []
+            state.selectedTriangles = []
+            updateSelectionHud()
+            updateColorButtonState()
+            drawBoard()
+        }
+        return false
+    }
+
+    // Ctrl/Cmd + right-click adds without toggling. A plain right-click
+    // replaces the selection; both are selection gestures, not grabs.
+    const selectionEvent = additive
+        ? { ...e, shiftKey: false, ctrlKey: true, metaKey: false }
+        : { ...e, shiftKey: false, ctrlKey: false, metaKey: false }
+    applySelectionModifiers(points, selectionEvent, false)
+    if (state.selectionMode === 'triangle') {
+        applyTriangleIndexModifier(triangleIndex, selectionEvent)
+    } else if (state.selectionMode === 'segment') {
+        state.selectedTriangles = []
+    }
+    updateSelectionHud()
+    updateColorButtonState()
+    state.nearestPoint = undefined
+    drawBoard()
+    return true
+}
+
+export const processRightClickSelection = (e) => {
+    if (state.editingMode !== 'edition') return false
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    const rawTargetModel = screenToModel(mouseScreen)
+    const targetModel = state.activeGrid ? snapToGrid(rawTargetModel) : rawTargetModel
+    return selectAtRightClick(e, targetModel, false)
+}
+
 export const beginGrabbing = (e) => {
     const mouseScreen = {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
     }
+    // Construction is intentionally create-only: no drag move,
+    // including the global AltGr gesture.
+    if (state.editingMode === 'construction') return false
+
     const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))
     state.moveAllActive = isAltGrDown
     state.grabbedGroup = []
+    state.grabHistorySaved = false
+    state.hasDragged = false
 
     if (isAltGrDown) {
         state.currentAction = ACTION_GRABBING
+        state.grabHistorySaved = false
         state.grabStartMouse = mouseScreen
         state.selectedPoints = []
         updateSelectionHud()
@@ -583,19 +708,45 @@ export const beginGrabbing = (e) => {
         if (state.grabbedGroup.length === 0) {
             state.currentAction = undefined
             state.grabStartMouse = undefined
-            return
+            state.grabHistorySaved = false
+            return false
         }
-        saveState()
         log(`AltGr detecte - deplacement de ${state.shapes.length} forme(s) : ${state.grabbedGroup.length} points`)
         state.board.style.cursor = 'move'
-        return
+        return true
     }
 
-    // preserveExisting : gated on !hasModifier — les modifiers court-circuitent
-    // le verrou pour que la grille §3.6 s'applique identiquement au clic-droit
-    // (AltGr retourne plus haut, donc hasModifier ne le capture jamais).
-    const hasModifier = e.shiftKey || e.ctrlKey || e.metaKey
-    const targetModel = screenToModel(mouseScreen)
+    const hasCtrlSelectionModifier = e.ctrlKey || e.metaKey
+    if (hasCtrlSelectionModifier) {
+        const rawTargetModel = screenToModel(mouseScreen)
+        const targetModel = state.activeGrid ? snapToGrid(rawTargetModel) : rawTargetModel
+        selectAtRightClick(e, targetModel)
+        state.moveAllActive = false
+        return false
+    }
+
+    // A right drag moves the committed selection as a group, regardless of
+    // the pointer position. AltGr was handled above and remains move-all.
+    if (state.selectedPoints.length > 0) {
+        state.currentAction = ACTION_GRABBING
+        state.grabStartMouse = mouseScreen
+        state.grabHistorySaved = false
+        state.grabbedGroup = buildGrabbedGroupFromSelection()
+        if (state.grabbedGroup.length === 0) {
+            state.currentAction = ACTION_NONE
+            state.grabStartMouse = undefined
+            state.grabHistorySaved = false
+            return false
+        }
+        state.board.style.cursor = 'move'
+        return true
+    }
+
+    // preserveExisting : Shift remains available for the historical
+    // right-click target-selection behavior; Ctrl/Cmd was handled above.
+    const hasModifier = e.shiftKey
+    const rawTargetModel = screenToModel(mouseScreen)
+    const targetModel = state.activeGrid ? snapToGrid(rawTargetModel) : rawTargetModel
     let grabPoints = []
     let preserveExisting = false
     if (state.selectionMode === 'triangle') {
@@ -606,27 +757,25 @@ export const beginGrabbing = (e) => {
         }
     } else if (state.selectionMode === 'segment') {
         const ns = findSelectedLine(targetModel)
-        if (ns && ns.firstPoint && ns.secondPoint && !adjacentPoints(ns.firstPoint, ns.secondPoint, 0.01)) {
+        if (ns && ns.distance <= lineHitRadiusModel() && ns.firstPoint && ns.secondPoint && !adjacentPoints(ns.firstPoint, ns.secondPoint, 0.01)) {
             grabPoints = collectUnderlyingPoints([ns.firstPoint, ns.secondPoint])
             preserveExisting = !hasModifier && grabPoints.length > 0 && grabPoints.every(p => isPointSelected(p))
         }
     }
     if (grabPoints.length === 0) {
         const np = findNearestPoint(targetModel)
-        if (!np || !np.point) return
+        if (!np || np.distance > pointHitRadiusModel() || !np.point) return false
         grabPoints = getPointsAtSamePosition(np.point)
         preserveExisting = !hasModifier && isPointSelected(np.point)
     }
 
     state.currentAction = ACTION_GRABBING
     state.grabStartMouse = mouseScreen
-    saveState()
+    state.grabHistorySaved = false
 
     if (!preserveExisting) {
-        // Rationale : voir DESIGN.md §3.6 (extension beginGrabbing : ctrl/méta
-        // = toggle add/remove en mode vertex via ctrlToggles, alignement shift
-        // également — le clic-droit vertex+shift passe de push idempotent à
-        // toggle, parité avec le clic-gauche ligne 322).
+        // Rationale : voir DESIGN.md §3.6 (Shift remains the toggle
+        // modifier for target selection before a right-hand grab).
         applySelectionModifiers(grabPoints, e, state.selectionMode === 'vertex')
         if (state.selectionMode === 'triangle') {
             applyGrabTriangleSync(grabPoints, e)
@@ -639,12 +788,26 @@ export const beginGrabbing = (e) => {
         updateSelectionHud()
     }
 
+    state.grabbedGroup = buildGrabbedGroupFromSelection()
+    if (state.grabbedGroup.length === 0) {
+        state.currentAction = ACTION_NONE
+        state.grabStartMouse = undefined
+        state.grabHistorySaved = false
+        state.board.style.cursor = 'none'
+        return false
+    }
+    state.board.style.cursor = 'move'
+    return true
+}
+
+const buildGrabbedGroupFromSelection = () => {
+    const group = []
     const tris = activeTriangles()
     state.selectedPoints.forEach(sp => {
         tris.forEach((t, i) => {
             [t.p1, t.p2, t.p3].forEach((p, j) => {
                 if (p && adjacentPoints(p, sp, 0.01)) {
-                    state.grabbedGroup.push({
+                    group.push({
                         shapeIndex: state.activeShapeIndex,
                         triangleIndex: i,
                         pointId: `p${j + 1}`,
@@ -656,11 +819,28 @@ export const beginGrabbing = (e) => {
             })
         })
     })
+    return group
 }
 
 export const endGrabbing = (e) => {
-    state.currentAction = ACTION_NONE
+    // Keep the grab active while applying the final mouse position: a
+    // mouseup can arrive without a preceding mousemove event.
+    const wasMoveAll = state.moveAllActive
     resolveMouseMoveOnBoard(e)
+    const movedScene = state.hasDragged
+
+    // A plain right click is selection-only; a right drag remains a move.
+    // The deferred decision avoids moving the selection on a click while
+    // preserving the distant-start drag gesture.
+    if (!wasMoveAll && !movedScene && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+        processRightClickSelection(e)
+    }
+
+    state.currentAction = ACTION_NONE
+    state.grabHistorySaved = false
+    state.hasDragged = false
+    state.grabStartMouse = undefined
+    state.grabbedGroup = []
     state.board.style.cursor = 'none'
     state.moveAllActive = false
     persistState()
@@ -702,24 +882,25 @@ export const resolveMouseMoveOnBoard = (e) => {
             state.selectedPoints = expanded
         }
     } else if (grabbed()) {
-        const curModel = screenToModel(mouseScreen)
-        const startModel = screenToModel(state.grabStartMouse)
-        const dx = curModel.x - startModel.x
-        const dy = curModel.y - startModel.y
-        if (state.activeGrid && state.moveAllActive) {
-            const snappedDelta = snapToGrid({ x: dx, y: dy })
+        const dragDist = Math.hypot(
+            mouseScreen.x - state.grabStartMouse.x,
+            mouseScreen.y - state.grabStartMouse.y,
+        )
+        if (dragDist >= 5) state.hasDragged = true
+        if (state.hasDragged) {
+            const curModel = screenToModel(mouseScreen)
+            const startModel = screenToModel(state.grabStartMouse)
+            const dx = curModel.x - startModel.x
+            const dy = curModel.y - startModel.y
+            if (!state.grabHistorySaved && state.grabbedGroup.some(item => {
+                const targetPos = getGrabTargetPosition(item, dx, dy)
+                return Math.abs(targetPos.x - item.startX) > 0.01 || Math.abs(targetPos.y - item.startY) > 0.01
+            })) {
+                saveState()
+                state.grabHistorySaved = true
+            }
             state.grabbedGroup.forEach(item => {
-                const targetPos = {
-                    x: item.startX + snappedDelta.x,
-                    y: item.startY + snappedDelta.y,
-                }
-                applyGrabToPoint(item, targetPos)
-            })
-        } else {
-            state.grabbedGroup.forEach(item => {
-                const rawPos = { x: item.startX + dx, y: item.startY + dy }
-                const targetPos = (state.activeGrid && !state.moveAllActive) ? snapToGrid(rawPos) : rawPos
-                applyGrabToPoint(item, targetPos)
+                applyGrabToPoint(item, getGrabTargetPosition(item, dx, dy))
             })
         }
     }
@@ -727,6 +908,18 @@ export const resolveMouseMoveOnBoard = (e) => {
     state.lastMousePos = mouseScreen
     updateMouseHover(mouseScreen)
     updateSelectionHud()
+}
+
+const getGrabTargetPosition = (item, dx, dy) => {
+    if (state.activeGrid && state.moveAllActive) {
+        const snappedDelta = snapToGrid({ x: dx, y: dy })
+        return {
+            x: item.startX + snappedDelta.x,
+            y: item.startY + snappedDelta.y,
+        }
+    }
+    const rawPos = { x: item.startX + dx, y: item.startY + dy }
+    return (state.activeGrid && !state.moveAllActive) ? snapToGrid(rawPos) : rawPos
 }
 
 const applyGrabToPoint = (item, targetPos) => {
