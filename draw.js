@@ -18,9 +18,6 @@ import {
     COLOR_SELECTED_POINT_DIMMED,
     COLOR_SELECTION_BOX_FILL,
     COLOR_SELECTION_BOX_STROKE,
-    COLOR_DUPLICATE_ALERT_FILL,
-    COLOR_DUPLICATE_ALERT_STROKE,
-    COLOR_DUPLICATE_ALERT_GLYPH,
     PATTERN_AXIS,
     PATTERN_LINES,
     PATTERN_LINES_INACTIVE,
@@ -45,49 +42,73 @@ export const drawMouse = (p) => {
     state._ctx.stroke()
 }
 
-// Avertisseur « pile de points » (DESIGN.md §7.7) : triangle rouge au-
-// dessus du sommet survolé quand `getPointsAtSamePosition(p).length > 1`.
-// Glyphe « ! » blanc centré dans le cercle inscrit (centroïde = cy pour
-// un triangle équilatéral, `textBaseline: middle` aligne le caractère).
-// Taille en pixels écran pour rester lisible à tous les niveaux de
-// zoom. Si le sommet est trop proche du bord haut (< 18 px sous la
-// limite), le triangle bascule sous le point pour éviter d'être
-// tronqué par le bord du canvas ; horizontalement il est clampé dans
-// `[halfWidth+margin, board.width-halfWidth-margin]` pour la même
-// raison aux bords gauche/droite.
-const DUPLICATE_ALERT_R = 10
-const DUPLICATE_ALERT_OFFSET = 22
-const DUPLICATE_ALERT_FLIP_THRESHOLD = 18
-const DUPLICATE_ALERT_MARGIN_PX = 2
-export const drawDuplicateAlert = (p) => {
-    if (!p) return
+// Label d'identifiant stable du sommet survole (cf. §7.8) : petite
+// pill sombre sous le point avec l'index 0-based du vertex dans
+// activeShapeIndex (convention dev-friendly alignee sur les arrays
+// JS de getAllVertices()). Permet d'identifier chaque point sans
+// ambiguite quand plusieurs refs partagent la meme position.
+// Position sous le cercle vert (offset Y +14) pour eviter la
+// collision visuelle avec les elements superieurs du stack.
+// Choix d'un fond semi-transparent pour rester lisible sur
+// n'importe quelle zone du canvas (sombre ou deja coloree par un
+// triangle custom).
+const VERTEX_LABEL_OFFSET_Y = 14
+const VERTEX_LABEL_HEIGHT = 14
+const VERTEX_LABEL_PADDING_X = 6
+const VERTEX_LABEL_FONT = '10px monospace'
+const VERTEX_LABEL_COLOR = '#FFFFFF'
+const VERTEX_LABEL_BACKGROUND = 'rgba(0, 0, 0, 0.6)'
+export const drawVertexLabel = (p, label) => {
+    if (!p || label === undefined || label === null) return
     const sp = modelToScreen(p)
-    const r = DUPLICATE_ALERT_R
-    const halfWidth = r * 0.866
-    const margin = DUPLICATE_ALERT_MARGIN_PX
-    const cx = Math.max(halfWidth + margin, Math.min(state.board.width - halfWidth - margin, sp.x))
-    const above = sp.y - DUPLICATE_ALERT_OFFSET >= DUPLICATE_ALERT_FLIP_THRESHOLD
-    const cy = above ? sp.y - DUPLICATE_ALERT_OFFSET : sp.y + DUPLICATE_ALERT_OFFSET + r
-    state._ctx.setLineDash([])
-    state._ctx.fillStyle = COLOR_DUPLICATE_ALERT_FILL
-    state._ctx.strokeStyle = COLOR_DUPLICATE_ALERT_STROKE
-    state._ctx.lineWidth = 1.5
-    state._ctx.beginPath()
-    state._ctx.moveTo(cx, cy - r)
-    state._ctx.lineTo(cx - halfWidth, cy + r * 0.5)
-    state._ctx.lineTo(cx + halfWidth, cy + r * 0.5)
-    state._ctx.closePath()
-    state._ctx.fill()
-    state._ctx.stroke()
-    state._ctx.lineWidth = 1
-    state._ctx.fillStyle = COLOR_DUPLICATE_ALERT_GLYPH
-    state._ctx.font = 'bold 11px sans-serif'
+    state._ctx.font = VERTEX_LABEL_FONT
     state._ctx.textAlign = 'center'
     state._ctx.textBaseline = 'middle'
-    // Centroïde géométrique du triangle équilatéral = cy (calculé à partir
-    // des sommets `(cy - r)`, `(cy + 0.5r)`, `(cy + 0.5r)`), donc on centre
-    // le glyphe directement à cy sans offset résiduel.
-    state._ctx.fillText('!', cx, cy)
+    const text = String(label)
+    const w = state._ctx.measureText(text).width + VERTEX_LABEL_PADDING_X * 2
+    const x0 = sp.x - w / 2
+    const y0 = sp.y + VERTEX_LABEL_OFFSET_Y - VERTEX_LABEL_HEIGHT / 2
+    state._ctx.fillStyle = VERTEX_LABEL_BACKGROUND
+    state._ctx.fillRect(x0, y0, w, VERTEX_LABEL_HEIGHT)
+    state._ctx.fillStyle = VERTEX_LABEL_COLOR
+    state._ctx.fillText(text, sp.x, sp.y + VERTEX_LABEL_OFFSET_Y)
+}
+
+// Liste des slots triangles qui partagent le sommet survole (cf.
+// §7.9). Pill 2 lignes : header golden "stack (N)" + body blanc
+// "T1.p1, T3.p2, ...". Position sous le label §7.8 (offset Y +32)
+// sans overlap avec le label (+14/+21) ni avec le canvas bottom
+// edge (pas de flip -- un stack de plusieurs refs est rare ; si
+// besoin ajouter un clamp bottom-edge ici).
+const STACK_LIST_OFFSET_Y = 32
+const STACK_LIST_HEIGHT = 14
+const STACK_LIST_PADDING_X = 6
+const STACK_LIST_PADDING_Y = 4
+const STACK_LIST_FONT = '10px monospace'
+const STACK_LIST_HEADER_COLOR = '#FFD700'
+const STACK_LIST_BODY_COLOR = '#FFFFFF'
+const STACK_LIST_BACKGROUND = 'rgba(0, 0, 0, 0.7)'
+export const drawStackList = (p, refs) => {
+    if (!p || !Array.isArray(refs) || refs.length === 0) return
+    const sp = modelToScreen(p)
+    state._ctx.font = STACK_LIST_FONT
+    state._ctx.textAlign = 'center'
+    state._ctx.textBaseline = 'middle'
+    const headerText = `stack (${refs.length})`
+    const bodyText = refs.map(r => `T${r.triangleIndex}.${r.slotId}`).join(', ')
+    const headerWidth = state._ctx.measureText(headerText).width
+    const bodyWidth = state._ctx.measureText(bodyText).width
+    const contentWidth = Math.max(headerWidth, bodyWidth)
+    const w = contentWidth + STACK_LIST_PADDING_X * 2
+    const h = STACK_LIST_HEIGHT * 2 + STACK_LIST_PADDING_Y * 2
+    const x0 = sp.x - w / 2
+    const y0 = sp.y + STACK_LIST_OFFSET_Y
+    state._ctx.fillStyle = STACK_LIST_BACKGROUND
+    state._ctx.fillRect(x0, y0, w, h)
+    state._ctx.fillStyle = STACK_LIST_HEADER_COLOR
+    state._ctx.fillText(headerText, sp.x, y0 + STACK_LIST_PADDING_Y + STACK_LIST_HEIGHT / 2)
+    state._ctx.fillStyle = STACK_LIST_BODY_COLOR
+    state._ctx.fillText(bodyText, sp.x, y0 + STACK_LIST_PADDING_Y + STACK_LIST_HEIGHT * 1.5)
 }
 
 export const drawBoard = () => {

@@ -1,7 +1,6 @@
 // Rationale : voir DESIGN.md §1.2
 
 import { state } from './state.js'
-import { COLOR_DUPLICATE_HUD } from './constants.js'
 
 export const updateShapeHud = () => {
     const label = document.querySelector('#shapeLabel')
@@ -22,11 +21,6 @@ export const updateSelectionHud = () => {
     const countEl = document.querySelector('#selectionCount')
     if (!countEl) return
     countEl.textContent = state.selectedPoints.length
-    // Alerte « pile » : passe le compteur en rouge quand `updateMouseHover`
-    // a détecté plusieurs refs partageant la position survolée. Réinitialise
-    // sinon pour éviter qu'un état stale reste collé sur le HUD.
-    const duplicateAlert = typeof state.isDuplicateStackHover !== 'undefined' && state.isDuplicateStackHover
-    countEl.style.color = duplicateAlert ? COLOR_DUPLICATE_HUD : ''
 }
 
 export const updateGridButtonText = () => {
