@@ -539,6 +539,88 @@ confondrait les deux états, et un screenshot sans contexte
 `currentAction === undefined` comparable sans cast et exprime clairement "pas
 d'action en cours". `ACTION_GRABBING = 1` (drag d'un point en cours).
 
+### §7.8 Label d'index stable du sommet surve
+
+Quand le curseur passe au-dessus d'un sommet dans n'importe quel mode de
+sélection, `drawVertexLabel(p, idx)` rend une **pill sombre 10 px
+monospace** sous le sommet affichant l'**index 0-based** du vertex dans
+`getAllVertices()` (helper `getVertexIndex(p)` de `geometry.js`). La
+convention est dev-friendly : `getAllVertices()[0]` est le 1er point de
+la forme active — alignement JS array natif qui rend la lecture debug
+immédiate (`state.shapes[i].triangles[k].p1 = vertex 7` → label "7"
+cohérent).
+
+**Géométrie** :
+- Background `rgba(0,0,0,0.6)` — semi-transparent pour rester lisible
+  sur zone sombre ou triangle custom (cf. §7.3 fill swatches qui ne
+  doivent pas masquer ce signal).
+- Foreground `#FFFFFF`, font 10 px monospace, padding horizontal 6 px.
+- Hauteur 14 px, position sous le cercle vert hover rayon 5 px de §7.4
+  (`OFFSET_Y = +14`) sans chevauchement visuel.
+
+**Implémentation** :
+- Le helper `getVertexIndex(p)` itère `getAllVertices()` et retourne
+  `findIndex(v => adjacentPoints(v, p, 0.01))` → -1 si absent
+  (defense).
+- Fallback `'?'` côté caller (`editor.js:updateMouseHover`) si la
+  défense retourne -1. Ce cas ne devrait jamais survenir dans le call
+  site normal puisque `findNearestPoint` garantit que le point rendu
+  existe dans `activeTriangles()`.
+
+**Relation aux autres features** :
+- §7.4 montre "où" (cercle vert 5 px sur le sommet le + proche), §7.8
+  montre "qui" (label d'identité stable). Sans §7.8, deux sommets à
+  coordonnées identiques en mode cluster (§3.2) sont indistinguables.
+- L'alerte triangle rouge §7.7 (retirée dans le chore du même nom)
+  précédait cette feature en comblant le même besoin UX (identifier
+  les stacks). §7.8 + §7.9 reprennent ce role sans le surlignage
+  strident.
+
+### §7.9 Liste des slots triangles partageant la position survee
+
+Quand le sommet surve a plusieurs refs (cluster §3.2 ou topologie de
+mesh dense), `drawStackList(p, refs)` rend une **pill 2-lignes** sous le
+label §7.8 listant les `(triangleIndex, slotId)` adjacents.
+
+**Géométrie** :
+- Header ligne 1 : `stack (N)` en `#FFD700` (golden) sur fond opaque
+  `rgba(0,0,0,0.7)`. N = nombre de slots triangles à cette position.
+- Body ligne 2 : `T0.p1, T2.p3, ...` en `#FFFFFF` (blanc), séparés par
+  virgule + espace. Format `{triangleIndex}.{slotId}` (slotId = `p1`,
+  `p2` ou `p3`).
+- Font 10 px monospace, padding 6 px horizontal, height 14 px par ligne
+  + 4 px padding vertical.
+- Position `OFFSET_Y = +32` — sous §7.8 (offset +14) sans overlap
+  visuel.
+
+**Affichage conditionnel** : la pill n'est rendue que si `refs.length > 1`.
+Un seul slot adjacent ne déclenche pas §7.9 (ce serait redondant avec
+le label §7.8 qui suffit à identifier le sommet). Filtre `if (stackRefs.length > 1)`
+dans `editor.js:updateMouseHover` (call site hover).
+
+**Implémentation** :
+- Helper `getStackTriangleRefs(p, tolerance = 0.01)` de `geometry.js`
+  (commit `05cabe3 feat(geometry): §7.x helpers`). Itère
+  `activeTriangles()` et pousse pour chaque triangle la liste des slots
+  (`p1`/`p2`/`p3`) dont `adjacentPoints(slot, p, tolerance)` est vrai.
+- Tolerance par défaut 0.01 unité modèle (cohérent avec §3.2 cluster
+  semantics et §4.1 delete). Paramétrable pour tests spécifiques.
+
+**Cas d'usage** :
+- Topologie normale (deux triangles partageant un sommet) : 1 slot
+  adjacent → §7.9 ne s'affiche PAS (filtre `> 1`).
+- Cluster intentionnel (`getPointsAtSamePosition(p).length > 1`, §3.2) :
+  N>1 → §7.9 liste les slots triangles.
+- Stress-test ou import avec doublons accidentels : N visible permet de
+  détecter rapidement la multiplicité sans ouvrir devtools.
+
+**Edge case (filet défensif non appliqué)** : `getStackTriangleRefs`
+peut retourner plusieurs entrées pour le même `triangleIndex` si 2+
+slots du même triangle sont adjacents au point (cas dégénéré topologique).
+Une dedup par référence (`!refs.some(r => r.ref === entry.ref)`)
+serait plus robuste mais n'est pas appliquée (dette technique
+consignée ; nit reviewer du commit `2c586fa`).
+
 ---
 
 ## §8. Conventions diverses
