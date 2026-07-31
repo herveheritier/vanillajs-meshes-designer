@@ -70,6 +70,37 @@ export const getPointsAtSamePosition = (p, tolerance = 0.01) => {
     return result
 }
 
+// Index 0-based du sommet `p` dans la liste unique des vertices de
+// la forme active. Utilise par updateMouseHover pour afficher un
+// identifiant stable au survol (cf. §7.8). Retourne -1 si `p`
+// n'appartient pas a activeTriangles() (defense ; ne devrait pas
+// arriver dans le call site normal).
+export const getVertexIndex = (p) => {
+    const vertices = getAllVertices()
+    return vertices.findIndex(v => adjacentPoints(v, p, 0.01))
+}
+
+// Liste des slots (triangleIndex, slotId) qui portent une ref
+// adjacente a `p`. Utilise par §7.9 pour enumerer les doublons
+// quand plusieurs refs distinctes partagent la meme position
+// physique. Renvoie un tableau vide si p est null. Chaque entree
+// est unique -- un meme slot ne peut pas matcher deux fois dans la
+// boucle. Cas length===1 : ref unique, pas de doublon. Cas length>1 :
+// cluster (meme position, refs distinctes) ou meme ref apparaissant
+// dans plusieurs slots -- dans les deux cas la liste est utile.
+export const getStackTriangleRefs = (p, tolerance = 0.01) => {
+    const refs = []
+    if (!p) return refs
+    const tris = activeTriangles()
+    tris.forEach((t, ti) => {
+        if (!t.p1 || !t.p2 || !t.p3) return
+        if (adjacentPoints(p, t.p1, tolerance)) refs.push({ triangleIndex: ti, slotId: 'p1' })
+        if (adjacentPoints(p, t.p2, tolerance)) refs.push({ triangleIndex: ti, slotId: 'p2' })
+        if (adjacentPoints(p, t.p3, tolerance)) refs.push({ triangleIndex: ti, slotId: 'p3' })
+    })
+    return refs
+}
+
 export const isPointSelected = (p) => {
     if (!p) return false
     return state.selectedPoints.some((sp) => adjacentPoints(sp, p, 0.01))
