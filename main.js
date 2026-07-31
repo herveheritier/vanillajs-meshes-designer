@@ -11,7 +11,7 @@ import { updateZoomDisplay } from './viewport.js'
 import {
     selectAllPoints, deleteSelectedPoint, deleteSelectedSegment, deleteSelectedTriangle,
     endGrabbing, grabbed, resolveMouseMoveOnBoard, beginGrabbing,
-    processMouseUpSelection, wireBoardDrop,
+    processMouseUpSelection, processRightClickSelection, wireBoardDrop,
     wireTriangleColorPanel, hideTriangleColorPanel,
 } from './editor.js'
 import { undo, redo } from './history.js'
@@ -156,6 +156,7 @@ document.addEventListener('mousedown', (e) => {
     if (e.button === 2) {
         beginGrabbing(e)
     } else if (e.button === 0) {
+        // Left drag is reserved for selection/lasso; it never moves geometry.
         state.selectionBoxStart = mousePos
         state.selectionBoxCurrent = mousePos
         state.isSelectingBox = state.editingMode !== 'construction'
@@ -176,21 +177,33 @@ document.addEventListener('mousemove', (e) => {
 })
 
 document.addEventListener('mouseup', (e) => {
-    if (grabbed()) endGrabbing(e)
+    const wasGrabbing = grabbed()
+    if (wasGrabbing) endGrabbing(e)
     if (state.isPanning && e.button === 1) endPan()
-    if (e.target.id === 'board' && e.button === 0) {
+    const boardTarget = e.target && e.target.id === 'board'
+    if (!wasGrabbing && e.button === 0) {
         if (state.editingMode !== 'construction' && state.isSelectingBox) {
-            const dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
-            state.isSelectingBox = false
-            if (dist < 5) {
-                processMouseUpSelection(e)
-                drawBoard()
-                updateSelectionHud()
+            if (boardTarget && state.selectionBoxStart && state.selectionBoxCurrent) {
+                const dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
+                if (dist < 5) {
+                    processMouseUpSelection(e)
+                    drawBoard()
+                    updateSelectionHud()
+                }
             }
-        } else if (state.editingMode === 'construction' || state.editingMode === 'edition') {
+            // Always clear the gesture, including a release outside the canvas.
+            state.isSelectingBox = false
+            state.selectionBoxStart = undefined
+            state.selectionBoxCurrent = undefined
+        } else if (boardTarget && (state.editingMode === 'construction' || state.editingMode === 'edition')) {
             processMouseUpSelection(e)
             drawBoard()
         }
+    } else if (!wasGrabbing && boardTarget && e.button === 2 && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+        // If no grab target was armed, a plain right click still has
+        // selection semantics in edition mode (including empty-space
+        // deselection).
+        processRightClickSelection(e)
     }
 })
 

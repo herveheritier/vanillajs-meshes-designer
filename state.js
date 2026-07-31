@@ -43,6 +43,8 @@ export const state = {
     selectionBoxCurrent: undefined,
     grabbedGroup: [],
     grabStartMouse: undefined,
+    grabHistorySaved: false,
+    hasDragged: false,
 
     // ===== Move-all (AltGr grab) =====
     moveAllActive: false,

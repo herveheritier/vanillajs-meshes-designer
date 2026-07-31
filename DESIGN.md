@@ -90,10 +90,13 @@ au boot, après quoi les références DOM sont figées.
 `state.editingMode` expose trois contrats de clic persistés dans
 `meshesDesigner.editingMode`, avec **`edition` comme valeur par défaut** :
 
-- **`edition`** : mode fluide combinant les trois gestes courants. Un clic dans
-  le vide crée ou complète un triangle ; un clic sur un sommet, segment ou
-  triangle sélectionne l'entité selon `state.selectionMode` ; un clic droit +
-  drag déplace la cible sélectionnée.
+- **`edition`** : mode fluide de création, sélection et déplacement. Un clic
+  gauche simple conserve le geste de création/sélection ; un clic gauche-glissé
+  délimite uniquement un lasso. Un clic droit simple sélectionne uniquement
+  l'entité la plus proche selon `state.selectionMode` et désélectionne les
+  autres ; un clic droit + drag déplace toute la sélection depuis n'importe
+  quel point du canvas. S'il n'y a pas de sélection, le clic droit conserve le
+  grab direct de la cible sous le curseur.
 - **`construction`** : un clic dans le vide crée ou complète un triangle ; un
   clic sur une entité existante ne modifie pas la sélection et le déplacement
   n'est pas activé.
@@ -208,58 +211,41 @@ floating-point où un des `d1/d2/d3` peut être 0).
 
 ### §3.6 Modificateurs de clic (Shift / Ctrl / Cmd / rien)
 
-Trois modifiers × modes :
+Les gestes sont séparés par bouton pour éviter toute ambiguïté entre
+sélection et déplacement :
 
-| Mode        | Plain-click          | Shift-click                 | Ctrl/Meta-click              |
-|-------------|----------------------|------------------------------|------------------------------|
-| **Entité du mode** | Remplace la sélection | Toggle (déjà → retire, pas là → ajoute) | Ajoute SANS toggle (idempotent) |
-| **Espace vide**    | Vide + crée nouveau point | Préserve + crée nouveau point | Préserve, NE CRÉE PAS de point |
+| Geste | Effet |
+|---|---|
+| **Clic gauche** sur une entité | Remplace la sélection (ou toggle avec Shift) |
+| **Clic gauche + drag** | Délimite uniquement le lasso ; ne déplace jamais la géométrie |
+| **Ctrl/Cmd + clic droit** sur une entité | Ajoute la sélection sans toggle et sans déplacer la géométrie |
+| **Clic droit + drag** | Déplace la sélection existante, depuis n'importe quel point du canvas |
 
-**Exception mode `vertex`** : sur l'*entité du mode*, Ctrl/Meta-click
-bascule en *toggle add/remove* sur le même contrat que Shift. C'est
-l'alignement sur la convention UI standard *"ctrl+click toggles"* — sans
-cela, Ctrl+click sur un point déjà sélectionné n'a aucun effet visible
-et ressemble à un clic nu, ce qui déroute.
+Le clic droit Ctrl/Cmd est traité comme une action de sélection immédiate,
+avant l'initialisation du grab. Il ne crée donc aucune entrée d'historique,
+ne mute aucune coordonnée et ne peut pas déplacer accidentellement la sélection.
+En mode `triangle`, l'index du triangle est ajouté de façon idempotente dans
+`selectedTriangles`; en mode `segment`, les points des deux endpoints sont
+ajoutés. En mode `vertex`, le cluster de références partageant la position est
+ajouté sans doublon.
 
-Implémentation : `applySelectionModifiers(pointsAtPos, e, ctrlToggles)` dans
-`editor.js` accepte un 3ᵉ paramètre `ctrlToggles` (défaut `false`). Deux
-sites d'appel propagent `state.selectionMode === 'vertex'` :
+Implémentation : `processMouseUpSelection` reçoit uniquement le geste gauche
+et neutralise Ctrl/Cmd pour les appels de sélection ; le geste
+`Ctrl/Cmd + clic droit` passe par `selectAtRightClick` dans `editor.js`, puis
+`beginGrabbing` retourne immédiatement sans armer `ACTION_GRABBING`.
 
-1. Fallback vertex dans `processMouseUpSelection` (clic gauche) :
-   `applySelectionModifiers(pointsAtPos, e, state.selectionMode === 'vertex')`.
-2. `beginGrabbing` (clic droit, branche `!preserveExisting`) :
-   `applySelectionModifiers(grabPoints, e, state.selectionMode === 'vertex')`.
+Le helper `applySelectionModifiers(pointsAtPos, e, ctrlToggles)` reste la
+source commune des règles Shift / ajout idempotent. Le Shift gauche conserve
+le toggle de sélection ; le Ctrl/Cmd gauche n'est plus un geste d'ajout.
+Sur espace vide, le clic gauche en mode `edition` conserve la création fluide
+préexistante ; le clic droit simple efface la sélection s'il ne trouve aucune
+entité. Le mode `construction` reste le geste dédié à la création seule.
 
-Avant l'extension à `beginGrabbing` (commit `feat(editor): extend §3.6 ctrl
-toggle to beginGrabbing`), la branche vertex de `beginGrabbing` n'avait pas
-de cas `ctrl` — ctrl+clic-droit en mode vertex faisait juste
-`state.selectedPoints = [...grabPoints]` (replace silencieux). Le bloc a
-été refactoré en un seul appel à `applySelectionModifiers` qui mutualise
-les 3 modifiers et propage `ctrlToggles`, garantissant une grille cognitive
-identique entre clic gauche et clic droit en mode vertex.
-
-Le helper privé `toggleSelectionPoints(pointsAtPos)` (même fichier)
-factorise le bloc `anySelected / filter / push` entre la branche Shift et
-la branche Ctrl+`ctrlToggles` true.
-
-Modes `segment` et `triangle` : conservent *Ajoute SANS toggle* — la grille
-universelle `applySelectionModifiers(..., ctrlToggles=false)` y produit
-strictement le même comportement qu'avant le refactor (vérifié via
-lecture/écriture manuelles + `node --check --input-type=module`).
-
-*Espace vide* : inchangé dans tous les modes — Ctrl/Meta-click =
-*préserve, NE CRÉE PAS de point* (les modifiers opèrent sur la sélection,
-pas sur la scène). Le toggle en espace vide est implicitement *no-op* (rien
-à toggler), donc le comportement existant est déjà conforme.
-
-**Nuance clic-droit (`beginGrabbing`)** : le verrou `preserveExisting` (qui
-protège un clic-droit *basique* sur entité déjà sélectionnée du flicker de
-sélection) ne s'active **jamais** quand un modifier est tenu —
-`hasModifier = e.shiftKey || e.ctrlKey || e.metaKey` dans `editor.js:593`
-court-circuite le verrou. Conséquence : clic-droit + modifier sur entité
-déjà sélectionnée déclenche le toggle §3.6 comme le clic-gauche (parité
-stricte). AltGr est exclu de cette liste : early-return plus haut dans
-`beginGrabbing` traite AltGr comme « déplacer toutes les formes ».
+Le clic droit sans Ctrl/Cmd conserve son contrat de déplacement : avec une
+sélection existante, il la déplace depuis la position de départ ; sans
+sélection, il peut sélectionner l'entité sous le pointeur et armer son grab.
+AltGr est exclu du Ctrl/Cmd de sélection : le chemin AltGr + clic droit reste
+le déplacement de toutes les formes.
 
 **Cohérence `selectedTriangles` ↔ `selectedPoints`** : la branche shift de
 `applyGrabTriangleSync` ne pousse un index `i` dans

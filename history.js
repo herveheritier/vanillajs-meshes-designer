@@ -103,6 +103,8 @@ const clearEditingTransientState = () => {
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
     state.grabbedGroup = []
+    state.grabHistorySaved = false
+    state.hasDragged = false
     clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
