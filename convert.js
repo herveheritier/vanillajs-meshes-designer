@@ -58,6 +58,8 @@ export const convertMeshesLineToMesh = (line) => {
     return { tris: tris, pointList: pointList }
 }
 
+const hasParsedCoordinates = (meshes) => Array.isArray(meshes) && meshes.some(mesh => mesh && Array.isArray(mesh.pointList) && mesh.pointList.length > 0)
+
 export const convertMeshesToMeshes = (text) => {
     return String(text)
         .split(/\r?\n/)
@@ -76,13 +78,8 @@ export const importMeshesFromFile = (file) => {
     reader.onload = (e) => {
         try {
             let text = String(e.target.result)
-            let semicolons = (text.match(/;/g) || []).length
-            if (semicolons < 3) {
-                log('Import meshes fail: format inattendu (peu ou pas de ; separateurs)')
-                return
-            }
             let meshes = convertMeshesToMeshes(text)
-            if (!meshes.length) {
+            if (!meshes.length || !hasParsedCoordinates(meshes)) {
                 log('Import meshes fail: aucun mesh trouve')
                 return
             }
@@ -108,7 +105,7 @@ export const autoImportMeshesFromUrl = () => {
         if (!encoded) return
         let text = atob(decodeURIComponent(encoded))
         let meshes = convertMeshesToMeshes(text)
-        if (!meshes.length) {
+        if (!meshes.length || !hasParsedCoordinates(meshes)) {
             log('Autoimport: empty')
             return
         }

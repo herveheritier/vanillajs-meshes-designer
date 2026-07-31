@@ -6,9 +6,10 @@ import {
     ZOOM_STORAGE_KEY, VIEW_CENTER_STORAGE_KEY,
     MIN_GRID_STEP, MAX_GRID_STEP, MIN_ZOOM, MAX_ZOOM,
     IMPORT_MODE_STORAGE_KEY, TAU,
+    SCENE_FORMAT, SCENE_FORMAT_VERSION,
 } from './constants.js'
 import { drawBoard } from './draw.js'
-import { updateGridButtonText, updateShapeHud, updateUndoRedoHud, updateSelectionHud } from './hud.js'
+import { updateGridButtonText, updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateSceneStatus } from './hud.js'
 import { log } from './log.js'
 import { isSceneEmpty } from './geometry.js'
 
@@ -54,6 +55,8 @@ export const snapZoom = (z) => Math.round(z * 10) / 10
 
 export const serializeState = () => {
     return JSON.stringify({
+        format: SCENE_FORMAT,
+        version: SCENE_FORMAT_VERSION,
         activeGrid: state.activeGrid,
         GRID_STEP: state.GRID_STEP,
         shapes: state.shapes.map(shapeToMesh),
@@ -69,6 +72,7 @@ export const persistState = () => {
     try {
         localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
         state.ctx.workIsSaved = 1
+        updateSceneStatus()
     } catch (e) {
         log('Persist fail: ' + e.message)
     }
@@ -98,6 +102,63 @@ const resolveTrisToTriangles = (trisArray, pts) => {
     return ts
 }
 
+const validateLegacyTriangle = (triangle, context) => {
+    if (!triangle || typeof triangle !== 'object' || Array.isArray(triangle)) return `${context}: triangle invalide`
+    for (const pid of ['p1', 'p2', 'p3']) {
+        if (triangle[pid] === undefined) continue
+        const point = triangle[pid]
+        if (!point || typeof point !== 'object' || Array.isArray(point) || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) {
+            return `${context}: sommet ${pid} invalide`
+        }
+    }
+    return null
+}
+
+export const validateScenePayload = (data) => {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return 'la racine JSON doit être un objet'
+    if (data.format !== undefined && data.format !== SCENE_FORMAT) return 'format JSON inconnu'
+    if (data.version !== undefined && (!Number.isInteger(data.version) || data.version > SCENE_FORMAT_VERSION)) return 'version JSON non supportée'
+    if (Array.isArray(data.shapes)) {
+        for (let i = 0; i < data.shapes.length; i++) {
+            const shape = data.shapes[i]
+            if (!shape || typeof shape !== 'object') return `forme ${i + 1} invalide`
+            if (shape.pointList !== undefined && !Array.isArray(shape.pointList)) return `forme ${i + 1}: pointList invalide`
+            if (shape.tris !== undefined && !Array.isArray(shape.tris)) return `forme ${i + 1}: tris invalide`
+            if (shape.triangles !== undefined && !Array.isArray(shape.triangles)) return `forme ${i + 1}: triangles invalide`
+            if (Array.isArray(shape.triangles)) {
+                for (let j = 0; j < shape.triangles.length; j++) {
+                    const legacyError = validateLegacyTriangle(shape.triangles[j], `forme ${i + 1}, triangle ${j + 1}`)
+                    if (legacyError) return legacyError
+                }
+            }
+            if (Array.isArray(shape.pointList)) {
+                for (const p of shape.pointList) {
+                    if (!p || !Number.isFinite(Number(p.x)) || !Number.isFinite(Number(p.y))) return `forme ${i + 1}: sommet invalide`
+                }
+                if (Array.isArray(shape.tris)) {
+                    for (const t of shape.tris) {
+                        if (!t || ['p1', 'p2', 'p3'].some(pid => t[pid] !== undefined && (!Number.isInteger(t[pid]) || t[pid] < 0 || t[pid] >= shape.pointList.length))) return `forme ${i + 1}: indice de triangle invalide`
+                    }
+                }
+            }
+        }
+    } else {
+        if (data.pointList !== undefined && !Array.isArray(data.pointList)) return 'pointList invalide'
+        if (data.tris !== undefined && !Array.isArray(data.tris)) return 'tris invalide'
+        if (Array.isArray(data.pointList)) {
+            for (const p of data.pointList) {
+                if (!p || !Number.isFinite(Number(p.x)) || !Number.isFinite(Number(p.y))) return 'sommet invalide'
+            }
+            if (Array.isArray(data.tris)) {
+                for (const t of data.tris) {
+                    if (!t || ['p1', 'p2', 'p3'].some(pid => t[pid] !== undefined && (!Number.isInteger(t[pid]) || t[pid] < 0 || t[pid] >= data.pointList.length))) return 'indice de triangle invalide'
+                }
+            }
+        }
+    }
+    return null
+}
+
 export const buildShapesFromPayload = (data) => {
     if (!data || typeof data !== 'object') return null
     let result = []
@@ -116,7 +177,7 @@ export const buildShapesFromPayload = (data) => {
             result.push({ triangles: resolveTrisToTriangles(trisSource, pts) })
         })
     } else {
-        const pts = []
+        let pts = []
         if (Array.isArray(data.pointList)) {
             pts = data.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
         }
@@ -153,6 +214,11 @@ export const loadState = () => {
     try {
         state.pendingRotation = undefined
         const data = JSON.parse(saved)
+        const validationError = validateScenePayload(data)
+        if (validationError) {
+            log('Load fail: ' + validationError)
+            return
+        }
         if (data.activeGrid !== undefined) state.activeGrid = !!data.activeGrid
         if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') {
             state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
@@ -192,6 +258,7 @@ export const loadState = () => {
             applyPendingRotationToShapes(state.shapes)
         }
         state.ctx.workIsSaved = 1
+        state.sceneDirty = false
         updateGridButtonText()
         updateShapeHud()
     } catch (e) {
@@ -225,6 +292,8 @@ export const saveMesh = () => {
         a.click()
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
+        state.sceneDirty = false
+        updateSceneStatus()
         log('Export OK: ' + a.download)
     } catch (e) {
         log('Export fail: ' + e.message)
@@ -266,6 +335,7 @@ const showImportModal = (opts, callback) => {
         return
     }
     importModalShown = true
+    state.lastFocusedElement = document.activeElement
 
     const info = document.querySelector('#importModalInfo')
     if (info) {
@@ -282,6 +352,9 @@ const showImportModal = (opts, callback) => {
 
     const cleanup = () => {
         modal.hidden = true
+        modal.setAttribute('aria-hidden', 'true')
+        if (state.lastFocusedElement && typeof state.lastFocusedElement.focus === 'function') state.lastFocusedElement.focus()
+        state.lastFocusedElement = undefined
         document.removeEventListener('keydown', onKey)
         modal.removeEventListener('click', onBackdrop)
         if (validateBtn) validateBtn.removeEventListener('click', onValidate)
@@ -307,14 +380,13 @@ const showImportModal = (opts, callback) => {
         }
     }
 
-    if (validateBtn) {
-        validateBtn.addEventListener('click', onValidate)
-        validateBtn.focus()
-    }
+    if (validateBtn) validateBtn.addEventListener('click', onValidate)
     if (cancelBtn) cancelBtn.addEventListener('click', onCancel)
     document.addEventListener('keydown', onKey)
     modal.addEventListener('click', onBackdrop)
     modal.hidden = false
+    modal.setAttribute('aria-hidden', 'false')
+    if (validateBtn) validateBtn.focus()
 }
 
 // ===== Import (text et file) =====
@@ -324,8 +396,9 @@ export const importMeshFromText = (text) => {
     let loaded = null
     try {
         const data = JSON.parse(text)
-        if (!data || typeof data !== 'object') {
-            log('Import fail: not a JSON object')
+        const validationError = validateScenePayload(data)
+        if (validationError) {
+            log('Import fail: ' + validationError)
             return false
         }
         parsed = data
@@ -382,6 +455,7 @@ export const applyImport = (parsed, loaded, mode) => {
             state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, parsed.GRID_STEP))
         }
         loaded.forEach(s => state.shapes.push(s))
+        state.sceneDirty = true
         applyPendingRotationToShapes(loaded)
         state.activeShapeIndex = beforeCount
         if (state.activeShapeIndex < 0 || state.activeShapeIndex >= state.shapes.length) {
@@ -398,6 +472,7 @@ export const applyImport = (parsed, loaded, mode) => {
     }
 
     state.shapes = loaded
+    state.sceneDirty = true
     applyPendingRotationToShapes(state.shapes)
     if (typeof parsed.activeShapeIndex === 'number' && parsed.activeShapeIndex >= 0 && parsed.activeShapeIndex < state.shapes.length) {
         state.activeShapeIndex = parsed.activeShapeIndex
@@ -461,5 +536,7 @@ export const resetAll = () => {
     updateShapeHud()
     updateUndoRedoHud()
     updateSelectionHud()
+    state.sceneDirty = true
+    updateSceneStatus()
     log('Reset OK')
 }

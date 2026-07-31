@@ -88,17 +88,26 @@ export const showDeleteShapeModal = () => {
     const modal = document.querySelector('#deleteShapeModal')
     const info = document.querySelector('#deleteShapeModalInfo')
     if (!modal || !info) return
+    state.lastFocusedElement = document.activeElement
     if (state.shapes.length === 1) {
         info.textContent = 'Supprimer la dernière forme et créer une scène vide ?'
     } else {
         info.textContent = 'Supprimer la forme active ?'
     }
     modal.hidden = false
+    modal.setAttribute('aria-hidden', 'false')
+    const cancelBtn = document.querySelector('#deleteShapeModalCancel')
+    if (cancelBtn) cancelBtn.focus()
 }
 
 export const hideDeleteShapeModal = () => {
     const modal = document.querySelector('#deleteShapeModal')
-    if (modal) modal.hidden = true
+    if (modal) {
+        modal.hidden = true
+        modal.setAttribute('aria-hidden', 'true')
+    }
+    if (state.lastFocusedElement && typeof state.lastFocusedElement.focus === 'function') state.lastFocusedElement.focus()
+    state.lastFocusedElement = undefined
 }
 
 export const wireDeleteShapeModal = () => {

@@ -3,11 +3,12 @@ import {
     MIN_ZOOM, MAX_ZOOM, ZOOM_STEP_FACTOR, ROTATE_STEP,
     DEFAULT_GRID_STEP, MIN_GRID_STEP, MAX_GRID_STEP,
     RETICLE_MODE_STORAGE_KEY, SELECTION_MODE_STORAGE_KEY, SELECTION_MODES,
+    EDITING_MODE_STORAGE_KEY, EDITING_MODES,
     CONSOLE_VISIBLE_STORAGE_KEY,
 } from './constants.js'
 import { drawBoard } from './draw.js'
 import { screenToModel } from './geometry.js'
-import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState } from './hud.js'
+import { updateGridButtonText, updateReticleButton, updateEditingModeButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState } from './hud.js'
 import { persistState, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
@@ -116,6 +117,38 @@ export const wireReticleControl = () => {
     reticleBtn.addEventListener('click', (e) => {
         if (e.button !== 0) return
         toggleReticle()
+    })
+}
+
+// ===== Editing mode =====
+
+export const toggleEditingMode = () => {
+    const idx = EDITING_MODES.indexOf(state.editingMode)
+    state.editingMode = EDITING_MODES[(idx + 1) % EDITING_MODES.length]
+    state.selectedPoints = []
+    state.selectedTriangles = []
+    updateEditingModeButton()
+    updateSelectionHud()
+    updateColorButtonState()
+    drawBoard()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+    try { localStorage.setItem(EDITING_MODE_STORAGE_KEY, state.editingMode) } catch (e) { /* ignore */ }
+    log(`Editing mode -> ${state.editingMode}`)
+}
+
+export const restoreEditingMode = () => {
+    try {
+        const stored = localStorage.getItem(EDITING_MODE_STORAGE_KEY)
+        if (stored && EDITING_MODES.includes(stored)) state.editingMode = stored
+    } catch (e) { /* ignore */ }
+}
+
+export const wireEditingModeControl = () => {
+    const btn = document.querySelector('#editMode')
+    if (!btn) return
+    btn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        toggleEditingMode()
     })
 }
 

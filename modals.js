@@ -7,13 +7,20 @@ const helpModal = () => document.querySelector('#helpModal')
 export const showHelp = () => {
     const m = helpModal()
     if (!m) return
+    state.lastFocusedElement = document.activeElement
     m.hidden = false
+    m.setAttribute('aria-hidden', 'false')
+    const closeBtn = document.querySelector('#helpClose')
+    if (closeBtn) closeBtn.focus()
 }
 
 export const hideHelp = () => {
     const m = helpModal()
     if (!m) return
     m.hidden = true
+    m.setAttribute('aria-hidden', 'true')
+    if (state.lastFocusedElement && typeof state.lastFocusedElement.focus === 'function') state.lastFocusedElement.focus()
+    state.lastFocusedElement = undefined
 }
 
 export const wireHelpModal = () => {
@@ -34,13 +41,20 @@ const resetModal = () => document.querySelector('#resetModal')
 export const showResetModal = () => {
     const m = resetModal()
     if (!m) return
+    state.lastFocusedElement = document.activeElement
     m.hidden = false
+    m.setAttribute('aria-hidden', 'false')
+    const cancelBtn = document.querySelector('#resetModalCancel')
+    if (cancelBtn) cancelBtn.focus()
 }
 
 export const hideResetModal = () => {
     const m = resetModal()
     if (!m) return
     m.hidden = true
+    m.setAttribute('aria-hidden', 'true')
+    if (state.lastFocusedElement && typeof state.lastFocusedElement.focus === 'function') state.lastFocusedElement.focus()
+    state.lastFocusedElement = undefined
 }
 
 export const wireResetModal = (onValidate) => {

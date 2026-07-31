@@ -40,11 +40,12 @@ Le script `test_server.py` lance un serveur HTTP trivial sur le port 8000 (en th
 1. Lancer le serveur (`python3 test_server.py`) et ouvrir `http://localhost:8000/main.html`.
 2. Appuyer sur `G` → la grille s'affiche ; le bouton « Grille » passe en vert et affiche le pas courant.
 3. Cliquer trois fois sur le canvas → les clics remplissent successivement les slots `p1`, puis `p2`, puis `p3` du **dernier triangle partiel**. Le premier clic insère donc un triangle `{p1}`, le deuxième lui ajoute `p2`, et le troisième complète `{p1, p2, p3}` (premier triangle complet). Au-delà du troisième clic, un nouveau clic suffisamment proche d'une ligne existante crée un triangle attaché à cette ligne (`{p1, p2, p3}` directement complet, dont deux sommets sont les extrémités de la ligne).
-4. *(optionnel)* Sélectionner plusieurs points (clic ou rectangle de sélection), puis **molette** pour les faire pivoter autour du centre de la sélection. Modifiers souris pour la sélection point-par-point : clic plein **remplace** la sélection, **Ctrl + clic** (ou **Cmd + clic** sur Mac) **ajoute** un point sans toggle (idempotent : cliquer plusieurs fois n'ajoute pas de doublon), **Maj + clic** **toggle** (ajoute si absent, retire si présent). Sur espace vide, Ctrl + clic est un no-op (pas de création de sommet).
-5. **Sauvegarder** avec `Ctrl+S` (ou le bouton vert *save*) → la scène descend en JSON.
-6. **Recharger** plus tard via le bouton bleu *Charger meshes* (1 ligne = 1 forme) ou *Charger JSON* (round-trip exact), au choix *Remplacer* ou *Fusionner*.
-7. Naviguer entre formes via ◀ / ▶, créer une forme vide avec +, supprimer la forme active avec ×.
-8. En cas d'erreur : `Ctrl+Z` annule, `Ctrl+⇧+Z` / `Ctrl+Y` rétablissent.
+4. Le mode par défaut est **édition** : un clic vide crée un point, un clic sur une entité la sélectionne, et un clic droit + drag la déplace. `E` cycle ensuite entre **édition**, **construction** (création seule) et **sélection** (sélection/déplacement sans création).
+5. En mode sélection, choisir la cible sommet / segment / triangle avec le bouton dédié, puis sélectionner plusieurs points (clic ou rectangle de sélection) et éventuellement les faire pivoter à la molette. Clic plein **remplace** la sélection, **Ctrl + clic** (ou **Cmd + clic** sur Mac) **ajoute** sans doublon, **Maj + clic** **toggle**.
+6. **Sauvegarder** avec `Ctrl+S` (ou le bouton vert *save*) → la scène descend en JSON.
+7. **Recharger** plus tard via le bouton bleu *Charger meshes* (1 ligne = 1 forme) ou *Charger JSON* (round-trip exact pour les triangles complets ; les triangles partiels sont filtrés), au choix *Remplacer* ou *Fusionner*.
+8. Naviguer entre formes via ◀ / ▶, créer une forme vide avec +, supprimer la forme active avec ×.
+9. En cas d'erreur : `Ctrl+Z` annule, `Ctrl+⇧+Z` / `Ctrl+Y` rétablissent.
 
 Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cran, centré sur le curseur), **clic milieu + drag** pour déplacer le repère (pan), `Ctrl+0` pour revenir à 100 % centré sur l'origine.
 
@@ -58,9 +59,12 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
   - **middle-click + drag** : déplace l'origine (pan du `viewCenter`), le contenu suit le curseur (convention « grab content »).
   - **Ctrl+0** : réinitialise le zoom à 100 % et `viewCenter` à l'origine.
 - **HUD bas-gauche** : indicateur de zoom (`1.2x pos(45, -30)`, plus `rot X°` cumulatif après une AltGr + molette autour du curseur) et coordonnées du curseur en temps réel.
-- **Persistance** : la scène et le zoom/pan sont sauvegardés dans `localStorage` et restaurés au rechargement.
+- **Persistance** : la scène et le zoom/pan sont sauvegardés dans `localStorage` et restaurés au rechargement. Le zoom, le pan et l'état de grille sont des préférences de vue : ils sont persistés sans faire passer le statut de scène à « modifiée » ; les mutations de géométrie, formes et couleurs le font.
 - **Annuler / Rétablir** : `Ctrl+Z` / `Ctrl+⇧+Z` / `Ctrl+Y`.
-- **Import / Export** : JSON de scène (round-trip exact) ou format texte « meshes » (1 ligne = 1 forme).
+- **Modes d'édition** : **édition** est le mode par défaut et combine création, sélection et déplacement ; construction limite les clics à la création ; sélection limite les clics à la sélection/déplacement. Le mode de cible reste sommet / segment / triangle.
+- **Import / Export** : JSON de scène (round-trip exact pour les triangles complets, enveloppe `format: "meshes-designer"`, `version: 1`) ou format texte « meshes » (1 ligne = 1 forme). Les triangles partiels du texte sont parsés puis filtrés avant hydratation. Les erreurs de structure et d'indices sont signalées avant modification de la scène.
+- **Précision stable** : les rayons de détection sont exprimés en pixels écran puis convertis selon le zoom ; la sélection garde donc une sensation constante à 0.1x comme à 10x.
+- **État de sauvegarde** : le HUD indique si la scène est modifiée ou sauvegardée.
 
 ## Raccourcis clavier
 
@@ -73,6 +77,7 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
 | `Ctrl+S` | Sauvegarder la scène en JSON |
 | `Ctrl+0` | Réinitialiser le zoom (100 %, recentré sur l'origine) |
 | `G` | Afficher / masquer la grille |
+| `E` | Cycler entre édition, construction et sélection |
 | `?` | Afficher / masquer l'aide |
 | **Souris** | |
 | wheel sur canvas | Zoom (centré sur curseur) ou pivote si 2+ points sélectionnés |
@@ -83,13 +88,13 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
 
 ## Interface — barre d'outils
 
-Carte flottante en haut à gauche, séparée en 5 sections par des traits verticaux :
+Carte flottante en haut à gauche, séparée en groupes cohérents par des traits verticaux :
 
 ![Barre d'outils flottante (capture d'écran)](assets/barre_boutons.png)
 
 Légende (de gauche à droite) :
 
-- **Canevas** (3 boutons gris) — `▦` *Grille* : afficher / masquer la grille (raccourci `G`). Affiche le pas à droite de l'icône ; molette sur ce bouton = ajuster le pas, *clic milieu* sur le bouton = réinitialiser le pas. `↻` *Reset* : réinitialiser complètement la scène (`⇧+Backspace`, modale de confirmation). `▢` *Tout sélectionner* : sélectionne tous les points de la forme active.
+- **Canevas / édition** — `▦` *Grille* : afficher / masquer la grille (raccourci `G`). Affiche le pas à droite de l’icône ; molette sur ce bouton = ajuster le pas, *clic milieu* sur le bouton = réinitialiser le pas. `Réticule` cycle trois états (`R`). `E` cycle *édition / construction / sélection* ; le bouton cible cycle *sommet / segment / triangle*. `↻` *Reset* : réinitialiser complètement la scène (`⇧+Backspace`, modale de confirmation). `▢` *Tout sélectionner* : sélectionne tous les points de la forme active.
 - **Annuler / Rétablir** (2 boutons gris + compteur) — `↶` *Annuler* (`Ctrl+Z`) : dépile une entrée de `historyStack` (jusqu'à `MAX_HISTORY = 50`, les plus anciennes étant évincées à mesure). `↷` *Rétablir* (`Ctrl+Shift+Z` ou `Ctrl+Y`) : dépile `redoStack`. Le compteur central est une pilule verte read-only `(N)` qui affiche la profondeur de `historyStack`. Les boutons sont automatiquement grisés (attribut HTML `disabled` + opacité 0.35 + curseur `not-allowed`) quand leur pile respective est vide, pour que l'état disponible soit visible d'un coup d'œil ; clic impossible dans cet état. Le compteur et l'état disabled sont synchronisés par `updateUndoRedoHud()`, appelée à chaque mutation des piles (saveState / undo / redo / import / reset complet / boot).
 - **Sortie** (1 bouton vert, accent vert + silhouette disquette) — `▤ SAVE` : exporte la scène courante en JSON (`Ctrl+S`). La couleur et la silhouette (disquette) sont distinctes des entrées pour éviter l'ambiguïté (les anciennes flèches haut/bas étaient des miroirs faciles à inverser).
 - **Entrées** (2 boutons bleus) — `▤△ MESHES` : importe un fichier texte « meshes » (1 ligne = 1 forme). `▤ JSON` : importe une scène JSON (round-trip exact) ; un drop direct d'un fichier `.json` sur le canvas déclenche aussi l'import.
@@ -107,7 +112,7 @@ Les icônes de cette barre sont des **SVG inline** `stroke="currentColor"` 14 ×
 x1,y1;x2,y2;x3,y3;x4,y4;...
 ```
 
-Chaque triplet consécutif de coordonnées forme un triangle. Un reliquat de 1 ou 2 points en queue de ligne produit un triangle partiel. Toutes les coordonnées sont des flottants, séparées par `,`, les sommets par `;`. Une structure `x1,y1;x2,y2` (2 points) génère un triangle `{p1, p2}` ; 3 points → `{p1, p2, p3}` ; etc. Les coordonnées identiques (même `x,y`) sont dédupliquées dans `pointList`.
+Chaque triplet consécutif de coordonnées forme un triangle. Un reliquat de 1 ou 2 points en queue de ligne est parsé comme triangle partiel pour préserver le format texte ; lors de l'import, la frontière JSON/IO filtre ces triangles incomplets et ils ne sont donc pas hydratés dans la scène. Toutes les coordonnées sont des flottants, séparées par `,`, les sommets par `;`. Les coordonnées identiques (même `x,y`) sont dédupliquées dans `pointList`.
 
 `assets/alphabet2` est un exemple historique au format meshes.
 
@@ -128,8 +133,7 @@ Chaque triplet consécutif de coordonnées forme un triangle. Un reliquat de 1 o
     }
   ],
   "activeShapeIndex": 0,
-  "GRID_STEP": 5,
-  "GRID_VISIBLE": true,
+  "GRID_STEP": 5,      "activeGrid": true,
   "zoomLevel": 1,
   "viewCenter": { "x": 0, "y": 0 }
 }
@@ -166,8 +170,9 @@ Un drop direct d'un fichier JSON sur le canvas déclenche aussi l'import.
 - Lancer le serveur en arrière-plan et recharger la page suffit pour itérer sur `main.js` / `draw.js` / `convert.js` (pas de HMR).
 - Pour tester un import meshes sans picker (headless / script) :
   `http://localhost:8000/main.html?autoimport=<texte-base64-URL-safe>`
-- Vérifier la syntaxe après modifications :
-  `node --check main.js && node --check draw.js && node --check convert.js`
+- Vérifier la syntaxe après modifications (les fichiers sont des ES modules) :
+  `for f in *.js; do node --experimental-default-type=module --check "$f" || exit 1; done`
+- Vérifier l’absence de doublons HTML et la présence des contrôles avec un parseur HTML léger avant une revue navigateur.
 - La persistance `localStorage` survit au rechargement — utile de l'effacer depuis les devtools entre deux tests (`Clear storage`).
 
 ## Licence

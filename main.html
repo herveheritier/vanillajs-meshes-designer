@@ -398,12 +398,19 @@
                mode > vertex (= sortie du mode par defaut) ;
                visuellement cela met le texte en vert accent,
                meme langage que reticle/grid. */
-            #selectionMode {
+            #selectionMode, #editMode {
                 display: inline-flex;
                 align-items: center;
                 gap: 5px;
             }
-            #selectionMode #selectionModeText {
+            /* Le mode est affiche en toutes lettres dans ce bouton :
+               une largeur reservee evite que le libelle soit tasse ou
+               tronque par les contraintes de la toolbar. */
+            #editMode {
+                min-width: 124px;
+                justify-content: center;
+            }
+            #selectionMode #selectionModeText, #editMode #editModeText {
                 font-family: monospace;
                 font-size: 11px;
                 line-height: 1;
@@ -412,6 +419,30 @@
                 pointer-events: none;
                 white-space: nowrap;
                 transition: color 0.12s;
+            }
+            #selectionMode.selection-mode-active #selectionModeText,
+            #editMode.editing-mode-active #editModeText {
+                color: rgb(55, 194, 0);
+            }
+            #sceneStatus {
+                display: inline-flex;
+                align-items: center;
+                height: 30px;
+                padding: 0 9px;
+                font-family: monospace;
+                font-size: 11px;
+                color: rgba(220, 220, 220, 0.82);
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 4px;
+                white-space: nowrap;
+            }
+            #sceneStatus[data-dirty="true"] {
+                color: rgb(255, 210, 80);
+                border-color: rgba(255, 210, 80, 0.45);
+            }
+            #sceneStatus[data-dirty="false"] {
+                color: rgba(220, 220, 220, 0.62);
             }
             #selectionMode.selection-mode-active #selectionModeText {
                 color: rgb(55, 194, 0);
@@ -659,6 +690,12 @@
                 border-color: rgba(255, 255, 255, 0.18);
                 color: rgb(220, 220, 220);
             }
+            #toolbar button:focus-visible,
+            .modal button:focus-visible,
+            .modal input:focus-visible {
+                outline: 2px solid rgb(55, 194, 0);
+                outline-offset: 2px;
+            }
 
             /* ========= Panneau flottant de couleur des triangles ========= */
             /* Panneau popover ancre sous le bouton #triangleColor.
@@ -814,6 +851,14 @@
                 z-index: 50;
                 white-space: nowrap;
                 backdrop-filter: blur(4px);
+            }
+
+            #sceneStatus {
+                position: absolute;
+                right: 12px;
+                bottom: 10px;
+                z-index: 50;
+                pointer-events: none;
             }
 
             /* ========= Modales (import + aide) : structure partagee ========= */
@@ -1091,7 +1136,8 @@
                      (cycler le mode) + une mention courte du raccourci
                      clic droit associe (= raccourci discoverable, le
                      detail complet reste dans la modale d'aide). -->
-                <button id="selectionMode" title="Mode de sélection (cycle) : vertex / segment / triangle. Voir la modale d'aide pour le détail des raccourcis par mode."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="8" y1="2.5" x2="8" y2="4.5"/><line x1="8" y1="11.5" x2="8" y2="13.5"/><line x1="2.5" y1="8" x2="4.5" y2="8"/><line x1="11.5" y1="8" x2="13.5" y2="8"/></svg><span id="selectionModeText">0</span></button>
+                <button id="editMode" title="Mode d'édition (E) : édition crée, sélectionne et déplace ; construction crée seulement ; sélection sélectionne seulement." aria-label="Mode d'édition actif : édition. Cliquer pour passer au mode suivant."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 13l1.2-3.2L10.8 3.2a1.7 1.7 0 012.4 2.4l-6.6 6.6L3 13z"/><path d="M9.8 4.2l2 2"/></svg><span id="editModeText">édition</span></button>
+                <button id="selectionMode" title="Mode de sélection (cycle) : sommet / segment / triangle" aria-label="Mode de sélection : sommet, segment ou triangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="8" y1="2.5" x2="8" y2="4.5"/><line x1="8" y1="11.5" x2="8" y2="13.5"/><line x1="2.5" y1="8" x2="4.5" y2="8"/><line x1="11.5" y1="8" x2="13.5" y2="8"/></svg><span id="selectionModeText">0</span></button>
                 <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
                 <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
                 <!-- Bouton fusion : consomme state.selectedPoints (>=2)
@@ -1253,13 +1299,16 @@
              confusion entre position curseur et position point
              survole. -->
         <div id="zoomDisplay" title="Niveau de zoom, position du viewCenter en coords modèle, rotation cumulée de la scène (AltGr + molette)">1.0x</div>
-        <div id="coords" title="Position du curseur (coords modèle, Y inversé) et du point le plus proche sous le curseur"></div>
-        <div id="helpModal" class="modal" hidden>
+        <div id="coords" title="Position du curseur (coords modèle, Y inversé) et du point le plus proche sous le curseur" aria-live="polite"></div>
+        <div id="sceneStatus" title="État de sauvegarde de la scène" aria-live="polite">sauvegardée</div>
+        <div id="helpModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle" aria-hidden="true" hidden>
             <div class="modal-backdrop" data-help-close></div>
             <div class="modal-box">
-                <div class="modal-title">Raccourcis clavier</div>
+                <div id="helpTitle" class="modal-title">Raccourcis clavier et modes</div>
                 <div class="help-list">
-                    <div class="help-row"><kbd class="kbd">Backspace</kbd><span>supprimer le point en mode vertex, les triangles dépendants du segment en mode segment, ou uniquement les triangles sélectionnés en mode triangle</span></div>
+                    <div class="help-row"><kbd class="kbd">E</kbd><span>cycler entre <strong>édition</strong> (créer, sélectionner et déplacer), <strong>construction</strong> (créer seulement) et <strong>sélection</strong> (sélectionner/déplacer sans créer)</span></div>
+                    <div class="help-row"><kbd class="kbd">Mode sélection</kbd><span>en mode sélection, le bouton suivant cycle les cibles sommet / segment / triangle</span></div>
+                    <div class="help-row"><kbd class="kbd">Backspace</kbd><span>supprimer le point sélectionné en mode vertex, les triangles dépendants du segment en mode segment, ou uniquement les triangles sélectionnés en mode triangle</span></div>
                     <div class="help-row"><kbd class="kbd">⇧</kbd><kbd class="kbd">Backspace</kbd><span>reinitialiser completement la scene (modale de confirmation)</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Z</kbd><span>annuler</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">Z</kbd><span>retablir</span></div>
@@ -1331,10 +1380,10 @@
                 </div>
             </div>
         </div>
-        <div id="importModal" class="modal" hidden>
+        <div id="importModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="importTitle" aria-hidden="true" hidden>
             <div class="modal-backdrop"></div>
             <div class="modal-box">
-                <div class="modal-title">Charger et afficher une scène</div>
+                <div id="importTitle" class="modal-title">Charger et afficher une scène</div>
                 <div id="importModalInfo" class="modal-info">—</div>
                 <div class="modal-options">
                     <label><input type="radio" name="importMode" value="replace" checked> Remplacer la scène courante</label>
@@ -1346,10 +1395,10 @@
                 </div>
             </div>
         </div>
-        <div id="resetModal" class="modal" hidden>
+        <div id="resetModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="resetTitle" aria-hidden="true" hidden>
             <div class="modal-backdrop" data-reset-close></div>
             <div class="modal-box">
-                <div class="modal-title">Réinitialiser la scène</div>
+                <div id="resetTitle" class="modal-title">Réinitialiser la scène</div>
                 <div class="modal-info">Cette action efface toutes les formes et vide l'historique d'annulation. Elle est irréversible.</div>
                 <div class="modal-buttons">
                     <button id="resetModalCancel" type="button">Annuler</button>
@@ -1366,10 +1415,10 @@
              qu'on supprime la derniere forme (=> creation d'une
              scene vide) ou une forme parmi plusieurs. Le bouton
              primary reprend l'accent vert de la charte. -->
-        <div id="deleteShapeModal" class="modal" hidden>
+        <div id="deleteShapeModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="deleteShapeTitle" aria-hidden="true" hidden>
             <div class="modal-backdrop" data-delete-shape-close></div>
             <div class="modal-box">
-                <div class="modal-title">Supprimer la forme active</div>
+                <div id="deleteShapeTitle" class="modal-title">Supprimer la forme active</div>
                 <div id="deleteShapeModalInfo" class="modal-info">—</div>
                 <div class="modal-buttons">
                     <button id="deleteShapeModalCancel" type="button">Annuler</button>
@@ -1387,10 +1436,10 @@
              dynamiquement par showMergeErrorModal avec la cause
              exacte (selection vide/insuffisante vs conflit
              topologique avec indices des triangles incrimines). -->
-        <div id="mergeErrorModal" class="modal" hidden>
+        <div id="mergeErrorModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="mergeErrorTitle" aria-hidden="true" hidden>
             <div class="modal-backdrop" data-merge-error-close></div>
             <div class="modal-box">
-                <div class="modal-title">Fusion impossible</div>
+                <div id="mergeErrorTitle" class="modal-title">Fusion impossible</div>
                 <div id="mergeErrorModalInfo" class="modal-info">—</div>
                 <div class="modal-buttons">
                     <button id="mergeErrorModalClose" class="modal-primary" type="button">OK</button>
