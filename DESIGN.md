@@ -282,6 +282,31 @@ jour suit son cycle de hover et n'est pas consommé par l'ajout.
 
 ---
 
+### §4.4 Anti-leak des triangles partiels au reload
+
+`resolveTrisToTriangles` (dans `io.js`, frontière d'hydratation appelée
+par `loadState` ET `applyImport`) filtre les triangles incomplets — sans
+`p3`, ou sans l'un des `p1`/`p2`/`p3`. Symétriquement, `shapeToMesh`
+(`io.js`) filtre aussi à la sérialisation pour qu'un triangle partiel
+n'occupe pas de slots vides dans `localStorage` (defense in depth —
+DevTools ne voit plus de triangles fantômes).
+
+Sans ces filtres, un triangle en cours de dessin au moment du reload
+(l'utilisateur a posé `p1` et `p2`, mais pas encore `p3`) survit intact
+dans le scene réhydraté, et le premier clic après restart le **complète**
+via la branche `addPoint` « partial fill » :
+`else if (triangle.p3 === undefined) triangle.p3 = point`. Cette branche
+bypasse entièrement le recalcul de `state.nearestLine` (cf. §4.3) — le
+triangle ainsi formé utilise l'arête `p1-p2` laissée en plan avant
+restart comme base, perçue à tort comme « le dernier segment utilisé
+avant redémarrage » au lieu du segment le plus proche du clic.
+
+La règle : **un triangle doit avoir ses 3 sommets pour franchir la
+frontière d'io**, que ce soit par reload ou par import — et symétriquement
+pour ne pas polluer la sortie.
+
+---
+
 ## §5. Persistance
 
 ### §5.1 Séparation scene / preferences
@@ -376,6 +401,40 @@ Le blanc du preset correspond visuellement au fill par défaut
 `lineWidth` est **reset à 1** après chaque stroke (ne pas polluer les rendus
 subséquents : axes via `drawAxis`, drawShape / drawTriangle d'autres formes,
 reticule, …).
+
+### §7.6 Feedback post-clic (sélection effective)
+
+Une fois le clic engagé (§3.6 modificateurs appliqué), la sélection passe du
+vert de prévisualisation (§7.4) au cyan `#00FFFF` pour distinguer
+_"en cours de décision"_ de _"sélection confirmée"_. Sans cette séparation
+chromatique, une sélection pré-existante et un hover seraient indistinguables
+UX — ambiguïté maximale juste avant une touche Suppr par exemple.
+
+**Points sommets engagés** (`drawSelectedPoints`) :
+
+- `COLOR_SELECTED_POINT = '#00FFFF'` — cercle rayon 6 autour de chaque
+  sommet engagé (vs 5 hover §7.4 vs 3 curseur §8) pour signaler _stabilité_
+  vs _volatilité_.
+- `COLOR_SELECTED_POINT_DIMMED = 'rgba(0, 255, 255, 0.6)'` — variante
+  atténuée déclenchée par `state.isSelectionDimmed = true` quand une
+  sélection existe déjà et que le hover désigne **un autre point** que ceux
+  engagés (le clic simple remplacerait la sélection — informer
+  visuellement que la sélection courante ne survivrait pas).
+
+**Boîte de sélection (lasso)** (`drawSelectionBox`) :
+
+- `COLOR_SELECTION_BOX_FILL = 'rgba(0, 255, 255, 0.15)'` — remplissage de
+  la zone (15% d'opacité, wash léger qui ne masque pas les triangles
+  actifs).
+- `COLOR_SELECTION_BOX_STROKE = '#00FFFF'` — contour en
+  `setLineDash([4, 4])` pour signaler visuellement _"zone en cours de
+  définition"_.
+
+**Cohérence hover vs post-clic** : cyan (sélection engagée) et vert (hover
+prévisualisation §7.4) sont dans des familles chromatiques disjointes (bleu
+vs vert ± transparent). Sans cette règle, une personne dyschromate
+confondrait les deux états, et un screenshot sans contexte
+(documentation, bug report) perdrait l'info _état hover_ vs _état engagé_.
 
 ### §7.5 Action enum (`ACTION_NONE`, `ACTION_GRABBING`)
 

@@ -1,7 +1,13 @@
 // Rationale : voir DESIGN.md §4.1
 
 import { state } from './state.js'
-import { ACTION_NONE, ACTION_GRABBING, COLOR_HOVER_NEAREST_LINE, LINE_WIDTH_HOVER_NEAREST_LINE, TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU } from './constants.js'
+import {
+    ACTION_NONE, ACTION_GRABBING,
+    COLOR_HOVER_NEAREST_LINE, LINE_WIDTH_HOVER_NEAREST_LINE,
+    COLOR_HOVER_NEAREST_POINT,
+    COLOR_HOVER_NEAREST_TRIANGLE_STROKE, COLOR_HOVER_NEAREST_TRIANGLE_FILL,
+    TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU,
+} from './constants.js'
 import { drawBoard, drawPoint, drawMouse } from './draw.js'
 import { updateSelectionHud, updateColorButtonState } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
@@ -158,7 +164,7 @@ export const updateMouseHover = (cursorScreen) => {
     drawMouse(cursorScreen)
 
     if (state.nearestPoint && state.nearestPoint.point) {
-        drawPoint(state.nearestPoint.point, 5, '#00FF00')
+        drawPoint(state.nearestPoint.point, 5, COLOR_HOVER_NEAREST_POINT)
     }
     if (state.selectionMode === 'segment' || state.selectionMode === 'vertex') {
         if (state.nearestLine && state.nearestLine.firstPoint && state.nearestLine.secondPoint) {
@@ -183,8 +189,8 @@ export const updateMouseHover = (cursorScreen) => {
                 const s2 = modelToScreen(p2)
                 const s3 = modelToScreen(p3)
                 state._ctx.setLineDash([])
-                state._ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)'
-                state._ctx.fillStyle = 'rgba(0, 255, 0, 0.18)'
+                state._ctx.strokeStyle = COLOR_HOVER_NEAREST_TRIANGLE_STROKE
+                state._ctx.fillStyle = COLOR_HOVER_NEAREST_TRIANGLE_FILL
                 state._ctx.beginPath()
                 state._ctx.moveTo(s1.x, s1.y)
                 state._ctx.lineTo(s2.x, s2.y)

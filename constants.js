@@ -10,6 +10,24 @@ export const POINT_COLOR_INACTIVE = '#7A7800'
 export const COLOR_TRIANGLE_FILL_ACTIVE = 'rgba(255, 255, 255, 0.10)'
 export const COLOR_HOVER_NEAREST_LINE = 'rgba(0, 255, 0, 0.7)'
 export const LINE_WIDTH_HOVER_NEAREST_LINE = 3
+// Rationale : voir DESIGN.md §7.4
+export const COLOR_HOVER_NEAREST_POINT = '#00FF00'
+export const COLOR_HOVER_NEAREST_TRIANGLE_STROKE = 'rgba(0, 255, 0, 0.6)'
+export const COLOR_HOVER_NEAREST_TRIANGLE_FILL = 'rgba(0, 255, 0, 0.18)'
+
+// Rationale : voir DESIGN.md §7.2
+export const POINT_COLOR_ACTIVE = '#FFFF00'
+// Rationale : voir DESIGN.md §7.6
+export const COLOR_SELECTED_POINT = '#00FFFF'
+export const COLOR_SELECTED_POINT_DIMMED = 'rgba(0, 255, 255, 0.6)'
+export const COLOR_SELECTION_BOX_FILL = 'rgba(0, 255, 255, 0.15)'
+export const COLOR_SELECTION_BOX_STROKE = '#00FFFF'
+// Rationale : voir DESIGN.md §8
+export const COLOR_CURSOR = '#FFFFFF'
+export const COLOR_RETICLE = '#FFFFFF'
+export const CANVAS_BACKGROUND = '#000000'
+// Rationale : voir DESIGN.md §2.2
+export const COLOR_GRID = '#333333'
 
 export const PATTERN_AXIS = [2, 1, 3, 1]
 export const PATTERN_LINES = [2, 2]

@@ -7,8 +7,17 @@ import {
     COLOR_AXIS,
     COLOR_LINES,
     COLOR_LINES_INACTIVE,
-    COLOR_TRIANGLE_FILL_ACTIVE,
+    CANVAS_BACKGROUND,
+    COLOR_CURSOR,
+    COLOR_RETICLE,
+    COLOR_GRID,
+    POINT_COLOR_ACTIVE,
     POINT_COLOR_INACTIVE,
+    COLOR_TRIANGLE_FILL_ACTIVE,
+    COLOR_SELECTED_POINT,
+    COLOR_SELECTED_POINT_DIMMED,
+    COLOR_SELECTION_BOX_FILL,
+    COLOR_SELECTION_BOX_STROKE,
     PATTERN_AXIS,
     PATTERN_LINES,
     PATTERN_LINES_INACTIVE,
@@ -27,14 +36,14 @@ export const drawPoint = (p, radius = 3, color = '#FFFFFF') => {
 export const drawMouse = (p) => {
     if (!p) return
     state._ctx.setLineDash([])
-    state._ctx.strokeStyle = '#FFFFFF'
+    state._ctx.strokeStyle = COLOR_CURSOR
     state._ctx.beginPath()
     state._ctx.arc(p.x, p.y, 3, 0, TAU)
     state._ctx.stroke()
 }
 
 export const drawBoard = () => {
-    state._ctx.fillStyle = '#000000'
+    state._ctx.fillStyle = CANVAS_BACKGROUND
     state._ctx.fillRect(0, 0, state.board.width, state.board.height)
     if (state.activeGrid) drawGrid()
     drawAxis()
@@ -54,7 +63,7 @@ export const drawBoard = () => {
 export const drawSelectedPoints = () => {
     if (typeof state.selectedPoints === 'undefined' || !state.selectedPoints || state.selectedPoints.length === 0) return
     let isDimmed = typeof state.isSelectionDimmed !== 'undefined' && state.isSelectionDimmed
-    let color = isDimmed ? 'rgba(0, 255, 255, 0.6)' : '#00FFFF'
+    let color = isDimmed ? COLOR_SELECTED_POINT_DIMMED : COLOR_SELECTED_POINT
     state.selectedPoints.forEach((p) => {
         if (!p) return
         drawPoint(p, 6, color)
@@ -67,9 +76,9 @@ export const drawSelectionBox = (p1, p2) => {
     let y = Math.min(p1.y, p2.y)
     let w = Math.abs(p2.x - p1.x)
     let h = Math.abs(p2.y - p1.y)
-    state._ctx.fillStyle = 'rgba(0, 255, 255, 0.15)'
+    state._ctx.fillStyle = COLOR_SELECTION_BOX_FILL
     state._ctx.fillRect(x, y, w, h)
-    state._ctx.strokeStyle = '#00FFFF'
+    state._ctx.strokeStyle = COLOR_SELECTION_BOX_STROKE
     state._ctx.setLineDash([4, 4])
     state._ctx.strokeRect(x, y, w, h)
     state._ctx.setLineDash([])
@@ -108,7 +117,7 @@ export const drawReticle = () => {
         positions.push({ x: -m.x, y: -m.y })
     }
     state._ctx.setLineDash(PATTERN_AXIS)
-    state._ctx.strokeStyle = '#FFFFFF'
+    state._ctx.strokeStyle = COLOR_RETICLE
     positions.forEach((pos) => {
         let sp = modelToScreen(pos)
         if (sp.y >= 0 && sp.y <= state.board.height) {
@@ -143,7 +152,7 @@ export const drawShape = (shape, isActive) => {
     if (!shape || !shape.triangles || shape.triangles.length === 0) return
     let lineColor = isActive ? COLOR_LINES : COLOR_LINES_INACTIVE
     let linePattern = isActive ? PATTERN_LINES : PATTERN_LINES_INACTIVE
-    let pointColor = isActive ? '#FFFF00' : POINT_COLOR_INACTIVE
+    let pointColor = isActive ? POINT_COLOR_ACTIVE : POINT_COLOR_INACTIVE
     shape.triangles.forEach((t) => {
         let fill = isActive ? (t.fill !== undefined ? t.fill : COLOR_TRIANGLE_FILL_ACTIVE) : undefined
         drawTriangle(t.p1, t.p2, t.p3, linePattern, lineColor, fill)
@@ -194,7 +203,7 @@ export const drawGrid = () => {
     const step = baseStep * state.ctx.zoomLevel
     if (step <= 0) return
     state._ctx.setLineDash([])
-    state._ctx.strokeStyle = '#333333'
+    state._ctx.strokeStyle = COLOR_GRID
     state._ctx.beginPath()
     let originScreenX = state.ctx.center.x - state.ctx.viewCenter.x * state.ctx.zoomLevel
     let originScreenY = state.ctx.center.y + state.ctx.viewCenter.y * state.ctx.zoomLevel

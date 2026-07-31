@@ -2,6 +2,7 @@
 
 import { state, initDomRefs } from './state.js'
 import { drawBoard } from './draw.js'
+import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton, updateSelectionModeButton,
     updateColorButtonState,
@@ -45,7 +46,7 @@ state.board.style.cursor = 'none'
 state.ctx.center.x = state.board.width / 2
 state.ctx.center.y = state.board.height / 2
 state._ctx = state.board.getContext('2d')
-state._ctx.fillStyle = '#000000'
+state._ctx.fillStyle = CANVAS_BACKGROUND
 state._ctx.fillRect(0, 0, state.board.width, state.board.height)
 
 // ===== Restore localStorage + wire UI controls =====

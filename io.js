@@ -23,6 +23,13 @@ export const shapeToMesh = (shape) => {
         return { pointList, tris }
     }
     shape.triangles.forEach(t => {
+        // Anti-leak symétrique à resolveTrisToTriangles (cf. DESIGN §4.4) :
+        // un triangle partiel ne franchit pas non plus la frontière io
+        // côté serialize. Sans ça, un triangle en cours de dessin occupe
+        // des slots vides dans localStorage (pollution + faux espoirs
+        // d'inspection via DevTools), même si sa matérialisation au load
+        // est bloquée par le filtre jumeau. Defense in depth.
+        if (!t.p1 || !t.p2 || !t.p3) return
         const indices = { p1: undefined, p2: undefined, p3: undefined }
         const pidArray = ['p1', 'p2', 'p3']
         pidArray.forEach(pid => {
@@ -73,12 +80,20 @@ const resolveTrisToTriangles = (trisArray, pts) => {
     const ts = []
     if (!Array.isArray(trisArray)) return ts
     trisArray.forEach(t => {
+        // Anti-leak restart : un triangle partiel (sans p3, ou sans l'un des
+        // p1/p2/p3) ne doit pas traverser la frontière io. Sinon, après
+        // reload, sa p1-p2 attend un clic pour compléter via la branche
+        // addPoint 'else if (triangle.p3 === undefined) triangle.p3 = point',
+        // qui bypasse entièrement le recalcul de state.nearestLine — la
+        // première arête devient donc le segment p1-p2 laissé en plan avant
+        // restart, perçu comme « le dernier segment utilisé avant redémarrage »
+        // (cf. DESIGN.md §4.4 : règle anti-leak triangles partiels).
         const nt = {}
         if (t.p1 !== undefined && pts[t.p1]) nt.p1 = pts[t.p1]
         if (t.p2 !== undefined && pts[t.p2]) nt.p2 = pts[t.p2]
         if (t.p3 !== undefined && pts[t.p3]) nt.p3 = pts[t.p3]
         if (typeof t.fill === 'string' && t.fill.length > 0) nt.fill = t.fill
-        ts.push(nt)
+        if (nt.p1 && nt.p2 && nt.p3) ts.push(nt)
     })
     return ts
 }
