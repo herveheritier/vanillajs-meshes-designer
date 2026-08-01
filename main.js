@@ -1,7 +1,7 @@
 // Rationale : voir DESIGN.md §4.1
 
 import { state, initDomRefs } from './state.js'
-import { drawBoard } from './draw.js'
+import { drawBoard, requestDraw } from './draw.js'
 import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
@@ -24,8 +24,9 @@ import {
     wireBoardWheel, toggleGrid, toggleReticle, resetZoom,
     startPan, updatePan, endPan,
     restoreEditingMode, restoreSelectionMode, wireSelectionModeControl,
+    restoreFpsVisible, wireFpsControl, toggleFps, updateFpsButton,
+    wireGridControl,
 } from './viewport.js'
-import { wireGridControl } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
 import { showHelp, hideHelp, wireHelpModal, showResetModal, hideResetModal, wireResetModal } from './modals.js'
 import {
@@ -53,18 +54,20 @@ state._ctx.fillRect(0, 0, state.board.width, state.board.height)
 // ===== Restore localStorage + wire UI controls =====
 
 restoreReticleMode()
-restoreEditingMode()
-restoreSelectionMode()
-restoreConsoleVisible()
+    restoreEditingMode()
+    restoreSelectionMode()
+    restoreConsoleVisible()
+    restoreFpsVisible()
 
 // ===== Branchement des listeners "locaux" =====
 
 wireGridControl()
-wireReticleControl()
-wireSelectionModeControl()
-wireConsoleToggle()
-wireConsoleOverlay()
-wireClearConsole()
+    wireReticleControl()
+    wireSelectionModeControl()
+    wireConsoleToggle()
+    wireFpsControl()
+    wireConsoleOverlay()
+    wireClearConsole()
 wireHelpModal()
 wireResetModal(() => resetAll())
 wireDeleteShapeModal()
@@ -185,7 +188,7 @@ document.addEventListener('mouseup', (e) => {
             const dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
             if (dist < 5) {
                 processMouseUpSelection(e)
-                drawBoard()
+                requestDraw()
                 updateSelectionHud()
             }
         }
@@ -250,6 +253,11 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault()
         hideTriangleColorPanel()
     }
+    const inFpsBtn = t && typeof t.closest === 'function' && t.closest('#fps')
+    if (!typing && !inFpsBtn && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyF') {
+        e.preventDefault()
+        toggleFps()
+    }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z')) {
         e.preventDefault()
         redo()
@@ -274,6 +282,7 @@ applyConsoleFrame()
 updateConsoleButton()
 updateAccessibilityLabels()
 updateSceneStatus()
+updateFpsButton()
 
 // ===== Boot =====
 

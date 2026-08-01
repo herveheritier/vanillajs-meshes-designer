@@ -802,6 +802,66 @@
                 border-color: rgb(55, 194, 0);
             }
 
+            /* ========= HUD bas-gauche : compteur redraws/s / offscreen ========= */
+            /* Jumeau du #zoomDisplay, juste au-dessus. Meme langage
+               visuel (pill monospace sur fond sombre transparent + blur
+               + border + backdrop). Affiche "X redraws/s (Y offscreen)"
+               ou X = nombre d'appels a drawBoard() et Y = nombre de
+               re-renders offscreen (les fois ou sceneDirty etait
+               true a l'entree), cf. DESIGN.md §2.4 et les compteurs
+               statsRedraws / statsOffscreen dans draw.js.
+
+               PAS DE COULEUR CONDITIONNELLE : data-perf="good" reste
+               statique dans le markup (couleur verte permanente). Pas
+               de seuil dynamique "warn" -- la metrique est volontaire-
+               ment neutre et laisse l'utilisateur juger de la charge.
+               La regle CSS [data-perf="warn"] reste dormante ci-
+               dessous -- reservee pour evolution future si on decide
+               d'ajouter un seuil (cf. §2.4).
+
+               Cache par defaut (hidden), revele par le bouton toolbar
+               #fps ou via localStorage si la session precedente
+               l'avait active. Pas de pointer-events (lecture pure). */
+            #fpsDisplay {
+                position: absolute;
+                left: 12px;
+                bottom: 86px;
+                color: rgb(220, 220, 220);
+                font-family: monospace;
+                font-size: 12px;
+                line-height: 1;
+                pointer-events: none;
+                background-color: rgba(15, 15, 15, 0.85);
+                padding: 5px 10px;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 4px;
+                z-index: 50;
+                white-space: nowrap;
+                backdrop-filter: blur(4px);
+                transition: color 0.15s, border-color 0.15s;
+            }
+            #fpsDisplay[data-perf="good"] {
+                color: rgb(55, 194, 0);
+                border-color: rgba(55, 194, 0, 0.35);
+            }
+            #fpsDisplay[data-perf="warn"] {
+                color: rgb(255, 210, 80);
+                border-color: rgba(255, 210, 80, 0.45);
+            }
+            /* Bouton toolbar FPS : integrer dans la classe .toolbar
+               button partagee (meme hauteur 30px, monospace, border
+               subtil). Classe .fps-active quand le HUD est visible
+               (meme langage que .grid-active / .reticle-active : le
+               bouton prend le vert accent). Pas de text-label inline
+               (coherent avec les autres boutons toolbar de meme
+               fonction "toggle overlay") ; le verbe reste dans le
+               title (tooltip au survol). */
+            #toolbar #fps.fps-active {
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border-color: rgba(55, 194, 0, 0.45);
+            }
+
             /* ========= HUD bas-gauche : indicateur de zoom ========= */
             /* Une petite pilule affichee juste au-dessus de #coords.
                Affiche le niveau de zoom courant (ex. "1.2x") pour que
@@ -1096,6 +1156,15 @@
                      ("1" ou "2") ; vide quand off. Raccourci clavier R
                      pour cycler. -->
                 <button id="reticle" title="Réticule (R) : off / simple / projection symétrique"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.5"/><line x1="8" y1="1" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="15"/><line x1="1" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg><span id="reticleText"></span></button>
+                <!-- Compteur FPS : toggle on/off. Jumeau pattern des
+                     boutons grid/reticle (meme groupe Canvas ops, meme
+                     langage visuel d'etat actif : vert accent quand
+                     le HUD est visible). Icone mini-graphique 3 barres
+                     d'amplitude croissante (= performance over time) ;
+                     pas de text-label inline (coherent avec les
+                     voisins). Le raccourci F est mentionne dans le
+                     title pour la discoverabilite. -->
+                <button id="fps" title="Afficher / masquer le compteur FPS (F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="13" x2="3" y2="9"/><line x1="7" y1="13" x2="7" y2="5"/><line x1="11" y1="13" x2="11" y2="11"/><line x1="2" y1="14" x2="14" y2="14"/></svg></button>
                 <!-- Mode de selection : cycle vertex / segment / triangle.
                      Mode "vertex" = comportement actuel (clic sur un
                      sommet). Mode "segment" = clic sur un edge
@@ -1284,6 +1353,16 @@
              Le tooltip distingue les deux paires pour eviter la
              confusion entre position curseur et position point
              survole. -->
+        <!-- Compteur redraws/s (+ offscreen/s). Toggleable via le
+             bouton toolbar #fps et/ou le raccourci F. Cache par
+             defaut (attribut hidden ; restoreFpsVisible dans
+             viewport.js peut le laisser visible au boot via
+             localStorage). Le contenu textuel est injecte par
+             updateFpsDisplay depuis la boucle d'echantillonnage
+             (consumeDrawStats toutes les 250 ms, cf. DESIGN.md
+             §2.4). data-perf="good" reste statique (couleur verte
+             permanente) -- pas de seuil dynamique. -->
+        <div id="fpsDisplay" data-perf="good" hidden></div>
         <div id="zoomDisplay" title="Niveau de zoom, position du viewCenter en coords modèle, rotation cumulée de la scène (AltGr + molette)">1.0x</div>
         <div id="coords" title="Position du curseur (coords modèle, Y inversé) et du point le plus proche sous le curseur" aria-live="polite"></div>
         <div id="sceneStatus" title="État de sauvegarde de la scène" aria-live="polite">sauvegardée</div>

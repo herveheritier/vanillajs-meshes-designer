@@ -5,8 +5,9 @@ import {
     RETICLE_MODE_STORAGE_KEY, SELECTION_MODE_STORAGE_KEY, SELECTION_MODES,
     EDITING_MODE_STORAGE_KEY, EDITING_MODES,
     CONSOLE_VISIBLE_STORAGE_KEY,
+    FPS_VISIBLE_STORAGE_KEY,
 } from './constants.js'
-import { drawBoard } from './draw.js'
+import { drawBoard, requestDraw, consumeDrawStats } from './draw.js'
 import { screenToModel } from './geometry.js'
 import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState } from './hud.js'
 import { persistState, snapZoom } from './io.js'
@@ -32,6 +33,121 @@ export const updateZoomDisplay = () => {
     div.textContent = text
 }
 
+// ===== FPS HUD =====
+//
+// Rationale : voir DESIGN.md §2.4 — ce HUD mesure la CHARGE DE RENDU
+// EFFECTIVE (appels a drawBoard et re-renders offscreen), pas la
+// frequence rAF/vsync du navigateur. Le but est de valider que le
+// canvas n'est repeint que quand c'est utile : en idle, redraws/s
+// doit tomber a 0 ; en drag/zoom, doit plafonner au vsync (preuve du
+// rAF coalescing) ; offscreen/s doit rester << redraws en pratique
+// (preuve de l'efficacite du cache de scene). Un compteur base sur
+// requestAnimationFrame mentirait sur l'idle (rAF ticks toujours a
+// 60 Hz meme quand drawBoard = 0).
+//
+// Le polling 250 ms (= 4 Hz) sert uniquement a eviter le thrash
+// textContent du DOM — les valeurs reelles remontent depuis draw.js
+// par consumeDrawStats() (cf. §2.4). Pas de condition sur
+// state.fpsVisible dans drawBoard (cout microscopique : deux
+// increments par repaint). Le polling ne tourne que quand le HUD est
+// actif, donc cout total en idle = 0 (independamment des compteurs
+// toujours presents dans draw.js).
+//
+// PAS DE SEUIL data-perf : la metrique est volontairement neutre.
+// L'attribut data-perf="good" reste statique dans le markup HTML
+// (couleur verte permanente) ; pas de bascule "warn" auto qui
+// pourrait mentir sur un cas limite. La regle CSS [data-perf="warn"]
+// reste dormante dans main.html — reservee pour evolution future si
+// on decide d'ajouter un seuil.
+
+// ===== FPS display =====
+
+let fpsLastDisplayUpdate = 0
+let fpsRafId = 0
+
+const FPS_DISPLAY_INTERVAL_MS = 250
+
+export const updateFpsDisplay = (redraws, offscreen) => {
+    const div = document.querySelector('#fpsDisplay')
+    if (!div) return
+    div.textContent = `${Math.round(redraws)} redraws/s (${Math.round(offscreen)} offscreen)`
+}
+
+export const updateFpsButton = () => {
+    const btn = document.querySelector('#fps')
+    const display = document.querySelector('#fpsDisplay')
+    if (btn) btn.classList.toggle('fps-active', !!state.fpsVisible)
+    if (display) display.hidden = !state.fpsVisible
+}
+
+const fpsSampleLoop = (now) => {
+    if (!state.fpsVisible) {
+        // Sortie silencieuse : stopFpsMonitor annule deja le rAF
+        // chain quand state.fpsVisible passe a false, ce guard n'est
+        // qu'une defense en profondeur.
+        return
+    }
+    if (now - fpsLastDisplayUpdate >= FPS_DISPLAY_INTERVAL_MS) {
+        const elapsed = now - fpsLastDisplayUpdate
+        const stats = consumeDrawStats()
+        const factor = elapsed > 0 ? 1000 / elapsed : 0
+        updateFpsDisplay(stats.redraws * factor, stats.offscreen * factor)
+        fpsLastDisplayUpdate = now
+    }
+    fpsRafId = requestAnimationFrame(fpsSampleLoop)
+}
+
+const startFpsMonitor = () => {
+    if (fpsRafId) return
+    fpsLastDisplayUpdate = 0
+    // Drain les compteurs accumules pendant l'idle (ou pendant que
+    // le HUD etait OFF) : evite qu'un long gap apparaisse comme un
+    // burst de redraws au premier intervalle. Pas de sauvegarde de
+    // l'etat pre-drain — interessant uniquement si on dive dans
+    // stats-detail (pas prevu).
+    consumeDrawStats()
+    fpsRafId = requestAnimationFrame(fpsSampleLoop)
+}
+
+const stopFpsMonitor = () => {
+    if (!fpsRafId) return
+    cancelAnimationFrame(fpsRafId)
+    fpsRafId = 0
+    fpsLastDisplayUpdate = 0
+    // Drain final pour eviter qu'au prochain ON les compteurs
+    // accumules (long gap = un grand nombre) apparaissent comme
+    // donnees fraiches dans le premier intervalle.
+    consumeDrawStats()
+    const div = document.querySelector('#fpsDisplay')
+    if (div) div.textContent = '0 redraws/s (0 offscreen)'
+}
+
+export const toggleFps = () => {
+    state.fpsVisible = !state.fpsVisible
+    updateFpsButton()
+    if (state.fpsVisible) startFpsMonitor()
+    else stopFpsMonitor()
+    try { localStorage.setItem(FPS_VISIBLE_STORAGE_KEY, state.fpsVisible ? '1' : '0') } catch (e) { /* ignore */ }
+}
+
+export const restoreFpsVisible = () => {
+    if (localStorage.getItem(FPS_VISIBLE_STORAGE_KEY) === '1') {
+        state.fpsVisible = true
+        // Demarre la boucle d'echantillonnage immediatement si la
+        // session precedente avait active le HUD : evite d'attendre un
+        // toggle utilisateur pour voir l'indicateur.
+        startFpsMonitor()
+    }
+}
+
+export const wireFpsControl = () => {
+    const btn = document.querySelector('#fps')
+    if (btn) btn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        toggleFps()
+    })
+}
+
 // ===== Zoom reset (Ctrl+0) =====
 
 export const resetZoom = () => {
@@ -39,7 +155,7 @@ export const resetZoom = () => {
     state.ctx.viewCenter.x = 0
     state.ctx.viewCenter.y = 0
     state.ctx.rotationTracking = 0
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateZoomDisplay()
     persistState()
@@ -50,7 +166,7 @@ export const resetZoom = () => {
 export const toggleGrid = () => {
     state.activeGrid = !state.activeGrid
     updateGridButtonText()
-    drawBoard()
+    requestDraw()
     persistState()
 }
 
@@ -72,7 +188,7 @@ export const wireGridControl = () => {
             state.GRID_STEP = Math.max(MIN_GRID_STEP, state.GRID_STEP - 4)
         }
         updateGridButtonText()
-        drawBoard()
+        requestDraw()
         persistState()
     }, { passive: false })
 
@@ -82,7 +198,7 @@ export const wireGridControl = () => {
             if (!state.activeGrid) return
             state.GRID_STEP = DEFAULT_GRID_STEP
             updateGridButtonText()
-            drawBoard()
+            requestDraw()
             persistState()
         }
     })
@@ -97,7 +213,10 @@ export const wireGridControl = () => {
 export const toggleReticle = () => {
     state.reticleMode = (state.reticleMode + 1) % 3
     updateReticleButton()
-    drawBoard()
+    // Note : le reticule fait partie du calque transitoire (cf.
+    // draw.js renderTransient) et est repeint a chaque drawBoard ;
+    // un requestDraw suffit.
+    requestDraw()
     persistState()
 }
 
@@ -146,7 +265,7 @@ export const toggleSelectionMode = () => {
     updateSelectionHud()
     updateSelectionModeButton()
     updateColorButtonState()
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     try { localStorage.setItem(SELECTION_MODE_STORAGE_KEY, next) } catch (e) { /* ignore */ }
     log(`Selection mode -> ${next}`)
@@ -226,7 +345,7 @@ export const zoomCenteredOnCursor = (cursorScreen, deltaY) => {
     state.ctx.viewCenter.x += (cursorScreen.x - state.ctx.center.x) * (1 / oldZoom - 1 / newZoom)
     state.ctx.viewCenter.y -= (cursorScreen.y - state.ctx.center.y) * (1 / oldZoom - 1 / newZoom)
     state.ctx.zoomLevel = newZoom
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateZoomDisplay()
     persistState()
@@ -252,7 +371,7 @@ export const updatePan = (mouseScreen) => {
     const dy = mouseScreen.y - state.panStartMouse.y
     state.ctx.viewCenter.x = state.panStartViewCenter.x - dx / state.ctx.zoomLevel
     state.ctx.viewCenter.y = state.panStartViewCenter.y + dy / state.ctx.zoomLevel
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateZoomDisplay()
 }

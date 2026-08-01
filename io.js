@@ -8,7 +8,7 @@ import {
     IMPORT_MODE_STORAGE_KEY, TAU,
     SCENE_FORMAT, SCENE_FORMAT_VERSION,
 } from './constants.js'
-import { drawBoard } from './draw.js'
+import { drawBoard, requestDraw } from './draw.js'
 import { updateGridButtonText, updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateSceneStatus } from './hud.js'
 import { log } from './log.js'
 import { isSceneEmpty, adjacentPoints } from './geometry.js'
@@ -634,7 +634,7 @@ export const applyImport = (parsed, loaded, mode) => {
         persistState()
         updateGridButtonText()
         updateShapeHud()
-        drawBoard()
+        requestDraw()
         const totalTris = state.shapes.reduce((acc, s) => acc + (s && s.tris ? s.tris.length : 0), 0)
         log('Import merge OK: +' + loaded.length + ' forme' + (loaded.length > 1 ? 's' : '') + ', ' + state.shapes.length + ' au total, ' + totalTris + ' triangles')
         return true
@@ -656,7 +656,7 @@ export const applyImport = (parsed, loaded, mode) => {
     persistState()
     updateGridButtonText()
     updateShapeHud()
-    drawBoard()
+    requestDraw()
     const totalTris = state.shapes.reduce((acc, s) => acc + (s && s.tris ? s.tris.length : 0), 0)
     log('Import OK: ' + state.shapes.length + ' forme' + (state.shapes.length > 1 ? 's' : '') + ', ' + totalTris + ' triangle' + (totalTris > 1 ? 's' : ''))
     return true
@@ -701,7 +701,7 @@ export const resetAll = () => {
     state.ctx.viewCenter.y = 0
     state.ctx.rotationTracking = 0
     persistState()
-    drawBoard()
+    requestDraw()
     updateZoomDisplay()
     updateShapeHud()
     updateUndoRedoHud()

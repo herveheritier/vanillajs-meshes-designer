@@ -3,7 +3,7 @@
 import { state } from './state.js'
 import { activeTriangles, adjacentPoints } from './geometry.js'
 import { ACTION_NONE } from './constants.js'
-import { drawBoard } from './draw.js'
+import { drawBoard, requestDraw } from './draw.js'
 import { updateSelectionHud } from './hud.js'
 import { saveState } from './history.js'
 import { persistState } from './io.js'
@@ -263,7 +263,7 @@ export const mergeSelectedPoints = () => {
     state.eachShapeRotateTimer = undefined
     state.isEachShapeRotating = false
     state.moveAllActive = false
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     persistState()

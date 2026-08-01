@@ -2,7 +2,7 @@
 
 import { state } from './state.js'
 import { ACTION_NONE } from './constants.js'
-import { drawBoard } from './draw.js'
+import { drawBoard, requestDraw } from './draw.js'
 import { updateShapeHud, updateSelectionHud, updateColorButtonState } from './hud.js'
 import { saveState } from './history.js'
 import { persistState } from './io.js'
@@ -28,7 +28,7 @@ export const goToShape = (newIndex) => {
     state.selectionBoxStart = undefined
     state.selectionBoxCurrent = undefined
     updateColorButtonState()
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateShapeHud()
     updateSelectionHud()
@@ -79,7 +79,7 @@ export const performDeleteShape = () => {
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
     updateColorButtonState()
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateShapeHud()
     updateSelectionHud()
