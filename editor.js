@@ -769,6 +769,72 @@ export const processRightClickSelection = (e) => {
 // devient {shapeIndex, pointIndex, triangleIndex, slotId, startX, startY}
 // (Q2c supprime selectedPointRef). buildGrabbedGroupFromSelection
 // produit cette nouvelle structure (drag d'une selection engageante).
+// §3.6.1 sparse-replace, mode-aware (Q1c) — la detection est faite
+// sur la topologie canonique (pointList + tris) et retourne un
+// predicat O(N) qui permet la parite click/drag WYSIWYG sur les 3
+// modes (vertex / segment / triangle).
+// - vertex : 0 entree OU tous les indices selectedPoints au meme
+//   coord (cluster, tol §3.2 0.01).
+// - segment : 0 entree OU <= 1 edge couvert par la selection
+//   (edges = paires consecutives (p1,p2)/(p2,p3)/(p3,p1) d'un
+//   triangle avec ses 2 endpoints dans selectedPoints et distincts).
+// - triangle : 0 entree OU <= 1 triangle dont les 3 slots sont
+//   dans selectedPoints.
+// Anti-flicker gere separement plus bas (le check
+// !sparseCursorGrabIndices.every(idx => state.selectedPoints.includes(idx))).
+// Returns early des que covered > 1 (memes bornes O(N) que l'ancien
+// isSingleCluster, pas de degradation mesurable).
+const isSelectionSparse = () => {
+    const sp = state.selectedPoints
+    if (!Array.isArray(sp) || sp.length === 0) return true
+    const shape = activeShape()
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    const tris = Array.isArray(shape.tris) ? shape.tris : []
+    const mode = state.selectionMode
+    if (mode === 'vertex') {
+        return sp.every((idx, i, arr) =>
+            i === 0
+            || (pointList[idx] && pointList[arr[0]] && adjacentPoints(pointList[idx], pointList[arr[0]], 0.01))
+        )
+    }
+    if (mode === 'segment') {
+        // Une edge partagee entre plusieurs triangles (ex. fan autour
+        // d'un axe) reste un seul segment logique : dedup par paire
+        // non ordonnee (min-max) sinon le compteur gonfle a N pour
+        // une edge presente dans N tris et le predicat devient faux
+        // positif en 'not sparse' alors que l'utilisateur n'a bien
+        // qu'1 entite engagee. Regression report : clic sur
+        // l'edge AB dans T1={p1:0,p2:1,p3:2} / T2={p1:0,p2:1,p3:3}
+        // => selectedPoints=[0,1], cover=2 (avant) au lieu de 1.
+        const set = new Set(sp)
+        const coveredEdges = new Set()
+        for (const t of tris) {
+            if (t.p1 === undefined || t.p2 === undefined || t.p3 === undefined) continue
+            const pairs = [[t.p1, t.p2], [t.p2, t.p3], [t.p3, t.p1]]
+            for (const [a, b] of pairs) {
+                if (a !== b && set.has(a) && set.has(b)) {
+                    const key = a < b ? `${a}-${b}` : `${b}-${a}`
+                    coveredEdges.add(key)
+                    if (coveredEdges.size > 1) return false
+                }
+            }
+        }
+        return true
+    }
+    if (mode === 'triangle') {
+        let covered = 0
+        for (const t of tris) {
+            if (t.p1 === undefined || t.p2 === undefined || t.p3 === undefined) continue
+            if (sp.includes(t.p1) && sp.includes(t.p2) && sp.includes(t.p3)) {
+                covered++
+                if (covered > 1) return false
+            }
+        }
+        return true
+    }
+    return false
+}
+
 export const beginGrabbing = (e) => {
     const mouseScreen = {
         x: e.x - state.board.getBoundingClientRect().x,
@@ -820,19 +886,14 @@ export const beginGrabbing = (e) => {
         return false
     }
 
-    // §3.6.1 sparse-replace WYSIWYG (Q1c) : detection de cluster
-    // physique SUR les coords resolues via pointList[idx]. On suit la
-    // meme regle : 0 entree OU toutes les refs au meme coord (tol
-    // §3.2 0.01) = 1 cluster logique. selectedPoints est des indices ;
-    // on doit faire un lookup avant la comparaison.
+    // §3.6.1 sparse-replace WYSIWYG, mode-aware : predicate
+    // isSelectionSparse() juste au-dessus couvre les 3 modes
+    // (vertex cluster / segment edge / triangle complet) pour la
+    // parite click/drag. Maintient l'invariant I4 (selectedPoints
+    // ⊆ [0, pointList.length)) : la detection n'insere aucun index.
     let sparseCursorGrabIndices = []
     const pointList = activeShape().pointList || []
-    const isSingleCluster = state.selectedPoints.length === 0
-        || state.selectedPoints.every(
-            (idx, i, arr) => i === 0
-                || (pointList[idx] && pointList[arr[0]] && adjacentPoints(pointList[idx], pointList[arr[0]], 0.01))
-        )
-    if (isSingleCluster) {
+    if (isSelectionSparse()) {
         const sparseTargetModel = screenToModel(mouseScreen)
         if (state.selectionMode === 'triangle') {
             const nt = findNearestTriangle(sparseTargetModel)
