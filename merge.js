@@ -102,8 +102,14 @@ const findMergeConflicts = () => {
     const tris = activeTriangles()
     const conflicting = []
     tris.forEach((t, i) => {
-        // On ignore les triangles partiels (au moins un slot undefined)
-        // qui ne peuvent pas degenerer en fusion.
+        // On ignore les triangles partiels (au moins p1 ou p2 undefined,
+        // conforme Q1b). Un partiel n'a que 2 slots definis max — apres
+        // fusion, les 2 peuvent collapser en survivor sans degenerer
+        // puisqu'il manque deja p3 (= segment partiel = pas de surface).
+        // C'est un changement de comportement vs l'ancien code (qui
+        // flaggait tous les tris), mais il est safe : invariant I5
+        // garantit qu'un partiel == 1 seul tri ne devient jamais une
+        // surface degeneree par fusion.
         if (!Number.isInteger(t.p1) || !Number.isInteger(t.p2)) return
         if (countSelectedSlots(t) >= 2) conflicting.push(i + 1)
     })
@@ -171,6 +177,13 @@ export const mergeSelectedPoints = () => {
     )
 
     // Centroid moyen sur les positions uniques (1 par cluster dedup).
+    // Note : on autorise deliberement le cas single-cluster (= toutes les
+    // selections au meme coord, ex: ctrl-click ou lasso resserré). Dans
+    // ce cas le centroid est geometriquement inchange, mais le
+    // compactage immediat (Q2a) elimine les entrees pointList
+    // redondantes pour ramener l'etat a 1 entree canonique. C'est le
+    // comportement de cleanup prevu par Q2a (le user pouvait avoir
+    // plusieurs refs par erreur sur un meme sommet ; la fusion dedup).
     const clusters = clusterSelected(selected)
     const centroid = computeMergeCentroid(clusters)
 

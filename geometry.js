@@ -135,6 +135,9 @@ export const getStackTriangleRefs = (p, tolerance = 0.01) => {
 // Phase 2, Q1c : state.selectedPoints est un array d'indices dans le
 // pointList de l'active shape. La comparaison se fait via la ref du
 // point en pointList[idx] ; pas de comparaison directe indice-vs-coord.
+// La gate Number.isInteger est coherente avec le reste du codebase
+// (compactPointList, deleteSelected*, findMergeConflicts) — robuste
+// contre une entree corrompue (string, NaN, null).
 export const isPointSelected = (p) => {
     if (!p) return false
     const s = _activeShape()
@@ -142,7 +145,7 @@ export const isPointSelected = (p) => {
     const pointList = s.pointList
     for (let i = 0; i < state.selectedPoints.length; i++) {
         const idx = state.selectedPoints[i]
-        if (typeof idx !== 'number') continue
+        if (!Number.isInteger(idx)) continue
         const pt = pointList[idx]
         if (pt && adjacentPoints(p, pt, 0.01)) return true
     }
