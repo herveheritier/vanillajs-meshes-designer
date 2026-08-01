@@ -151,6 +151,27 @@ let offCtx = null
 let sceneDirty = true
 let frameScheduled = false
 
+// Compteurs de charge de rendu effectif (cf. DESIGN.md §2.4). Pas de
+// condition sur state.fpsVisible : l'incrementation est microscopique
+// (deux entiers) etape partagee par tous les paths d'appel a
+// drawBoard, visible ou pas. Le sampling (consumeDrawStats ci-dessous)
+// n'est invoque que quand le HUD est actif, donc cout polling-only en
+// idle = 0 (independamment des deux compteurs qui restent toujours
+// presents dans draw.js).
+let statsRedraws = 0
+let statsOffscreen = 0
+
+// Consomme les compteurs et les remet a zero : le sampling HUD lit
+// toujours via ce helper (snapshot atomique + reset), jamais en
+// lecture directe, pour eviter une race entre incrementation dans
+// drawBoard et lecture dans la boucle d'echantillonnage.
+export const consumeDrawStats = () => {
+    const res = { redraws: statsRedraws, offscreen: statsOffscreen }
+    statsRedraws = 0
+    statsOffscreen = 0
+    return res
+}
+
 export const invalidateScene = () => {
     sceneDirty = true
 }
@@ -222,9 +243,15 @@ const renderTransient = () => {
 }
 
 export const drawBoard = () => {
+    // Increments inconditionnels des compteurs de charge de rendu
+    // effectif (cf. DESIGN.md §2.4). Cout negligeable (deux `++`) ;
+    // ne pas conditionner sur state.fpsVisible pour eviter une
+    // branche dans le chemin chaud de rendu.
+    statsRedraws++
     ensureOffscreen()
     syncOffscreenSize()
     if (sceneDirty) {
+        statsOffscreen++
         renderSceneToOffscreen()
         sceneDirty = false
     }

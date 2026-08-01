@@ -802,15 +802,23 @@
                 border-color: rgb(55, 194, 0);
             }
 
-            /* ========= HUD bas-gauche : compteur FPS / ms-per-frame ========= */
+            /* ========= HUD bas-gauche : compteur redraws/s / offscreen ========= */
             /* Jumeau du #zoomDisplay, juste au-dessus. Meme langage
                visuel (pill monospace sur fond sombre transparent + blur
-               + border + backdrop). Affiche "60 fps · 16.7 ms" par
-               defaut ; le ms-per-frame derive de la fps (1000/fps).
-               Couleur conditionnelle via data-perf : >50fps en vert
-               accent (meme teinte que la selection edition) ; <=50fps
-               en ambre (meme teinte que #sceneStatus[data-dirty=true] =
-               "modifiée") pour signaler la regression de fluidite.
+               + border + backdrop). Affiche "X redraws/s (Y offscreen)"
+               ou X = nombre d'appels a drawBoard() et Y = nombre de
+               re-renders offscreen (les fois ou sceneDirty etait
+               true a l'entree), cf. DESIGN.md §2.4 et les compteurs
+               statsRedraws / statsOffscreen dans draw.js.
+
+               PAS DE COULEUR CONDITIONNELLE : data-perf="good" reste
+               statique dans le markup (couleur verte permanente). Pas
+               de seuil dynamique "warn" -- la metrique est volontaire-
+               ment neutre et laisse l'utilisateur juger de la charge.
+               La regle CSS [data-perf="warn"] reste dormante ci-
+               dessous -- reservee pour evolution future si on decide
+               d'ajouter un seuil (cf. §2.4).
+
                Cache par defaut (hidden), revele par le bouton toolbar
                #fps ou via localStorage si la session precedente
                l'avait active. Pas de pointer-events (lecture pure). */
@@ -1345,14 +1353,15 @@
              Le tooltip distingue les deux paires pour eviter la
              confusion entre position curseur et position point
              survole. -->
-        <!-- Compteur FPS / ms-per-frame. Toggleable via le bouton
-             toolbar #fps et/ou le raccourci F. Cache par defaut
-             (attribut hidden ; restoreFpsVisible dans viewport.js
-             peut le laisser visible au boot via localStorage). Le
-             contenu textuel est injecte par updateFpsDisplay depuis
-             la boucle rAF d'echantillonnage (compte frames sur 1s
-             glissant, rafraichi toutes les 250ms). data-perf
-             conditionne la couleur (vert >50fps / ambre <=50fps). -->
+        <!-- Compteur redraws/s (+ offscreen/s). Toggleable via le
+             bouton toolbar #fps et/ou le raccourci F. Cache par
+             defaut (attribut hidden ; restoreFpsVisible dans
+             viewport.js peut le laisser visible au boot via
+             localStorage). Le contenu textuel est injecte par
+             updateFpsDisplay depuis la boucle d'echantillonnage
+             (consumeDrawStats toutes les 250 ms, cf. DESIGN.md
+             §2.4). data-perf="good" reste statique (couleur verte
+             permanente) -- pas de seuil dynamique. -->
         <div id="fpsDisplay" data-perf="good" hidden></div>
         <div id="zoomDisplay" title="Niveau de zoom, position du viewCenter en coords modèle, rotation cumulée de la scène (AltGr + molette)">1.0x</div>
         <div id="coords" title="Position du curseur (coords modèle, Y inversé) et du point le plus proche sous le curseur" aria-live="polite"></div>

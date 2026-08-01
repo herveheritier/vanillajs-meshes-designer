@@ -185,6 +185,89 @@ réinitialisé.
 
 ---
 
+### §2.4 Pipeline de rendu offscreen et HUD de stats (branch `feature/performance`)
+
+Le rendu canvas suit un pipeline **deux-tiers** introduit sur la branch
+`feature/performance` pour eviter les repeints inutiles sur input
+subtil (mousemove sur zone vide, mouseup sans mutation reelle, etc.) :
+
+1. **SCENE STABLE** (depend du modele : `state.shapes`,
+   `state.ctx.zoomLevel`/`viewCenter`, `state.selectedPoints`,
+   `state.selectedTriangles`, `state.GRID_STEP`, `state.activeGrid`) :
+   peinte integralement dans un canvas **offscreen** puis blitee sur
+   le visible via `state._ctx.drawImage(offscreen, 0, 0)` (= 1 memcpy
+   rapide meme pour un grand canvas). Cf. `draw.js` `renderSceneToOffscreen`.
+2. **SURFACE TRANSITOIRE** (depend du runtime : reticule +
+   selectionBox, cf. `renderTransient` dans `draw.js`) : repeinte a
+   chaque frame SUR le visible, par-dessus le blit -- peut bouger
+   entre deux frames meme si la scene stable est inchangee.
+
+Deux mecanismes cooperent pour minimiser les repeints :
+
+- **`requestDraw` coalescing** (cf. `draw.js` `requestDraw`) : le flag
+  `frameScheduled` empeche les rafales d'appels (60+ mousemove/s sur
+  un drag continu) d'enclencher 60+ callbacks rAF. Au plus 1
+  `drawBoard()` par frame, peu importe le nombre de mutations
+  sur la frame.
+- **`sceneDirty` cache hit** (cf. `draw.js` `drawBoard`) : si rien
+  n'a mute la scene stable depuis le dernier repeint offscreen,
+  `drawBoard` saute `renderSceneToOffscreen()` et ne fait que blit +
+  transient. Le flag n'est leve que par `invalidateScene()` ou
+  `requestDraw()`.
+
+**Instrumentation (HUD bas-gauche : `#fpsDisplay`)** :
+
+Pour valider *que* ces mecanismes font leur travail, la metrique
+exposee n'est PAS un compteur rAF/vsync (= 60 Hz en idle, peu importe
+le travail reel) -- ce serait factuellement faux (un idle stable
+produit 60 rAF/s mais 0 `drawBoard`, le vsync n'est pas un indicateur
+de travail). On compte directement les **appels a `drawBoard`** via
+deux compteurs module-level dans `draw.js` :
+
+- `statsRedraws` (incremente inconditionnellement en tete de
+  `drawBoard`) : nombre total de paints par seconde, toutes raisons
+  confondues (= 1 max par frame grace a `frameScheduled`). Proche du
+  vsync quand l'utilisateur drag/zoom, tombe a 0 en idle = preuve
+  que le rAF coalescing fait son travail.
+- `statsOffscreen` (incremente dans le bloc `if (sceneDirty)`) :
+  nombre de re-renders offscreen. Doit rester << `statsRedraws` en
+  pratique : un ratio proche de 1 signifierait que le cache de scene
+  ne sert a rien (= regression a investiguer).
+
+Le sampling est fait toutes les `FPS_DISPLAY_INTERVAL_MS = 250 ms`
+(= 4 Hz) par la boucle rAF dans `viewport.js` (`fpsSampleLoop`) qui
+appelle `consumeDrawStats()` (snapshot + reset des compteurs) puis
+formate le texte `"X redraws/s (Y offscreen)"` via
+`updateFpsDisplay(redraws, offscreen)`. Le polling ne tourne que
+quand `state.fpsVisible === true` -- cout total en idle = 0 meme si
+les compteurs restent toujours presents dans `draw.js` (cout
+negligeable : deux `++` par paint, pas branche conditionnelle).
+
+**Couts en idle** :
+
+- Incrementation dans `drawBoard` : deux `++` (microscopique,
+  inconditionnel).
+- Sampling HUD : ~1 appel `consumeDrawStats` toutes les 250 ms quand
+  visible ; zero sinon.
+- DOM `textContent` : 1 mutation toutes les 250 ms, jamais par
+  paint -- pas de thrash `×60/s`.
+
+**Pas de seuil `data-perf` "warn"** : la metrique est volontairement
+neutre, l'utilisateur parse lui-meme le chiffre (`X redraws/s`=
+vitesse effective de paint, `(Y offscreen)`= cout scene-cache).
+La regle CSS `#fpsDisplay[data-perf="warn"]` reste dormante dans
+`main.html` -- reservee pour evolution future si on decide d'ajouter
+un seuil (typ. warn si `offscreen/s >> redraw/s`, signal
+d'invalidation de cache excessive a investiguer). Cf. `viewport.js`
+`updateFpsDisplay` qui n'ecrit plus `data-perf` ; le markup HTML
+garde `data-perf="good"` en dur.
+
+Couts invariants : persistance `meshesDesigner.fpsVisible`, raccourci
+`F`, bouton toolbar `#fps` -- inchanges (toggle stable, seul le
+contenu textuel et la semantique evoluent).
+
+---
+
 ## §3. Modes de sélection (vertex / segment / triangle)
 
 Cycle via le bouton toolbar `#selectionMode` (cf. `SELECTION_MODES = ['vertex',

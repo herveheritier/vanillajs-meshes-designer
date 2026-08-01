@@ -7,7 +7,7 @@ import {
     CONSOLE_VISIBLE_STORAGE_KEY,
     FPS_VISIBLE_STORAGE_KEY,
 } from './constants.js'
-import { drawBoard, requestDraw } from './draw.js'
+import { drawBoard, requestDraw, consumeDrawStats } from './draw.js'
 import { screenToModel } from './geometry.js'
 import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState } from './hud.js'
 import { persistState, snapZoom } from './io.js'
@@ -34,42 +34,43 @@ export const updateZoomDisplay = () => {
 }
 
 // ===== FPS HUD =====
-
-// (feature/performance — observabilite) : mini-compteur FPS +
-// ms-per-frame affiche a gauche du zoom HUD. Pour des raisons de
-// cout minimal, on n'utilise PAS de PerfObserver ni de rAF instrumente
-// (qui rajouterait du bruit de mesure) : on compte les ticks de
-// requestAnimationFrame eux-memes (chaque rAF callback du browser
-// = une frame peinte). Le loop ne tourne que quand le HUD est
-// visible ; pas de cout en idle.
 //
-// La cle de sample est rafraichie toutes les 250 ms (= 4 Hz, imper-
-// ceptible comme lag d'affichage tout en evitant le thrash DOM
-// textContent x60/s). L'affichage combine fps (entier arrondi) et
-// ms-per-frame derive (1000/fps, 1 decimale) pour faciliter la
-// comparaison cross-machine : un ms bas sur un 60Hz et un ms bas sur
-// un 144Hz ne representent pas la meme charge.
-// data-perf conditionne la couleur CSS : >50fps en vert, <=50fps
-// en ambre. Le seuil 50 (au lieu de 60) absorbe les marges de jitter
-// des ecrans 60Hz et donne du sens "ressenti" plus strict qui
-// correspond bien aux seuils "fluide / saccade" en UX.
+// Rationale : voir DESIGN.md §2.4 — ce HUD mesure la CHARGE DE RENDU
+// EFFECTIVE (appels a drawBoard et re-renders offscreen), pas la
+// frequence rAF/vsync du navigateur. Le but est de valider que le
+// canvas n'est repeint que quand c'est utile : en idle, redraws/s
+// doit tomber a 0 ; en drag/zoom, doit plafonner au vsync (preuve du
+// rAF coalescing) ; offscreen/s doit rester << redraws en pratique
+// (preuve de l'efficacite du cache de scene). Un compteur base sur
+// requestAnimationFrame mentirait sur l'idle (rAF ticks toujours a
+// 60 Hz meme quand drawBoard = 0).
+//
+// Le polling 250 ms (= 4 Hz) sert uniquement a eviter le thrash
+// textContent du DOM — les valeurs reelles remontent depuis draw.js
+// par consumeDrawStats() (cf. §2.4). Pas de condition sur
+// state.fpsVisible dans drawBoard (cout microscopique : deux
+// increments par repaint). Le polling ne tourne que quand le HUD est
+// actif, donc cout total en idle = 0 (independamment des compteurs
+// toujours presents dans draw.js).
+//
+// PAS DE SEUIL data-perf : la metrique est volontairement neutre.
+// L'attribut data-perf="good" reste statique dans le markup HTML
+// (couleur verte permanente) ; pas de bascule "warn" auto qui
+// pourrait mentir sur un cas limite. La regle CSS [data-perf="warn"]
+// reste dormante dans main.html — reservee pour evolution future si
+// on decide d'ajouter un seuil.
 
 // ===== FPS display =====
 
-let fpsSampleStart = 0
-let fpsSampleFrames = 0
 let fpsLastDisplayUpdate = 0
 let fpsRafId = 0
 
 const FPS_DISPLAY_INTERVAL_MS = 250
-const FPS_GOOD_THRESHOLD = 50
 
-export const updateFpsDisplay = (fps) => {
+export const updateFpsDisplay = (redraws, offscreen) => {
     const div = document.querySelector('#fpsDisplay')
     if (!div) return
-    const ms = fps > 0 ? 1000 / fps : 0
-    div.textContent = `${fps.toFixed(0)} fps · ${ms.toFixed(1)} ms`
-    div.dataset.perf = fps >= FPS_GOOD_THRESHOLD ? 'good' : 'warn'
+    div.textContent = `${Math.round(redraws)} redraws/s (${Math.round(offscreen)} offscreen)`
 }
 
 export const updateFpsButton = () => {
@@ -86,14 +87,11 @@ const fpsSampleLoop = (now) => {
         // qu'une defense en profondeur.
         return
     }
-    if (fpsSampleStart === 0) fpsSampleStart = now
-    fpsSampleFrames++
     if (now - fpsLastDisplayUpdate >= FPS_DISPLAY_INTERVAL_MS) {
-        const elapsed = now - fpsSampleStart
-        const fps = elapsed > 0 ? (fpsSampleFrames * 1000) / elapsed : 0
-        updateFpsDisplay(fps)
-        fpsSampleStart = now
-        fpsSampleFrames = 0
+        const elapsed = now - fpsLastDisplayUpdate
+        const stats = consumeDrawStats()
+        const factor = elapsed > 0 ? 1000 / elapsed : 0
+        updateFpsDisplay(stats.redraws * factor, stats.offscreen * factor)
         fpsLastDisplayUpdate = now
     }
     fpsRafId = requestAnimationFrame(fpsSampleLoop)
@@ -101,9 +99,13 @@ const fpsSampleLoop = (now) => {
 
 const startFpsMonitor = () => {
     if (fpsRafId) return
-    fpsSampleStart = 0
-    fpsSampleFrames = 0
     fpsLastDisplayUpdate = 0
+    // Drain les compteurs accumules pendant l'idle (ou pendant que
+    // le HUD etait OFF) : evite qu'un long gap apparaisse comme un
+    // burst de redraws au premier intervalle. Pas de sauvegarde de
+    // l'etat pre-drain — interessant uniquement si on dive dans
+    // stats-detail (pas prevu).
+    consumeDrawStats()
     fpsRafId = requestAnimationFrame(fpsSampleLoop)
 }
 
@@ -111,14 +113,13 @@ const stopFpsMonitor = () => {
     if (!fpsRafId) return
     cancelAnimationFrame(fpsRafId)
     fpsRafId = 0
-    // Reinitialise le compteur pour eviter qu'au prochain ON on
-    // affiche un burst errone si l'utilisateur a attendu longtemps
-    // entre deux activations (= les compteurs accumulés incluraient
-    // une longue periode idle).
-    fpsSampleStart = 0
-    fpsSampleFrames = 0
+    fpsLastDisplayUpdate = 0
+    // Drain final pour eviter qu'au prochain ON les compteurs
+    // accumules (long gap = un grand nombre) apparaissent comme
+    // donnees fraiches dans le premier intervalle.
+    consumeDrawStats()
     const div = document.querySelector('#fpsDisplay')
-    if (div) div.textContent = '0 fps · 0 ms'
+    if (div) div.textContent = '0 redraws/s (0 offscreen)'
 }
 
 export const toggleFps = () => {
