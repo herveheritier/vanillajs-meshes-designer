@@ -188,9 +188,17 @@ document.addEventListener('mouseup', (e) => {
             const dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
             if (dist < 5) {
                 processMouseUpSelection(e)
-                requestDraw()
-                updateSelectionHud()
             }
+            // dist >= 5 (lasso) : state.selectedPoints a deja ete mis a
+            // jour par resolveMouseMoveOnBoard pendant le drag. On force
+            // ici une invalidation finale du cache offscreen pour couvrir
+            // le cas ou la derniere mousemove n'a pas eu lieu (release
+            // sans mouvement final) ou etait en dehors du canvas de hit.
+            // Sans ce requestDraw, renderSceneToOffscreen ne repeint pas
+            // la selection et les points engages restent invisibles
+            // jusqu'au prochain grab/rotate.
+            requestDraw()
+            updateSelectionHud()
         }
         // Always clear the gesture, including a release outside the canvas.
         state.isSelectingBox = false

@@ -1131,6 +1131,15 @@ export const resolveMouseMoveOnBoard = (e) => {
                 if (p.x >= minXM && p.x <= maxXM && p.y >= minYM && p.y <= maxYM) inBoxIndices.push(i)
             }
             state.selectedPoints = inBoxIndices
+            // (feature/performance) signale que la scene stable a change
+            // (state.selectedPoints mute a la volee pendant le drag du
+            // lasso). Sans le flag `sceneDirty` leve ici, renderSceneToOffscreen
+            // garderait le cache offscreen avec l'ancienne selection et les
+            // points engages ne seraient visibles qu'apres un grab/rotate (qui
+            // appelle requestDraw). Le rAF interne a requestDraw coalescera
+            // les 60+ ticks de drag en au plus 1 paint / frame. Meme pattern
+            // que la branche grab au-dessus.
+            requestDraw()
         }
     } else if (grabbed()) {
         const dragDist = Math.hypot(
