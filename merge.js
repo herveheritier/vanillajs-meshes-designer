@@ -1,7 +1,7 @@
 // Rationale : voir DESIGN.md §7.5
 
 import { state } from './state.js'
-import { activeTriangles, adjacentPoints, isPointSelected } from './geometry.js'
+import { activeTriangles, adjacentPoints } from './geometry.js'
 import { ACTION_NONE } from './constants.js'
 import { drawBoard } from './draw.js'
 import { updateSelectionHud } from './hud.js'
@@ -11,6 +11,7 @@ import { updateMouseHover } from './editor.js'
 import { log } from './log.js'
 
 // ===== Modal helpers =====
+
 const mergeErrorModal = () => document.querySelector('#mergeErrorModal')
 const mergeErrorModalInfo = () => document.querySelector('#mergeErrorModalInfo')
 
@@ -46,24 +47,54 @@ export const wireMergeErrorModal = () => {
     })
 }
 
+// ===== Helpers =====
+
+// Phase 2 (modifyShapeModel-spec §3.9 Q1c) : active shape et pointList
+// sont les structures canoniques. selectedPoints est un tableau d'indices.
+const activeShape = () => state.shapes[state.activeShapeIndex]
+
+// Regroupe les indices selectionnes en clusters de coords adjacentes
+// (tol 0.01). Cluster = ensemble d'indices pointList occupant la meme
+// position physique. Renvoie un tableau vide si la liste de points est
+// absente ou si un indice designe une entree manquante (defense).
+const clusterSelected = (selectedIndices) => {
+    const clusters = []
+    const pointList = (activeShape() && Array.isArray(activeShape().pointList)) ? activeShape().pointList : []
+    selectedIndices.forEach((idx) => {
+        const pt = pointList[idx]
+        if (!pt) return
+        const found = clusters.find((c) => adjacentPoints(c[0].pt, pt, 0.01))
+        if (found) found.push({ idx, pt })
+        else clusters.push([{ idx, pt }])
+    })
+    return clusters
+}
+
+// Re-index d'une valeur t.pX post-compactage : on soustrait 1 pour
+// chaque deleteIndex strictement inferieur (les autres ne deplacent
+// pas l'entite). deleteIndicesAsc doit etre trie asc et unique. Pour
+// un index `undefined`, retourne `undefined` (defense, conforme Q1b).
+const reindexOne = (oldIdx, deleteIndicesAsc) => {
+    if (!Number.isInteger(oldIdx)) return undefined
+    let newIdx = oldIdx
+    for (let i = 0; i < deleteIndicesAsc.length; i++) {
+        if (deleteIndicesAsc[i] < oldIdx) newIdx--
+    }
+    return newIdx
+}
+
 // ===== Validation =====
 
-// Rationale : voir DESIGN.md §3.2
+// Phase 2 Q1c : compte les slots distincts du tri dont l'indice
+// pointList est dans state.selectedPoints (les slots undefined ne
+// contribuent pas, conforme I5). Un tri avec 2+ slots selectionnes
+// devient degenere apres fusion (3 sommets sur <= 2 positions) ->
+// conflit.
 const countSelectedSlots = (tri) => {
-    const seen = new Set()
     let count = 0
-    if (tri.p1 && isPointSelected(tri.p1) && !seen.has(tri.p1)) {
-        count++
-        seen.add(tri.p1)
-    }
-    if (tri.p2 && isPointSelected(tri.p2) && !seen.has(tri.p2)) {
-        count++
-        seen.add(tri.p2)
-    }
-    if (tri.p3 && isPointSelected(tri.p3) && !seen.has(tri.p3)) {
-        count++
-        seen.add(tri.p3)
-    }
+    if (Number.isInteger(tri.p1) && state.selectedPoints.includes(tri.p1)) count++
+    if (Number.isInteger(tri.p2) && state.selectedPoints.includes(tri.p2)) count++
+    if (Number.isInteger(tri.p3) && state.selectedPoints.includes(tri.p3)) count++
     return count
 }
 
@@ -71,6 +102,9 @@ const findMergeConflicts = () => {
     const tris = activeTriangles()
     const conflicting = []
     tris.forEach((t, i) => {
+        // On ignore les triangles partiels (au moins un slot undefined)
+        // qui ne peuvent pas degenerer en fusion.
+        if (!Number.isInteger(t.p1) || !Number.isInteger(t.p2)) return
         if (countSelectedSlots(t) >= 2) conflicting.push(i + 1)
     })
     return conflicting
@@ -78,22 +112,18 @@ const findMergeConflicts = () => {
 
 // ===== Centroid =====
 
-const computeMergeCentroid = () => {
-    const selected = state.selectedPoints
-    const uniquePositions = []
-    selected.forEach((sp) => {
-        if (!uniquePositions.some((up) => adjacentPoints(up, sp, 0.01))) {
-            uniquePositions.push(sp)
-        }
-    })
-    if (uniquePositions.length === 0) return { x: 0, y: 0 }
-    const sum = uniquePositions.reduce(
-        (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+// Phase 2 : centroid = moyenne des coords uniques (un representant par
+// cluster de doublons adjacents, via clusterSelected). Meme semantique
+// qu'avant : si N points sont colocalises, ils comptent 1 fois (et non N).
+const computeMergeCentroid = (clusters) => {
+    if (clusters.length === 0) return { x: 0, y: 0 }
+    const sum = clusters.reduce(
+        (acc, c) => ({ x: acc.x + c[0].pt.x, y: acc.y + c[0].pt.y }),
         { x: 0, y: 0 }
     )
     return {
-        x: sum.x / uniquePositions.length,
-        y: sum.y / uniquePositions.length,
+        x: sum.x / clusters.length,
+        y: sum.y / clusters.length,
     }
 }
 
@@ -124,29 +154,90 @@ export const mergeSelectedPoints = () => {
         return false
     }
 
-    // Capture the pre-mutation scene so undo restores the actual state
-    // before the merge, not the already-mutated geometry.
+    // Capture pre-mutation pour undo : restaure l'etat exact avant la
+    // fusion (sinon cloneScene ne pourrait pas revenir en arriere).
     saveState()
-    const centroid = computeMergeCentroid()
-    const target = selected[0]
+    const shape = activeShape()
+    const pointList = shape.pointList
+    const tris = shape.tris
 
-    const tris = activeTriangles()
-    tris.forEach((t) => {
-        ['p1', 'p2', 'p3'].forEach((pid) => {
-            const p = t[pid]
-            if (!p) return
-            if (p !== target && isPointSelected(p)) {
-                t[pid] = target
-            }
-        })
-    })
+    // Survivant = plus petit indice parmi toutes les selections. Choix
+    // stable : minimise les shifts ulterieurs pour les tris non concernes
+    // et garantit newSurvivor === survivor apres reindex (= pas de shift
+    // sur lui-meme puisque tous les deleteIndices sont >= survivor).
+    const survivor = selected.reduce(
+        (acc, idx) => (idx < acc ? idx : acc),
+        Number.MAX_SAFE_INTEGER
+    )
 
-    target.x = centroid.x
-    target.y = centroid.y
+    // Centroid moyen sur les positions uniques (1 par cluster dedup).
+    const clusters = clusterSelected(selected)
+    const centroid = computeMergeCentroid(clusters)
 
-    state.selectedPoints = []
+    // Mutation 1 : la position du survivant devient le centroid. Tous
+    // les slots concernes referent cette entree partagee.
+    pointList[survivor].x = centroid.x
+    pointList[survivor].y = centroid.y
+
+    // Mutation 2 : remplacer t.pX par survivor pour toute slot dont
+    // l'indice est selectionne. Le survivant lui-meme -> survivor est un
+    // no-op mais garde la logique uniforme.
+    const selectedSet = new Set(selected)
+    const replaced = tris.map((t) => ({
+        p1: Number.isInteger(t.p1) && selectedSet.has(t.p1) ? survivor : t.p1,
+        p2: Number.isInteger(t.p2) && selectedSet.has(t.p2) ? survivor : t.p2,
+        p3: Number.isInteger(t.p3) && selectedSet.has(t.p3) ? survivor : t.p3,
+        fill: t.fill,
+    }))
+
+    // Q2a compactage immediat : splice les indices selectionnes non
+    // survivant en ordre descendant (reverse sorted) pour que les
+    // indices inferieurs restent valides jusqu'au prochain splice.
+    const deleteIndicesDesc = selected
+        .filter((idx) => idx !== survivor)
+        .sort((a, b) => b - a)
+    for (let i = 0; i < deleteIndicesDesc.length; i++) {
+        pointList.splice(deleteIndicesDesc[i], 1)
+    }
+    const deleteIndicesAsc = selected
+        .filter((idx) => idx !== survivor)
+        .sort((a, b) => a - b)
+
+    // Mutation 3 : re-indexer les slots non concernes par la suppression.
+    // Maintient I1 (pX ∈ [0, pointList.length) ∪ undefined) et I2
+    // (chaque entree pointList restante reste referencee par au moins
+    // un tri) apres compactage.
+    shape.tris = replaced.map((t) => ({
+        p1: t.p1 === undefined ? undefined : reindexOne(t.p1, deleteIndicesAsc),
+        p2: t.p2 === undefined ? undefined : reindexOne(t.p2, deleteIndicesAsc),
+        p3: t.p3 === undefined ? undefined : reindexOne(t.p3, deleteIndicesAsc),
+        fill: t.fill,
+    }))
+
+    // Mutation 4 : re-indexer activeConstructionTriangle (Q1b). Si un
+    // slot est dans la selection, on le remplace par survivor ; sinon on
+    // le re-indexe selon les suppressions. Les slots undefined restent
+    // undefined (maintient l'invariant I5).
+    const act = state.activeConstructionTriangle
+    if (act) {
+        const rewriteSlot = (slotKey) => {
+            if (!Number.isInteger(act[slotKey])) return
+            act[slotKey] = selectedSet.has(act[slotKey])
+                ? survivor
+                : reindexOne(act[slotKey], deleteIndicesAsc)
+        }
+        rewriteSlot('p1')
+        rewriteSlot('p2')
+        rewriteSlot('p3')
+    }
+
+    // State cleanup : toutes les indirections utilisant des indices
+    // obsoletes sont reinitialisees. Meme clautre qu'avant.
+    state.selectedPoints = [survivor]
+    state.selectedTriangles = []
     state.nearestPoint = undefined
     state.nearestLine = undefined
+    state.nearestTriangle = undefined
     state.grabbedGroup = []
     state.currentAction = ACTION_NONE
     state.isSelectingBox = false
@@ -158,6 +249,7 @@ export const mergeSelectedPoints = () => {
     clearTimeout(state.eachShapeRotateTimer)
     state.eachShapeRotateTimer = undefined
     state.isEachShapeRotating = false
+    state.moveAllActive = false
     drawBoard()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
