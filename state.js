@@ -81,6 +81,9 @@ export const state = {
     consoleResizing: false,
     consoleDragStart: null,
 
+    // ===== FPS HUD =====
+    fpsVisible: false,
+
     // ===== Modal focus restoration =====
     lastFocusedElement: undefined,
 

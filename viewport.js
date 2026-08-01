@@ -5,6 +5,7 @@ import {
     RETICLE_MODE_STORAGE_KEY, SELECTION_MODE_STORAGE_KEY, SELECTION_MODES,
     EDITING_MODE_STORAGE_KEY, EDITING_MODES,
     CONSOLE_VISIBLE_STORAGE_KEY,
+    FPS_VISIBLE_STORAGE_KEY,
 } from './constants.js'
 import { drawBoard, requestDraw } from './draw.js'
 import { screenToModel } from './geometry.js'
@@ -30,6 +31,120 @@ export const updateZoomDisplay = () => {
         text += `  rot ${deg}\u00b0`
     }
     div.textContent = text
+}
+
+// ===== FPS HUD =====
+
+// (feature/performance — observabilite) : mini-compteur FPS +
+// ms-per-frame affiche a gauche du zoom HUD. Pour des raisons de
+// cout minimal, on n'utilise PAS de PerfObserver ni de rAF instrumente
+// (qui rajouterait du bruit de mesure) : on compte les ticks de
+// requestAnimationFrame eux-memes (chaque rAF callback du browser
+// = une frame peinte). Le loop ne tourne que quand le HUD est
+// visible ; pas de cout en idle.
+//
+// La cle de sample est rafraichie toutes les 250 ms (= 4 Hz, imper-
+// ceptible comme lag d'affichage tout en evitant le thrash DOM
+// textContent x60/s). L'affichage combine fps (entier arrondi) et
+// ms-per-frame derive (1000/fps, 1 decimale) pour faciliter la
+// comparaison cross-machine : un ms bas sur un 60Hz et un ms bas sur
+// un 144Hz ne representent pas la meme charge.
+// data-perf conditionne la couleur CSS : >50fps en vert, <=50fps
+// en ambre. Le seuil 50 (au lieu de 60) absorbe les marges de jitter
+// des ecrans 60Hz et donne du sens "ressenti" plus strict qui
+// correspond bien aux seuils "fluide / saccade" en UX.
+
+// ===== FPS display =====
+
+let fpsSampleStart = 0
+let fpsSampleFrames = 0
+let fpsLastDisplayUpdate = 0
+let fpsRafId = 0
+
+const FPS_DISPLAY_INTERVAL_MS = 250
+const FPS_GOOD_THRESHOLD = 50
+
+export const updateFpsDisplay = (fps) => {
+    const div = document.querySelector('#fpsDisplay')
+    if (!div) return
+    const ms = fps > 0 ? 1000 / fps : 0
+    div.textContent = `${fps.toFixed(0)} fps · ${ms.toFixed(1)} ms`
+    div.dataset.perf = fps >= FPS_GOOD_THRESHOLD ? 'good' : 'warn'
+}
+
+export const updateFpsButton = () => {
+    const btn = document.querySelector('#fps')
+    const display = document.querySelector('#fpsDisplay')
+    if (btn) btn.classList.toggle('fps-active', !!state.fpsVisible)
+    if (display) display.hidden = !state.fpsVisible
+}
+
+const fpsSampleLoop = (now) => {
+    if (!state.fpsVisible) {
+        // Sortie silencieuse : stopFpsMonitor annule deja le rAF
+        // chain quand state.fpsVisible passe a false, ce guard n'est
+        // qu'une defense en profondeur.
+        return
+    }
+    if (fpsSampleStart === 0) fpsSampleStart = now
+    fpsSampleFrames++
+    if (now - fpsLastDisplayUpdate >= FPS_DISPLAY_INTERVAL_MS) {
+        const elapsed = now - fpsSampleStart
+        const fps = elapsed > 0 ? (fpsSampleFrames * 1000) / elapsed : 0
+        updateFpsDisplay(fps)
+        fpsSampleStart = now
+        fpsSampleFrames = 0
+        fpsLastDisplayUpdate = now
+    }
+    fpsRafId = requestAnimationFrame(fpsSampleLoop)
+}
+
+const startFpsMonitor = () => {
+    if (fpsRafId) return
+    fpsSampleStart = 0
+    fpsSampleFrames = 0
+    fpsLastDisplayUpdate = 0
+    fpsRafId = requestAnimationFrame(fpsSampleLoop)
+}
+
+const stopFpsMonitor = () => {
+    if (!fpsRafId) return
+    cancelAnimationFrame(fpsRafId)
+    fpsRafId = 0
+    // Reinitialise le compteur pour eviter qu'au prochain ON on
+    // affiche un burst errone si l'utilisateur a attendu longtemps
+    // entre deux activations (= les compteurs accumulés incluraient
+    // une longue periode idle).
+    fpsSampleStart = 0
+    fpsSampleFrames = 0
+    const div = document.querySelector('#fpsDisplay')
+    if (div) div.textContent = '0 fps · 0 ms'
+}
+
+export const toggleFps = () => {
+    state.fpsVisible = !state.fpsVisible
+    updateFpsButton()
+    if (state.fpsVisible) startFpsMonitor()
+    else stopFpsMonitor()
+    try { localStorage.setItem(FPS_VISIBLE_STORAGE_KEY, state.fpsVisible ? '1' : '0') } catch (e) { /* ignore */ }
+}
+
+export const restoreFpsVisible = () => {
+    if (localStorage.getItem(FPS_VISIBLE_STORAGE_KEY) === '1') {
+        state.fpsVisible = true
+        // Demarre la boucle d'echantillonnage immediatement si la
+        // session precedente avait active le HUD : evite d'attendre un
+        // toggle utilisateur pour voir l'indicateur.
+        startFpsMonitor()
+    }
+}
+
+export const wireFpsControl = () => {
+    const btn = document.querySelector('#fps')
+    if (btn) btn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        toggleFps()
+    })
 }
 
 // ===== Zoom reset (Ctrl+0) =====
