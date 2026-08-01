@@ -41,12 +41,11 @@ export const updateReticleButton = () => {
 export const updateSelectionModeButton = () => {
     const btn = document.querySelector('#selectionMode')
     const text = document.querySelector('#selectionModeText')
-    const idx = (
-        state.selectionMode === 'segment' ? 1 :
-        state.selectionMode === 'triangle' ? 2 : 0
-    )
-    if (btn) btn.classList.toggle('selection-mode-active', idx > 0)
-    if (text) text.textContent = String(idx)
+    // Libellé français aligné sur le title="sommet / segment / triangle" du bouton.
+    const labels = { vertex: 'sommet', segment: 'segment', triangle: 'triangle' }
+    const label = labels[state.selectionMode] || ''
+    if (btn) btn.classList.toggle('selection-mode-active', state.selectionMode !== 'vertex')
+    if (text) text.textContent = label
 }
 
 export const updateConsoleButton = () => {
