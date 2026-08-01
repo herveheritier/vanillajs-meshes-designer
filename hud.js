@@ -38,20 +38,6 @@ export const updateReticleButton = () => {
     if (text) text.textContent = state.reticleMode === 0 ? '' : String(state.reticleMode)
 }
 
-export const updateEditingModeButton = () => {
-    const btn = document.querySelector('#editMode')
-    const text = document.querySelector('#editModeText')
-    const labels = { edition: 'édition', construction: 'construction', selection: 'sélection' }
-    const names = { edition: 'édition', construction: 'construction', selection: 'sélection' }
-    const mode = names[state.editingMode] ? state.editingMode : 'edition'
-    if (btn) {
-        btn.classList.toggle('editing-mode-active', mode !== 'edition')
-        btn.removeAttribute('aria-pressed')
-        btn.setAttribute('aria-label', `Mode d'édition actif : ${names[mode]}. Cliquer pour passer au mode suivant.`)
-    }
-    if (text) text.textContent = labels[mode]
-}
-
 export const updateSelectionModeButton = () => {
     const btn = document.querySelector('#selectionMode')
     const text = document.querySelector('#selectionModeText')

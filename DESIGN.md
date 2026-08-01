@@ -83,31 +83,41 @@ Pourquoi un objet `state` mutable exporté plutôt que des `let` top-level ?
 `state.initDomRefs(board, ctx, …)` est exposé comme helper : `main.js` l'appelle
 au boot, après quoi les références DOM sont figées.
 
----
+---## §1.3 Mode d'édition unique (`edition`)
 
-## §1.3 Modes d’édition explicites
+`state.editingMode` n'a qu'une seule valeur persistée en localStorage :
+**`edition`**. L'ancienne matrice a trois modes (`edition`, `construction`,
+`selection`), cyclée via le bouton toolbar `#editMode` et le raccourci `E`,
+a été réduite à un seul contrat de clic pour simplifier le modèle mental et
+éliminer les branches mortes :
 
-`state.editingMode` expose trois contrats de clic persistés dans
-`meshesDesigner.editingMode`, avec **`edition` comme valeur par défaut** :
+- **Clic gauche** dans le vide : crée un point à la position du curseur
+  (snappé à la grille si active). **Clic gauche** sur une entité existante :
+  sélectionne selon `state.selectionMode` (sommet / segment / triangle).
+- **Clic gauche + drag** : délimite un lasso sans déplacer la géométrie.
+- **Clic droit simple** : sélectionne uniquement l'entité la plus proche selon
+  `state.selectionMode` et désélectionne les autres. Sans cible dans le
+  rayon de tolérance, la sélection est effacée.
+- **Clic droit + drag** : déplace la sélection depuis n'importe quel point
+  du canvas ; sans sélection engageante, sélectionne puis déplace l'entité
+  sous le pointeur selon `state.selectionMode`.
+- **Ctrl/Cmd + clic droit** : ajoute l'entité sous le pointeur à la
+  sélection sans la déplacer (`selectAtRightClick` additif, court-circuit
+  avant `beginGrabbing`).
+- **AltGr + clic droit + drag** : déplace **toutes** les formes ensemble
+  avec le même delta (mode AltGr quasi-global).
+- **Backspace** : supprime selon `state.selectionMode` (sommet / segment /
+  triangle). `⇧+Backspace` : reset complet (modale de confirmation).
 
-- **`edition`** : mode fluide de création, sélection et déplacement. Un clic
-  gauche simple conserve le geste de création/sélection ; un clic gauche-glissé
-  délimite uniquement un lasso. Un clic droit simple sélectionne uniquement
-  l'entité la plus proche selon `state.selectionMode` et désélectionne les
-  autres ; un clic droit + drag déplace toute la sélection depuis n'importe
-  quel point du canvas. S'il n'y a pas de sélection, le clic droit conserve le
-  grab direct de la cible sous le curseur.
-- **`construction`** : un clic dans le vide crée ou complète un triangle ; un
-  clic sur une entité existante ne modifie pas la sélection et le déplacement
-  n'est pas activé.
-- **`selection`** : un clic dans le vide ne crée jamais de géométrie ; la
-  sélection et le déplacement se font selon `state.selectionMode`.
+Le champ `state.editingMode` reste exposé à `'edition'` pour la migration
+silencieuse d'anciennes sessions (cf. `restoreEditingMode` dans
+`viewport.js`) qui auraient stocké `construction` ou `selection` dans la clé
+`meshesDesigner.editingMode`. `EDITING_MODES = ['edition']` dans
+`constants.js` est la source de vérité pour la validation de la valeur
+restaurée. Aucune écriture ultérieure n'a lieu — il n'y a plus de toggle UI
+à persister (`toggleEditingMode` et `wireEditingModeControl` ont été
+supprimés ; `updateEditingModeButton` n'est plus exposé par `hud.js`).
 
-Le bouton `#editMode` et le raccourci `E` cyclent `edition → construction →
-selection`. Le bouton porte directement le libellé court du mode actif (`É`, `C`
-ou `S`) et son intitulé accessible décrit le cycle complet. Les actions de suppression, fusion et sélection
-globale sont disponibles dans `edition` et `selection`, mais restent bloquées
-en `construction`.
 
 ### §1.4 Hit-testing en pixels écran
 
@@ -237,9 +247,9 @@ et neutralise Ctrl/Cmd pour les appels de sélection ; le geste
 Le helper `applySelectionModifiers(pointsAtPos, e, ctrlToggles)` reste la
 source commune des règles Shift / ajout idempotent. Le Shift gauche conserve
 le toggle de sélection ; le Ctrl/Cmd gauche n'est plus un geste d'ajout.
-Sur espace vide, le clic gauche en mode `edition` conserve la création fluide
-préexistante ; le clic droit simple efface la sélection s'il ne trouve aucune
-entité. Le mode `construction` reste le geste dédié à la création seule.
+Sur espace vide, le clic gauche en mode `edition` crée un point (snap
+éventuel à la grille) ; le clic droit simple efface la sélection s'il ne
+trouve aucune entité sous le pointeur.
 
 Le clic droit sans Ctrl/Cmd conserve son contrat de déplacement : avec une
 sélection existante, il la déplace depuis la position de départ ; sans
@@ -273,6 +283,19 @@ règle suivante unifie les deux gestes pour le cas sparse :
 | **0 élément**       | `selectedPoints = [under-cursor]`     | `selectedPoints = [under-cursor]` puis drag (idem clic propre) |
 | **1 élément**       | Plain-click replace → `[under-cursor]` | §3.6.1 sparse-replace → `[under-cursor]` puis drag (parité stricte) |
 | **≥ 2 éléments**    | Plain-click replace → toute la sélection groupée perdue | PRÉSERVÉ (filet défensif — drag déplace le groupe engagé depuis n'importe où) |
+
+> **Note** : « 1 élément logique » dans cette table désigne un **cluster
+> physique** (toutes les `state.selectedPoints[i]` adjacentes entre elles
+> au sens `adjacentPoints(p, arr[0], 0.01)` §3.2), **pas** le nombre de
+> refs JS dans le tableau. Un sommet partagé avec N refs JS distinctes
+> (par ex. 3 triangles jamais mergés avec leur propre point au même
+> coord) compte pour 1 et déclenche la sparse-replace. Implémentation
+> : `isSingleCluster` dans `beginGrabbing` (editor.js) teste
+> `state.selectedPoints.every((p, i, arr) => i === 0 || adjacentPoints(p, arr[0], 0.01))`.
+> Sans cette garde, un drag d'un sommet partagé laissait `state.selectedPoints`
+> collé à l'ancien cluster — la condition `<= 1` était trop stricte (cf.
+> regression report : « après avoir déplacé le point 21, requérir un
+> clic-droit loin de tout point avant de bouger un autre »).
 
 Implémentation : `beginGrabbing` insère une **pre-branch §3.6.1** juste
 avant l'early branch « selectedPoints.length > 0 grab-from-selection ».

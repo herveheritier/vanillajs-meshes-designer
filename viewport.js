@@ -8,7 +8,7 @@ import {
 } from './constants.js'
 import { drawBoard } from './draw.js'
 import { screenToModel } from './geometry.js'
-import { updateGridButtonText, updateReticleButton, updateEditingModeButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState } from './hud.js'
+import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState } from './hud.js'
 import { persistState, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
@@ -122,34 +122,17 @@ export const wireReticleControl = () => {
 
 // ===== Editing mode =====
 
-export const toggleEditingMode = () => {
-    const idx = EDITING_MODES.indexOf(state.editingMode)
-    state.editingMode = EDITING_MODES[(idx + 1) % EDITING_MODES.length]
-    state.selectedPoints = []
-    state.selectedTriangles = []
-    updateEditingModeButton()
-    updateSelectionHud()
-    updateColorButtonState()
-    drawBoard()
-    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
-    try { localStorage.setItem(EDITING_MODE_STORAGE_KEY, state.editingMode) } catch (e) { /* ignore */ }
-    log(`Editing mode -> ${state.editingMode}`)
-}
-
+// Migration silencieuse : les sessions précédentes pouvaient stocker
+// 'construction' ou 'selection' dans localStorage. L'unique mode
+// supporté est désormais 'edition' (constante EDITING_MODES dans
+// constants.js). Une valeur stockée hors-tableau est ignorée et la
+// valeur par défaut 'edition' reste appliquée. Pas d'écriture
+// ultérieure : il n'y a plus de toggle UI à persister (cf. §1.3).
 export const restoreEditingMode = () => {
     try {
         const stored = localStorage.getItem(EDITING_MODE_STORAGE_KEY)
         if (stored && EDITING_MODES.includes(stored)) state.editingMode = stored
     } catch (e) { /* ignore */ }
-}
-
-export const wireEditingModeControl = () => {
-    const btn = document.querySelector('#editMode')
-    if (!btn) return
-    btn.addEventListener('click', (e) => {
-        if (e.button !== 0) return
-        toggleEditingMode()
-    })
 }
 
 // ===== Selection mode =====

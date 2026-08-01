@@ -4,7 +4,7 @@ import { state, initDomRefs } from './state.js'
 import { drawBoard } from './draw.js'
 import { CANVAS_BACKGROUND } from './constants.js'
 import {
-    updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton, updateEditingModeButton,
+    updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
     updateSelectionModeButton, updateColorButtonState, updateAccessibilityLabels, updateSceneStatus,
 } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
@@ -23,7 +23,7 @@ import {
     restoreReticleMode, wireReticleControl, wireConsoleToggle, restoreConsoleVisible,
     wireBoardWheel, toggleGrid, toggleReticle, resetZoom,
     startPan, updatePan, endPan,
-    restoreEditingMode, wireEditingModeControl, restoreSelectionMode, wireSelectionModeControl,
+    restoreEditingMode, restoreSelectionMode, wireSelectionModeControl,
 } from './viewport.js'
 import { wireGridControl } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
@@ -61,7 +61,6 @@ restoreConsoleVisible()
 
 wireGridControl()
 wireReticleControl()
-wireEditingModeControl()
 wireSelectionModeControl()
 wireConsoleToggle()
 wireConsoleOverlay()
@@ -159,7 +158,7 @@ document.addEventListener('mousedown', (e) => {
         // Left drag is reserved for selection/lasso; it never moves geometry.
         state.selectionBoxStart = mousePos
         state.selectionBoxCurrent = mousePos
-        state.isSelectingBox = state.editingMode !== 'construction'
+        state.isSelectingBox = true
     } else if (e.button === 1) {
         startPan(mousePos)
     }
@@ -181,34 +180,29 @@ document.addEventListener('mouseup', (e) => {
     if (wasGrabbing) endGrabbing(e)
     if (state.isPanning && e.button === 1) endPan()
     const boardTarget = e.target && e.target.id === 'board'
-    if (!wasGrabbing && e.button === 0) {
-        if (state.editingMode !== 'construction' && state.isSelectingBox) {
-            if (boardTarget && state.selectionBoxStart && state.selectionBoxCurrent) {
-                const dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
-                if (dist < 5) {
-                    processMouseUpSelection(e)
-                    drawBoard()
-                    updateSelectionHud()
-                }
+    if (state.isSelectingBox) {
+        if (boardTarget && state.selectionBoxStart && state.selectionBoxCurrent) {
+            const dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
+            if (dist < 5) {
+                processMouseUpSelection(e)
+                drawBoard()
+                updateSelectionHud()
             }
-            // Always clear the gesture, including a release outside the canvas.
-            state.isSelectingBox = false
-            state.selectionBoxStart = undefined
-            state.selectionBoxCurrent = undefined
-        } else if (boardTarget && (state.editingMode === 'construction' || state.editingMode === 'edition')) {
-            processMouseUpSelection(e)
-            drawBoard()
         }
-    } else if (!wasGrabbing && boardTarget && e.button === 2 && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+        // Always clear the gesture, including a release outside the canvas.
+        state.isSelectingBox = false
+        state.selectionBoxStart = undefined
+        state.selectionBoxCurrent = undefined
+    }
+    if (!wasGrabbing && e.button === 2 && boardTarget && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         // If no grab target was armed, a plain right click still has
-        // selection semantics in edition mode (including empty-space
-        // deselection).
+        // selection semantics (including empty-space deselection).
         processRightClickSelection(e)
     }
 })
 
 document.addEventListener('keydown', (e) => {
-    if (e.code === 'Backspace' && state.editingMode !== 'construction') {
+    if (e.code === 'Backspace') {
         if (e.shiftKey) {
             showResetModal()
         } else if (state.selectionMode === 'segment') {
@@ -230,11 +224,6 @@ document.addEventListener('keydown', (e) => {
     if (!typing && !inReticleBtn && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyR') {
         e.preventDefault()
         toggleReticle()
-    }
-    if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyE') {
-        e.preventDefault()
-        const editMode = document.querySelector('#editMode')
-        if (editMode) editMode.click()
     }
     const helpM = document.querySelector('#helpModal')
     const isHelpOpen = helpM && !helpM.hidden
@@ -284,7 +273,6 @@ document.addEventListener('keydown', (e) => {
 applyConsoleFrame()
 updateConsoleButton()
 updateAccessibilityLabels()
-updateEditingModeButton()
 updateSceneStatus()
 
 // ===== Boot =====
@@ -297,7 +285,6 @@ const doit = () => {
     updateUndoRedoHud()
     updateSelectionHud()
     updateSelectionModeButton()
-    updateEditingModeButton()
     updateAccessibilityLabels()
     updateSceneStatus()
     updateColorButtonState()

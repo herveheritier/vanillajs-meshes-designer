@@ -60,9 +60,15 @@ export const VIEW_CENTER_STORAGE_KEY = 'meshesDesigner.viewCenter'
 export const RETICLE_MODE_STORAGE_KEY = 'meshesDesigner.reticleMode'
 export const SELECTION_MODE_STORAGE_KEY = 'meshesDesigner.selectionMode'
 export const EDITING_MODE_STORAGE_KEY = 'meshesDesigner.editingMode'
-// The first mode is the frictionless default: it combines creation and selection.
-export const EDITING_MODES = ['edition', 'construction', 'selection']
-export const SELECTION_MODES = ['vertex', 'segment', 'triangle']
+// Mode d'édition unique : fluide, combine création, sélection et
+// déplacement. L'ancienne matrice a trois modes (édition, construction,
+// sélection) a été réduite à une seule valeur pour simplifier le
+// contrat de clic et supprimer les branches mortes (DESIGN §1.3).
+// On garde le tableau + la constante storage pour la migration
+// silencieuse d'anciennes sessions qui auraient stocké un autre
+// identifiant dans localStorage.
+export const EDITING_MODES = ['edition']
+export const SELECTION_MODES = ['vertex', 'segment', 'triangle']  
 
 // Hit-testing tolerances stay constant in screen pixels, so selection feels
 // equally precise at every zoom level.

@@ -44,6 +44,7 @@ Data flow: `main.js` owns app state → calls render primitives in `draw.js` (po
   - (scene + zoom + grid keys persisted too — search `localStorage` in `main.js` for the full list)
 - **`#messageLog`** is the scrollable log region inside `#messageBoard`. Mutations go through it, never through `#messageBoard.innerText` (would destroy the drag handle / clear button).
 - **Console overlay minimums:** `CONSOLE_MIN_WIDTH=80`, `CONSOLE_MIN_HEIGHT=30` — resize handler clamps to these.
+- **Single editing mode:** the project exposes one `state.editingMode === 'edition'` since the construction + selection modes were merged into edition's fluent contract. The toolbar `#editMode` button + `E` shortcut were removed; `EDITING_MODES = ['edition']` and the silent `restoreEditingMode` in `viewport.js` are kept for backwards-compatible localStorage reads only — there is no toggle UI to persist anymore.
 - **Mouse buttons:** `e.button === 0` is the canonical left-click gate used everywhere; middle-click on the canvas = pan; `getModifierState('AltGraph')` OR `(ctrlKey && altKey)` = AltGr detection (because AltGr is browser-inconsistent).
 
 ## Gotchas

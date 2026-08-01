@@ -308,8 +308,7 @@ export const addPoint = (point) => {
 }
 
 export const selectAllPoints = () => {
-    if (state.editingMode === 'construction') return
-    const result = []
+    const result = []  
     const vertices = getAllVertices()
     vertices.forEach(p => {
         getPointsAtSamePosition(p).forEach(q => {
@@ -349,7 +348,7 @@ export const processMouseUpSelection = (e) => {
     // toggle modifier.
     const leftSelectionEvent = { ...e, ctrlKey: false, metaKey: false }
 
-    if (state.editingMode !== 'construction' && state.selectionMode === 'segment') {
+    if (state.selectionMode === 'segment') {
         const ns = findSelectedLine(targetModel)
         if (ns && ns.distance <= lineHitRadiusModel() && ns.firstPoint && ns.secondPoint && !adjacentPoints(ns.firstPoint, ns.secondPoint, 0.01)) {
             const cluster = collectUnderlyingPoints([ns.firstPoint, ns.secondPoint])
@@ -358,7 +357,7 @@ export const processMouseUpSelection = (e) => {
             updateColorButtonState()
             return
         }
-    } else if (state.editingMode !== 'construction' && state.selectionMode === 'triangle') {
+    } else if (state.selectionMode === 'triangle') {
         const nt = findNearestTriangle(targetModel)
         if (nt) {
             const cluster = collectUnderlyingPoints([nt.p1, nt.p2, nt.p3])
@@ -368,36 +367,20 @@ export const processMouseUpSelection = (e) => {
         }
     }
 
-    if (state.editingMode !== 'construction') {
-        if (pointHit) {
-            const pointsAtPos = getPointsAtSamePosition(pointHit.point)
-            if (state.selectionMode !== 'triangle') state.selectedTriangles = []
-            applySelectionModifiers(pointsAtPos, leftSelectionEvent, state.selectionMode === 'vertex')
-        } else if (state.editingMode === 'selection') {
-            // Specialized selection mode never creates geometry.
-            if (!leftSelectionEvent.shiftKey) state.selectedPoints = []
-            state.selectedTriangles = []
-            updateSelectionHud()
-            updateColorButtonState()
-        } else if (leftSelectionEvent.shiftKey) {
-            // Shift preserves the current selection and suppresses creation.
-        } else {
-            // Edition mode remains fluid: an empty click creates the next
-            // point without requiring a mode switch.
-            state.selectedPoints = []
-            state.selectedTriangles = []
-            updateSelectionHud()
-            updateColorButtonState()
-            resolveMouseClickOnBoard(e)
-        }
-    } else if (!pointHit) {
-        if (leftSelectionEvent.shiftKey) {
-            // Shift in construction mode preserves the selection and
-            // deliberately does not create a point on empty space.
-        } else {
-            state.selectedPoints = []
-            resolveMouseClickOnBoard(e)
-        }
+    if (pointHit) {
+        const pointsAtPos = getPointsAtSamePosition(pointHit.point)
+        if (state.selectionMode !== 'triangle') state.selectedTriangles = []
+        applySelectionModifiers(pointsAtPos, leftSelectionEvent, state.selectionMode === 'vertex')
+    } else if (leftSelectionEvent.shiftKey) {
+        // Shift preserves the current selection and suppresses creation.
+    } else {
+        // Empty click: clear selection and add a new point at cursor
+        // (cf. DESIGN.md §1.3 — fluide creation in edition mode).
+        state.selectedPoints = []
+        state.selectedTriangles = []
+        updateSelectionHud()
+        updateColorButtonState()
+        resolveMouseClickOnBoard(e)
     }
 }
 
@@ -502,11 +485,8 @@ const applyTriangleIndexModifier = (triangleIndex, e) => {
 
 // ===== Suppression d'un point =====
 
-// ===== Suppression d'un point =====
-
 // Rationale : voir DESIGN.md §1.1
 export const deleteSelectedPoint = () => {
-    if (state.editingMode === 'construction') return
     let targets = []
     if (state.selectedPoints.length > 0) {
         targets = [...state.selectedPoints]
@@ -545,8 +525,7 @@ export const deleteSelectedPoint = () => {
 
 // Rationale : voir DESIGN.md §8
 export const deleteSelectedSegment = () => {
-    if (state.editingMode === 'construction') return
-    let targets = []
+    let targets = []  
     if (state.selectedPoints.length > 0) {
         targets = [...state.selectedPoints]
     } else if (state.nearestLine && state.nearestLine.firstPoint && state.nearestLine.secondPoint) {
@@ -583,8 +562,7 @@ export const deleteSelectedSegment = () => {
 
 // Rationale : voir DESIGN.md §7.1
 export const deleteSelectedTriangle = () => {
-    if (state.editingMode === 'construction') return
-    let targets = []
+    let targets = []  
     if (state.selectedPoints.length > 0) {
         targets = [...state.selectedPoints]
     } else if (state.nearestTriangle && state.nearestTriangle.triangle && state.nearestTriangle.triangle.p1 && state.nearestTriangle.triangle.p2 && state.nearestTriangle.triangle.p3) {
@@ -672,7 +650,6 @@ const selectAtRightClick = (e, targetModel, additive = true) => {
 }
 
 export const processRightClickSelection = (e) => {
-    if (state.editingMode !== 'edition') return false
     const mouseScreen = {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
@@ -687,9 +664,6 @@ export const beginGrabbing = (e) => {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
     }
-    // Construction is intentionally create-only: no drag move,
-    // including the global AltGr gesture.
-    if (state.editingMode === 'construction') return false
 
     const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))
     state.moveAllActive = isAltGrDown
@@ -739,17 +713,26 @@ export const beginGrabbing = (e) => {
         return false
     }
 
-    // §3.6.1 sparse-replace WYSIWYG : si la sélection est sparse (0 ou 1
-    // élément) et que le mousedown right vise une entité DIFFÉRENTE de
-    // l'éventuelle 1-sélection, on REMPLACE la sélection avant de grab,
-    // parité stricte avec le clic-droit propre (qui passe par
-    // processRightClickSelection et applique déjà la règle Plain-click
-    // "remplace"). Multi-éléments PRÉSERVÉS (filet défensif contre la
+    // §3.6.1 sparse-replace WYSIWYG : si la sélection représente un
+    // unique cluster logique (0 entrée OU toutes les refs au même coord
+    // physique) et que le mousedown right vise une entité DIFFÉRENTE de
+    // la sélection engagée, on REMPLACE avant de grab — parité stricte
+    // avec le clic-droit propre (qui passe par processRightClickSelection
+    // et applique déjà la règle Plain-click "remplace"). Multi-cluster
+    // (refs à 2+ coords distinctes) PRÉSERVÉ (filet défensif contre la
     // perte accidentelle d'une sélection groupée par un drag maladroit).
     // Drag sur le MÊME point engagé : pas d'action (anti-flicker).
     // AltGr a déjà court-circuité plus haut ; il reste neutre ici.
+    // Rationale : on a remplacé la garde naïve `length <= 1` (qui
+    // collait la souris à des clusters multi-refs après drag) par une
+    // détection de cluster physique — chaque entrée partageant le même
+    // coord (tolerance §3.2 0.01) compte comme 1 élément logique.
     let sparseCursorGrabPoints = []
-    if (state.selectedPoints.length <= 1) {
+    const isSingleCluster = state.selectedPoints.length === 0
+        || state.selectedPoints.every(
+            (p, i, arr) => i === 0 || adjacentPoints(p, arr[0], 0.01)
+        )
+    if (isSingleCluster) {
         const sparseTargetModel = screenToModel(mouseScreen)
         if (state.selectionMode === 'triangle') {
             const nt = findNearestTriangle(sparseTargetModel)
@@ -766,7 +749,7 @@ export const beginGrabbing = (e) => {
             }
         }
         if (
-            state.selectedPoints.length === 1 &&
+            state.selectedPoints.length > 0 &&
             sparseCursorGrabPoints.length > 0 &&
             !sparseCursorGrabPoints.every(p => isPointSelected(p))
         ) {

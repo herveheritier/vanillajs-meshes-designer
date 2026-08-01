@@ -100,7 +100,6 @@ const computeMergeCentroid = () => {
 // ===== Merge =====
 
 export const mergeSelectedPoints = () => {
-    if (state.editingMode === 'construction') return
     const selected = state.selectedPoints
 
     if (selected.length < 2) {
