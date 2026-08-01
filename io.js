@@ -22,7 +22,7 @@ export const shapeToMesh = (shape) => {
         log('shapeToMesh FALLBACK: shape absent ou invalide (' + (shape === undefined ? 'undefined' : typeof shape) + '). Serialisation videe pour cette forme, le reste de la scene est persiste normalement. Capture ce message pour identifier la mutation fautive.')
         return { pointList, tris }
     }
-    // Nouveau runtime (Phase 1, modifyShapeModel-spec §3.4) : shape deja
+    // Nouveau runtime (modifyShapeModel-spec §3.4) : shape deja
     // indexe ({ pointList, tris }). On valide les bornes et on laisse
     // passer tel quel — pas d'etape de collapse, le wire format est deja
     // aligne.
@@ -50,7 +50,7 @@ export const shapeToMesh = (shape) => {
         })
         return { pointList, tris }
     }
-    // Runtime legacy (avant Phase 1) : shape.triangles tient des refs JS
+    // Runtime legacy (avant la migration {pointList, tris}) : shape.triangles tient des refs JS
     // point (coords inline). On collapse vers la forme indexee pour
     // serialiser. Cheminement reste ici en Q3b back-compat : si un
     // ancienne scene chargee en runtime persiste avant migration
@@ -62,7 +62,7 @@ export const shapeToMesh = (shape) => {
     // Phase 5 detecteur (spec §4 Phase 5 + §B Q3b) : shape legacy
     // detecte (shape.triangles inline-coord valide). Log une seule
     // fois par session — la decision Q3b preserve la back-compat
-    // silencieusement pour ne pas casser les fichiers d_avant Phase 1,
+    // silencieusement pour ne pas casser les fichiers d_avant la migration {pointList, tris},
     // mais on previent l_utilisateur qu_un re-save migrera au nouveau
     // format {pointList, tris}.
     if (!legacyShapeDetected && shape.triangles.length > 0) {
@@ -130,7 +130,7 @@ export const persistState = () => {
 
 // ===== Restore (read from localStorage) =====
 
-// Phase 1, modifyShapeModel-spec §3.4 : les triangles runtime portent
+// modifyShapeModel-spec §3.4 : les triangles runtime portent
 // des INDICES dans le pointList de leur forme. resolveTrisToIndices
 // valide chaque indice ∈ [0, pointList.length) et drop les tris
 // invalides (defense contre payload malforme). Elle remplace
@@ -300,7 +300,7 @@ export const validateShape = (shape) => {
     return errors.length === 0 ? { ok: true } : { ok: false, errors }
 }
 
-// Phase 1 (modifyShapeModel-spec §3.4) — le runtime produit directement
+// (modifyShapeModel-spec §3.4) — le runtime produit directement
 // { pointList, tris } (memes champs que le wire format), au lieu du
 // collapse { triangles: [{p1,p2,p3 (point refs)}] } d'avant. Le chemin
 // legacy `shape.triangles` reste accepte pour les fichiers anciens
@@ -333,7 +333,7 @@ export const buildShapesFromPayload = (data) => {
     return result
 }
 
-// Phase 1 (modifyShapeModel-spec §3.4) — la rotation s'applique sur
+// (modifyShapeModel-spec §3.4) — la rotation s'applique sur
 // pointList (la liste canonique des sommets par forme), pas sur les
 // refs des slots triangles. Meme resultat geometrique (chaque vertex
 // tourne autour du pivot) mais sans enumeration des slots triangulaires

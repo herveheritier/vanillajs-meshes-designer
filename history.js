@@ -10,14 +10,14 @@ import { persistState } from './io.js'
 
 // ===== Clonage =====
 
-// Phase 3 (modifyShapeModel-spec §3.8) : deep-clone canonique aligne sur
+// (modifyShapeModel-spec §3.8) : deep-clone canonique aligne sur
 // { pointList, tris }. Le pointList est duplique par entree — chaque
 // coord est une copie peu profonde des {x, y} ; les references partagees
 // avec l_origine sont rompees (une mutation ulterieure de la scene
 // n_affecte pas l_entry de l_historique). Les tris conservent leurs
 // indices tels quels (pas de dedup de pointMap comme dans l_ancien
 // cloneTriArray : les indices suffisent, la canonique du pointList
-// est deja dedupliquee par invariant I3 post-Phase 2). Q1b : les
+// est deja dedupliquee par invariant I3 post-spec-merge-compact). Q1b : les
 // slots `undefined` (triangles partiels) restent `undefined` —
 // invariant I5 preserve.
 const cloneShape = (shape) => {
@@ -37,7 +37,7 @@ const cloneShape = (shape) => {
     }
 }
 
-// Phase 3 : remplace l_ancien cloneScene qui encapsulait cloneTriArray
+// remplace l_ancien cloneScene qui encapsulait cloneTriArray
 // (clone sur API inline-coord). Maintient la signature (input
 // shapesArray, output shapes clones) pour ne pas impacter les call
 // sites (saveState, undo, redo).
@@ -48,7 +48,7 @@ export const cloneScene = (shapesArray) => {
 
 // ===== Pile d'historique =====
 
-// Phase 3 : saveState clone la scene via cloneScene (deep-clone
+// saveState clone la scene via cloneScene (deep-clone
 // aligne). Maintient entry.version === undefined (forward-compat
 // pour Phase 4 si on veut un entry.version = SCENE_FORMAT_VERSION).
 export const saveState = () => {

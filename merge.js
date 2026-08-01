@@ -49,7 +49,7 @@ export const wireMergeErrorModal = () => {
 
 // ===== Helpers =====
 
-// Phase 2 (modifyShapeModel-spec §3.9 Q1c) : active shape et pointList
+// (modifyShapeModel-spec §3.9 Q1c) : active shape et pointList
 // sont les structures canoniques. selectedPoints est un tableau d'indices.
 const activeShape = () => state.shapes[state.activeShapeIndex]
 
@@ -85,7 +85,7 @@ const reindexOne = (oldIdx, deleteIndicesAsc) => {
 
 // ===== Validation =====
 
-// Phase 2 Q1c : compte les slots distincts du tri dont l'indice
+// Q1c : compte les slots distincts du tri dont l'indice
 // pointList est dans state.selectedPoints (les slots undefined ne
 // contribuent pas, conforme I5). Un tri avec 2+ slots selectionnes
 // devient degenere apres fusion (3 sommets sur <= 2 positions) ->
@@ -118,7 +118,7 @@ const findMergeConflicts = () => {
 
 // ===== Centroid =====
 
-// Phase 2 : centroid = moyenne des coords uniques (un representant par
+// centroid = moyenne des coords uniques (un representant par
 // cluster de doublons adjacents, via clusterSelected). Meme semantique
 // qu'avant : si N points sont colocalises, ils comptent 1 fois (et non N).
 const computeMergeCentroid = (clusters) => {

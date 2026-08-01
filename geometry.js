@@ -33,8 +33,8 @@ export const screenToModel = (screen) => {
 
 // ===== Topologie / selection =====
 
-// Phase 1 (modifyShapeModel-spec §3.3) : runtime aligned sur { pointList, tris }.
-// Phase 2 : inchangé — retourne simplement le tableau de triangles (par
+// (modifyShapeModel-spec §3.3) : runtime aligned sur { pointList, tris }.
+// inchangé — retourne simplement le tableau de triangles (par
 // indices) de la forme active.
 export const activeTriangles = () => state.shapes[state.activeShapeIndex].tris
 
@@ -46,7 +46,7 @@ export const isSceneEmpty = () => {
     return true
 }
 
-// Phase 2 (modifyShapeModel-spec §3.3) : avec le runtime indexe, la
+// (modifyShapeModel-spec §3.3) : avec le runtime indexe, la
 // liste canonique des sommets logiques d'une forme est son pointList
 // (invariant I3 par merge compact : pas de doublons adjacents).
 // getAllVertices renvoie la copie pour ne pas exposer la table mutable.
@@ -58,7 +58,7 @@ export const getAllVertices = () => {
     return s.pointList.slice()
 }
 
-// Phase 2 : scan direct du pointList (plus de slots triangulaires a
+// scan direct du pointList (plus de slots triangulaires a
 // derefencer). At most un cluster de doublons adjacents — l'invariant
 // I3 limite la liste a 1 entree par coord unique. Retourne des refs
 // (callers editor.js les convertissent en indices via getIndicesAtSamePosition).
@@ -79,7 +79,7 @@ export const getPointsAtSamePosition = (p, tolerance = 0.01) => {
 // identifiant stable au survol (cf. §7.8). Retourne -1 si `p`
 // n'appartient pas a activeTriangles() (defense ; ne devrait pas
 // arriver dans le call site normal).
-// Phase 2 : l'index d'un sommet est sa position directe dans le
+// l'index d'un sommet est sa position directe dans le
 // pointList canonique. Plus d'iteration via getAllVertices().
 export const getVertexIndex = (p) => {
     if (!p) return -1
@@ -91,7 +91,7 @@ export const getVertexIndex = (p) => {
     return -1
 }
 
-// Phase 2 : variante indexee de getPointsAtSamePosition. Utilisee par
+// variante indexee de getPointsAtSamePosition. Utilisee par
 // editor.js (selection, drag) qui manipule state.selectedPoints comme
 // liste d'indices (Q1c). Renvoie un tableau vide si p est null.
 export const getIndicesAtSamePosition = (p, tolerance = 0.01) => {
@@ -114,7 +114,7 @@ export const getIndicesAtSamePosition = (p, tolerance = 0.01) => {
 // boucle. Cas length===1 : ref unique, pas de doublon. Cas length>1 :
 // cluster (meme position, refs distinctes) ou meme ref apparaissant
 // dans plusieurs slots -- dans les deux cas la liste est utile.
-// Phase 2 : on accede aux coordonnees des sommets via pointList[t.pX]
+// on accede aux coordonnees des sommets via pointList[t.pX]
 // pour chaque slot. Tris partiellement definis (pX===undefined) sont
 // filtres comme avant.
 export const getStackTriangleRefs = (p, tolerance = 0.01) => {
@@ -132,7 +132,7 @@ export const getStackTriangleRefs = (p, tolerance = 0.01) => {
     return refs
 }
 
-// Phase 2, Q1c : state.selectedPoints est un array d'indices dans le
+// Q1c : state.selectedPoints est un array d'indices dans le
 // pointList de l'active shape. La comparaison se fait via la ref du
 // point en pointList[idx] ; pas de comparaison directe indice-vs-coord.
 // La gate Number.isInteger est coherente avec le reste du codebase

@@ -129,12 +129,12 @@ export const drawBoard = () => {
     }
 }
 
-// Phase 3 (modifyShapeModel-spec §3.7) : avec state.selectedPoints
+// (modifyShapeModel-spec §3.7) : avec state.selectedPoints
 // = indices dans activeShape().pointList (Q1c), chaque entree du
 // tableau est un nombre, pas une ref JS. On resout via
 // pointList[idx] avant de deleguer au drawPoint. Indices non-
 // integer ou hors range sont ignores (defense — ne devrait pas
-// arriver dans le pipeline normal post-Phase 2).
+// arriver dans le pipeline normal post-spec-merge-compact).
 export const drawSelectedPoints = () => {
     if (typeof state.selectedPoints === 'undefined' || !state.selectedPoints || state.selectedPoints.length === 0) return
     let isDimmed = typeof state.isSelectionDimmed !== 'undefined' && state.isSelectionDimmed
@@ -226,7 +226,7 @@ export const drawShapes = () => {
     drawShape(state.shapes[state.activeShapeIndex], true)
 }
 
-// Phase 3 (modifyShapeModel-spec §3.7) : le tableau est `tris` (Phase 1),
+// (modifyShapeModel-spec §3.7) : le tableau est `tris` ,
 // les slots p1/p2/p3 sont des indices dans shape.pointList. On resout
 // les coordonnees via pointList[t.pX] avant de deleguer a drawTriangle /
 // drawPoint. Les slots `undefined` (Q1b triangles partiels) sont

@@ -25,7 +25,7 @@ import { log } from './log.js'
 
 // ===== find : point/line/triangle les plus proches =====
 
-// Phase 2 (modifyShapeModel-spec §3.6) : scanne directement le pointList
+// (modifyShapeModel-spec §3.6) : scanne directement le pointList
 // canonique de la forme active (Q1a per-shape). Renvoie un point avec son
 // indice 0-based dans activeShape().pointList. Le prefixe pointIndex
 // aligne sur la convention dev-friendly des arrays JS (cf. §7.8).
@@ -56,7 +56,7 @@ const modelToleranceForPixels = (pixels) => pixels / Math.max(state.ctx.zoomLeve
 const pointHitRadiusModel = () => modelToleranceForPixels(POINT_HIT_RADIUS_PX)
 const lineHitRadiusModel = () => modelToleranceForPixels(LINE_HIT_RADIUS_PX)
 const triangleCentroidHitRadiusModel = () => modelToleranceForPixels(TRIANGLE_CENTROID_HIT_RADIUS_PX)
-// Phase 2 : les slots tris.pX sont des indices dans activeShape().pointList.
+// les slots tris.pX sont des indices dans activeShape().pointList.
 // On accede aux coordonnees via pointList[t.pX]. Renvoie pointIndices
 // (= [t.p1, t.p2, t.p3]) pour permettre aux callers editor.js de
 // faire cluster/selection par indice sans de-referencement manuel.
@@ -104,7 +104,7 @@ const pointInsideTriangle = (p, a, b, c) => {
 
 const sign = (p, a, b) => (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)
 
-// Phase 2 : idem findNearestTriangle, coords via pointList[t.pX]. Renvoie
+// idem findNearestTriangle, coords via pointList[t.pX]. Renvoie
 // aussi les coordonnees des endpoints pour les callers qui tracent
 // directement (updateMouseHover ligne verte).
 export const findSelectedLine = (point) => {
@@ -214,7 +214,7 @@ export const updateMouseHover = (cursorScreen) => {
     if (state.selectionMode === 'triangle') {
         if (state.nearestTriangle) {
             const t = state.nearestTriangle.triangle
-            // Phase 2 : les slots tris sont des indices dans pointList ;
+            // les slots tris sont des indices dans pointList ;
             // on resout les coords avant de projeter en SCREEN.
             const pointList = activeShape().pointList
             const p1 = pointList[t.p1], p2 = pointList[t.p2], p3 = pointList[t.p3]
@@ -267,7 +267,7 @@ export const resolveMouseClickOnBoard = (e) => {
     drawMouse(mouseScreen)
 }
 
-// Phase 2 (modifyShapeModel-spec §3.6) : dedup tolerance 1 px scanne
+// (modifyShapeModel-spec §3.6) : dedup tolerance 1 px scanne
 // directement le pointList canonique (invariant I3 garantit <= 1
 // entree par coord unique, donc le test ne fait pas de tour
 // triangulaire). On push le nouveau point dans pointList et on
@@ -332,7 +332,7 @@ export const addPoint = (point) => {
     persistState()
 }
 
-// Phase 2, Q1c : state.selectedPoints = [0, 1, ..., pointList.length-1].
+// Q1c : state.selectedPoints = [0, 1, ..., pointList.length-1].
 // La conversion par indices evite l'ambiguite ref-vs-cluster heritage de
 // la representation inline-coord : un sommet == une entree pointList, et
 // le doublonnage est impossible par invariant I3.
@@ -357,7 +357,7 @@ export const selectAllPoints = () => {
 
 // ===== Mouseup (selection par click sur point) =====
 
-// Phase 2 : findNearestTriangle/Line renvoient maintenant des pointIndices
+// findNearestTriangle/Line renvoient maintenant des pointIndices
 // ([t.p1, t.p2, t.p3]) et pas des refs. collectUnderlyingPoints prend
 // des coords en entree et renvoie des indices ; le pipeline reste logique
 // et juste change le type de sortie.
@@ -408,7 +408,7 @@ export const processMouseUpSelection = (e) => {
     }
 }
 
-// Phase 2 : prend un array de coords (sortie brute de findNearest*)
+// prend un array de coords (sortie brute de findNearest*)
 // et renvoit les indices correspondants dans pointList. Pas de
 // doublonnage par I3.
 const collectUnderlyingPoints = (baseCoords) => {
@@ -425,7 +425,7 @@ const collectUnderlyingPoints = (baseCoords) => {
     return result
 }
 
-// Phase 2 : grabPoints est un array d'indices. On match les tris par
+// grabPoints est un array d'indices. On match les tris par
 // equity d'indices sur les 3 slots (plus fiable que adjacentPoints
 // par coord, et plus rapide O(N) au lieu de O(N*3)).
 const applyGrabTriangleSync = (grabIndices, e) => {
@@ -469,7 +469,7 @@ const applyGrabTriangleSync = (grabIndices, e) => {
     state.selectedTriangles.sort((a, b) => a - b)
 }
 
-// Phase 2, Q1c : indicesAtPos est un array d'indices. La notion de
+// Q1c : indicesAtPos est un array d'indices. La notion de
 // 'meme point' est une egalite stricte d'indice (plus de tolerance
 // coord necessaire grace a l'invariant I3). Si l'un des indices est
 // deja dans selectedPoints, on retire TOUT le cluster ; sinon on
@@ -488,7 +488,7 @@ const toggleSelectionPoints = (indicesAtPos) => {
 }
 
 // Rationale : voir DESIGN.md §3.6
-// Phase 2, Q1c : pointsAtPos est un array d'indices. ctrlToggles
+// Q1c : pointsAtPos est un array d'indices. ctrlToggles
 // conservé pour le toggle additif cluster (mode vertex).
 const applySelectionModifiers = (indicesAtPos, e, ctrlToggles = false) => {
     if (e.shiftKey) {
@@ -527,7 +527,7 @@ const applyTriangleIndexModifier = (triangleIndex, e) => {
     updateColorButtonState()
 }
 
-// Phase 2, Q1c + invariant I2 : helper qui compacte pointList apres
+// Q1c + invariant I2 : helper qui compacte pointList apres
 // une mutation des tris. Retire les entrees pointList non referencees
 // par aucun slot, puis re-indexe les slots et renvoie une map
 // oldIdx -> newIdx pour les callers qui ajustent selectedPoints
@@ -562,7 +562,7 @@ const compactPointList = (shape) => {
 
 // ===== Suppression d'un point =====
 
-// Phase 2 (modifyShapeModel-spec §4.1, alterne invariants I1-I8) :
+// (modifyShapeModel-spec §4.1, alterne invariants I1-I8) :
 // suppression d'un sommet = retirer ses refs des slots puis compacter
 // (invariant I2). Les tris avec < 2 sommets survivants disparaissent
 // (regle §4.1 'segment oppose survit').
@@ -614,7 +614,7 @@ export const deleteSelectedPoint = () => {
 
 // ===== Suppression d'un segment (mode 'segment') =====
 
-// Phase 2, §4.1 : suppression des triangles dont 2+ slots matchent les
+// §4.1 : suppression des triangles dont 2+ slots matchent les
 // endpoints du segment. Les triangles avec 0-1 match survivent (leurs
 // autres slots conservent leur ref). Compact pointList invariant I2.
 export const deleteSelectedSegment = () => {
@@ -655,7 +655,7 @@ export const deleteSelectedSegment = () => {
 
 // ===== Suppression d'un triangle (mode 'triangle') =====
 
-// Phase 2, §4.1 : suppression stricte des triangles dont les 3 slots
+// §4.1 : suppression stricte des triangles dont les 3 slots
 // matchent le triangle selectionne (matchCount === 3). Distinct du
 // mode segment : on ne supprime pas les triangles partageant un sommet.
 // Compact pointList I2.
@@ -698,7 +698,7 @@ export const deleteSelectedTriangle = () => {
 
 export const grabbed = () => state.currentAction === ACTION_GRABBING
 
-// Phase 2, Q1c : findNearestTriangle/Line renvoient des pointIndices
+// Q1c : findNearestTriangle/Line renvoient des pointIndices
 // (arrays d'indices) ; collectUnderlyingPoints prend des coords et
 // renvoie des indices ; applySelectionModifiers attend des indices.
 // Pas de doublance coords <=> indices entre les helpers : un seul
@@ -764,7 +764,7 @@ export const processRightClickSelection = (e) => {
     return selectAtRightClick(e, targetModel, false)
 }
 
-// Phase 2 : AltGr drag itere shape.pointList directement (Q1a per-shape,
+// AltGr drag itere shape.pointList directement (Q1a per-shape,
 // pas de tour triangulaire pour collecter). Chaque grabbedGroup entry
 // devient {shapeIndex, pointIndex, triangleIndex, slotId, startX, startY}
 // (Q2c supprime selectedPointRef). buildGrabbedGroupFromSelection
@@ -820,7 +820,7 @@ export const beginGrabbing = (e) => {
         return false
     }
 
-    // Phase 2, §3.6.1 sparse-replace WYSIWYG (Q1c) : detection de cluster
+    // §3.6.1 sparse-replace WYSIWYG (Q1c) : detection de cluster
     // physique SUR les coords resolues via pointList[idx]. On suit la
     // meme regle : 0 entree OU toutes les refs au meme coord (tol
     // §3.2 0.01) = 1 cluster logique. selectedPoints est des indices ;
@@ -943,7 +943,7 @@ export const beginGrabbing = (e) => {
     return true
 }
 
-// Phase 2, Q2c : nouvelle structure d'entree — {shapeIndex, pointIndex,
+// Q2c : nouvelle structure d'entree — {shapeIndex, pointIndex,
 // triangleIndex, slotId, startX, startY} plus de selectedPointRef (la
 // coherence avec state.selectedPoints est assuree par construction :
 // une mutation de pointList[idx].x propage directement aux coords
@@ -1022,7 +1022,7 @@ export const resolveMouseMoveOnBoard = (e) => {
             const maxYM = Math.max(m1.y, m2.y)
             const shape = activeShape()
             const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
-            // Phase 2, Q1c : la selection du lasso est un array d'indices
+            // Q1c : la selection du lasso est un array d'indices
             // dans le pointList canonique. On garde invariant I3 (pas de
             // doublon intra-coord) ; l'unique coord-matching est
             // inBox.indexOf(idx) sans passer par un cluster.
@@ -1075,7 +1075,7 @@ const getGrabTargetPosition = (item, dx, dy) => {
     return (state.activeGrid && !state.moveAllActive) ? snapToGrid(rawPos) : rawPos
 }
 
-// Phase 2, Q2c : plus de selectedPointRef (Q2c). L'item porte un
+// Q2c : plus de selectedPointRef (Q2c). L'item porte un
 // pointIndex direct ; on mute pointList[item.pointIndex] en place.
 // Cette mutation couvre tous les slots partagant cet indice (les N
 // triangles qui referencent le meme sommet visuelle bougent en
@@ -1096,7 +1096,7 @@ const applyGrabToPoint = (item, targetPos) => {
 
 // ===== Rotation runtime =====
 
-// Phase 2 : la rotation opere sur le pointList canonique (Q1a per-shape),
+// la rotation opere sur le pointList canonique (Q1a per-shape),
 // une seule mutation par sommet logique (au lieu de N mutations sur les
 // slots triangulaires).
 export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
@@ -1135,7 +1135,7 @@ export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
     updateZoomDisplay()
 }
 
-// Phase 2, Q1c : state.selectedPoints est un array d'indices ; on
+// Q1c : state.selectedPoints est un array d'indices ; on
 // mute directement pointList[idx]. Une rotation d'un point partage
 // par N triangles produit N mises a jour identiques sur la meme
 // coord - l'effet visuel est identique, la complexite est O(N) en
@@ -1177,8 +1177,8 @@ export const rotateSelectedPoints = (center, angle) => {
 
 // ===== Coloration des triangles (mode 'triangle') =====
 
-// Phase 2 (modifyShapeModel-spec §3.6) : la liste de triangles de la
-// forme active est `tris` (indexe) depuis Phase 1.
+// (modifyShapeModel-spec §3.6) : la liste de triangles de la
+// forme active est `tris` (indexe) $
 export const applyColorToSelectedTriangles = (color) => {
     if (!state.shapes || !state.shapes[state.activeShapeIndex]) return
     if (!state.selectedTriangles || state.selectedTriangles.length === 0) return
