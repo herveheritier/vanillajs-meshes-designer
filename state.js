@@ -4,7 +4,7 @@ import { DEFAULT_GRID_STEP } from './constants.js'
 
 export const state = {
     // ===== Scene / viewport =====
-    shapes: [{ triangles: [] }],
+    shapes: [{ pointList: [], tris: [] }],
     activeShapeIndex: 0,
 
     ctx: {

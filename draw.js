@@ -129,11 +129,20 @@ export const drawBoard = () => {
     }
 }
 
+// (modifyShapeModel-spec §3.7) : avec state.selectedPoints
+// = indices dans activeShape().pointList (Q1c), chaque entree du
+// tableau est un nombre, pas une ref JS. On resout via
+// pointList[idx] avant de deleguer au drawPoint. Indices non-
+// integer ou hors range sont ignores (defense — ne devrait pas
+// arriver dans le pipeline normal post-spec-merge-compact).
 export const drawSelectedPoints = () => {
     if (typeof state.selectedPoints === 'undefined' || !state.selectedPoints || state.selectedPoints.length === 0) return
     let isDimmed = typeof state.isSelectionDimmed !== 'undefined' && state.isSelectionDimmed
     let color = isDimmed ? COLOR_SELECTED_POINT_DIMMED : COLOR_SELECTED_POINT
-    state.selectedPoints.forEach((p) => {
+    const pointList = state.shapes[state.activeShapeIndex]?.pointList || []
+    state.selectedPoints.forEach((idx) => {
+        if (!Number.isInteger(idx)) return
+        const p = pointList[idx]
         if (!p) return
         drawPoint(p, 6, color)
     })
@@ -217,17 +226,28 @@ export const drawShapes = () => {
     drawShape(state.shapes[state.activeShapeIndex], true)
 }
 
+// (modifyShapeModel-spec §3.7) : le tableau est `tris` ,
+// les slots p1/p2/p3 sont des indices dans shape.pointList. On resout
+// les coordonnees via pointList[t.pX] avant de deleguer a drawTriangle /
+// drawPoint. Les slots `undefined` (Q1b triangles partiels) sont
+// correctement filtres — drawTriangle gere deja le cas p1 absent / p2
+// absent / p3 absent, et drawPoint ignore les coords absents (guard
+// `if (!p) return`).
 export const drawShape = (shape, isActive) => {
-    if (!shape || !shape.triangles || shape.triangles.length === 0) return
+    if (!shape || !Array.isArray(shape.tris) || shape.tris.length === 0) return
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
     let lineColor = isActive ? COLOR_LINES : COLOR_LINES_INACTIVE
     let linePattern = isActive ? PATTERN_LINES : PATTERN_LINES_INACTIVE
     let pointColor = isActive ? POINT_COLOR_ACTIVE : POINT_COLOR_INACTIVE
-    shape.triangles.forEach((t) => {
+    shape.tris.forEach((t) => {
+        const p1 = Number.isInteger(t.p1) ? pointList[t.p1] : undefined
+        const p2 = Number.isInteger(t.p2) ? pointList[t.p2] : undefined
+        const p3 = Number.isInteger(t.p3) ? pointList[t.p3] : undefined
         let fill = isActive ? (t.fill !== undefined ? t.fill : COLOR_TRIANGLE_FILL_ACTIVE) : undefined
-        drawTriangle(t.p1, t.p2, t.p3, linePattern, lineColor, fill)
-        drawPoint(t.p1, 2, pointColor)
-        drawPoint(t.p2, 2, pointColor)
-        drawPoint(t.p3, 2, pointColor)
+        drawTriangle(p1, p2, p3, linePattern, lineColor, fill)
+        drawPoint(p1, 2, pointColor)
+        drawPoint(p2, 2, pointColor)
+        drawPoint(p3, 2, pointColor)
     })
 }
 

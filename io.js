@@ -11,25 +11,66 @@ import {
 import { drawBoard } from './draw.js'
 import { updateGridButtonText, updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateSceneStatus } from './hud.js'
 import { log } from './log.js'
-import { isSceneEmpty } from './geometry.js'
+import { isSceneEmpty, adjacentPoints } from './geometry.js'
 
 // ===== Serialisation (state -> JSON) =====
 
 export const shapeToMesh = (shape) => {
-    const pointMap = new Map()
     const pointList = []
     const tris = []
-    if (!shape || !Array.isArray(shape.triangles)) {
-        log('shapeToMesh FALLBACK: shape=' + (shape ? JSON.stringify(shape) : 'undefined') + ' (.triangles absent ou non-Array) => serialisation videe pour cette forme, le reste de la scene est persiste normalement. Capture ce message pour identifier la mutation fautive.')
+    if (!shape || typeof shape !== 'object') {
+        log('shapeToMesh FALLBACK: shape absent ou invalide (' + (shape === undefined ? 'undefined' : typeof shape) + '). Serialisation videe pour cette forme, le reste de la scene est persiste normalement. Capture ce message pour identifier la mutation fautive.')
         return { pointList, tris }
     }
+    // Nouveau runtime (modifyShapeModel-spec §3.4) : shape deja
+    // indexe ({ pointList, tris }). On valide les bornes et on laisse
+    // passer tel quel — pas d'etape de collapse, le wire format est deja
+    // aligne.
+    if (Array.isArray(shape.pointList) && Array.isArray(shape.tris)) {
+        shape.pointList.forEach((p) => {
+            if (p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))) {
+                pointList.push({ x: Number(p.x), y: Number(p.y) })
+            }
+        })
+        shape.tris.forEach((t) => {
+            if (!t || typeof t !== 'object' || Array.isArray(t)) return
+            // Anti-leak symetrique a resolveTrisToIndices (DESIGN §4.4) : un
+            // triangle partiel (sans p1, p2 ou p3 — typique d'un triangle en
+            // cours de dessin) ne franchit pas la frontiere io. Sinon,
+            // localStorage contient des slots vides et DevTools laisse croire
+            // a du contenu fantome. Defense in depth : jumelage avec
+            // buildShapesFromPayload qui filtre a la rehydratation.
+            if (t.p1 === undefined || t.p2 === undefined || t.p3 === undefined) return
+            const nt = {}
+            if (Number.isInteger(t.p1) && t.p1 >= 0 && t.p1 < pointList.length) nt.p1 = t.p1
+            if (Number.isInteger(t.p2) && t.p2 >= 0 && t.p2 < pointList.length) nt.p2 = t.p2
+            if (Number.isInteger(t.p3) && t.p3 >= 0 && t.p3 < pointList.length) nt.p3 = t.p3
+            if (typeof t.fill === 'string' && t.fill.length > 0) nt.fill = t.fill
+            if (nt.p1 !== undefined && nt.p2 !== undefined && nt.p3 !== undefined) tris.push(nt)
+        })
+        return { pointList, tris }
+    }
+    // Runtime legacy (avant la migration {pointList, tris}) : shape.triangles tient des refs JS
+    // point (coords inline). On collapse vers la forme indexee pour
+    // serialiser. Cheminement reste ici en Q3b back-compat : si un
+    // ancienne scene chargee en runtime persiste avant migration
+    // complete, on ne casse pas la sortie.
+    if (!Array.isArray(shape.triangles)) {
+        log('shapeToMesh FALLBACK: shape=' + JSON.stringify(shape) + ' (.triangles absent ou non-Array) => serialisation videe pour cette forme, le reste de la scene est persiste normalement. Capture ce message pour identifier la mutation fautive.')
+        return { pointList, tris }
+    }
+    // Phase 5 detecteur (spec §4 Phase 5 + §B Q3b) : shape legacy
+    // detecte (shape.triangles inline-coord valide). Log une seule
+    // fois par session — la decision Q3b preserve la back-compat
+    // silencieusement pour ne pas casser les fichiers d_avant la migration {pointList, tris},
+    // mais on previent l_utilisateur qu_un re-save migrera au nouveau
+    // format {pointList, tris}.
+    if (!legacyShapeDetected && shape.triangles.length > 0) {
+        legacyShapeDetected = true
+        log('shapeToMesh: fichier legacy detecte (shape.triangles inline-coord, pointList absent). Back-compat silencieux actif (spec §B Q3b). Re-sauvegardez ce mesh dans le nouveau format {pointList, tris} pour migrer.')
+    }
+    const pointMap = new Map()
     shape.triangles.forEach(t => {
-        // Anti-leak symétrique à resolveTrisToTriangles (cf. DESIGN §4.4) :
-        // un triangle partiel ne franchit pas non plus la frontière io
-        // côté serialize. Sans ça, un triangle en cours de dessin occupe
-        // des slots vides dans localStorage (pollution + faux espoirs
-        // d'inspection via DevTools), même si sa matérialisation au load
-        // est bloquée par le filtre jumeau. Defense in depth.
         if (!t.p1 || !t.p2 || !t.p3) return
         const indices = { p1: undefined, p2: undefined, p3: undefined }
         const pidArray = ['p1', 'p2', 'p3']
@@ -44,8 +85,8 @@ export const shapeToMesh = (shape) => {
             indices[pid] = pointMap.get(key)
         })
         const tri = { p1: indices.p1, p2: indices.p2, p3: indices.p3 }
-        if (t.fill !== undefined) tri.fill = t.fill
-        tris.push(tri)
+            if (typeof t.fill === 'string' && t.fill.length > 0) tri.fill = t.fill
+            tris.push(tri)
     })
     return { pointList, tris }
 }
@@ -68,8 +109,17 @@ export const serializeState = () => {
 
 // ===== Persistance (write to localStorage) =====
 
+// Phase 4 (modifyShapeModel-spec §A + §4 Phase 4 Q3c) : dev-only
+// validation gate avant serialisation. Log-only — ne bloque jamais
+// la persistance ; les downstream guards (shapeToMesh filtre les tris
+// invalides, draw.js tolere les entrees corrompues via Number.isInteger)
+// absorbent la corruption au prochain rendu.
 export const persistState = () => {
     try {
+        state.shapes.forEach((shape, i) => {
+            const v = validateShape(shape)
+            if (!v.ok) log('persistState: shape #' + i + ' — ' + v.errors.length + ' erreur(s): ' + JSON.stringify(v.errors))
+        })
         localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
         state.ctx.workIsSaved = 1
         updateSceneStatus()
@@ -80,24 +130,27 @@ export const persistState = () => {
 
 // ===== Restore (read from localStorage) =====
 
-const resolveTrisToTriangles = (trisArray, pts) => {
+// modifyShapeModel-spec §3.4 : les triangles runtime portent
+// des INDICES dans le pointList de leur forme. resolveTrisToIndices
+// valide chaque indice ∈ [0, pointList.length) et drop les tris
+// invalides (defense contre payload malforme). Elle remplace
+// resolveTrisToTriangles qui derefencait chaque indice vers un object
+// point — plus pertinent depuis que le runtime est lui-meme indexe.
+const resolveTrisToIndices = (trisArray, ptsLength) => {
     const ts = []
     if (!Array.isArray(trisArray)) return ts
     trisArray.forEach(t => {
-        // Anti-leak restart : un triangle partiel (sans p3, ou sans l'un des
-        // p1/p2/p3) ne doit pas traverser la frontière io. Sinon, après
-        // reload, sa p1-p2 attend un clic pour compléter via la branche
-        // addPoint 'else if (triangle.p3 === undefined) triangle.p3 = point',
-        // qui bypasse entièrement le recalcul de state.nearestLine — la
-        // première arête devient donc le segment p1-p2 laissé en plan avant
-        // restart, perçu comme « le dernier segment utilisé avant redémarrage »
-        // (cf. DESIGN.md §4.4 : règle anti-leak triangles partiels).
+        // Anti-leak triangles partiels (DESIGN §4.4) : un triangle sans
+        // la totalite de ses 3 indices ne doit pas franchir la
+        // frontiere io — sinon, la rehydratation laisse un fantome
+        // partial pret a etre complete par le prochain addPoint,
+        // bypassant le recalcul de state.nearestLine (cf. §4.3).
         const nt = {}
-        if (t.p1 !== undefined && pts[t.p1]) nt.p1 = pts[t.p1]
-        if (t.p2 !== undefined && pts[t.p2]) nt.p2 = pts[t.p2]
-        if (t.p3 !== undefined && pts[t.p3]) nt.p3 = pts[t.p3]
+        if (Number.isInteger(t.p1) && t.p1 >= 0 && t.p1 < ptsLength) nt.p1 = t.p1
+        if (Number.isInteger(t.p2) && t.p2 >= 0 && t.p2 < ptsLength) nt.p2 = t.p2
+        if (Number.isInteger(t.p3) && t.p3 >= 0 && t.p3 < ptsLength) nt.p3 = t.p3
         if (typeof t.fill === 'string' && t.fill.length > 0) nt.fill = t.fill
-        if (nt.p1 && nt.p2 && nt.p3) ts.push(nt)
+        if (nt.p1 !== undefined && nt.p2 !== undefined && nt.p3 !== undefined) ts.push(nt)
     })
     return ts
 }
@@ -159,9 +212,102 @@ export const validateScenePayload = (data) => {
     return null
 }
 
+// Phase 4 (modifyShapeModel-spec §A + §4 Phase 4 Q3c) : dev-only
+// validation helper. Categorie les erreurs selon les invariants I1
+// (out_of_bounds), I2 (orphan), I3 (duplication), I5 (partial_inverted)
+// et la grammaire du wire format (fill type string-only).
+//
+// Cout O(N²) pour la detection de duplication I3 — acceptable sur
+// scenes de taille raisonable (< 1000 vertices : < 1M comparisons,
+// < 100ms). Ne throw jamais : retourne { ok: true } ou
+// { ok: false, errors }. Les wire sites (persistState + loadState)
+// loggent les erreurs et laissent les downstream guards
+// (Number.isInteger dans draw.js / editor.js, shapeToMesh filtre
+// les tris invalides au prochain serialize) absorber la corruption.
+//
+// Spec §A categorie "shape_missing" : retourne directement cette
+// erreur si shape absent / non-objet / array, sans scanner les
+// autres invariants (qui seraient inexploitables sans shape valide).
+export const validateShape = (shape) => {
+    if (!shape || typeof shape !== 'object' || Array.isArray(shape)) {
+        return { ok: false, errors: [{ kind: 'shape_missing' }] }
+    }
+    const errors = []
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    const tris = Array.isArray(shape.tris) ? shape.tris : []
+    if (!Array.isArray(shape.pointList)) errors.push({ kind: 'pointList_missing' })
+    if (!Array.isArray(shape.tris)) errors.push({ kind: 'tris_missing' })
+    // I1 : out_of_bounds (slots pX non-entier ou hors range [0, pointList.length))
+    tris.forEach((t, ti) => {
+        if (!t || typeof t !== 'object' || Array.isArray(t)) {
+            errors.push({ kind: 'tri_invalid', triIndex: ti })
+            return
+        }
+        ;['p1', 'p2', 'p3'].forEach((pid) => {
+            const idx = t[pid]
+            if (idx === undefined) return
+            if (!Number.isInteger(idx) || idx < 0 || idx >= pointList.length) {
+                errors.push({ kind: 'out_of_bounds', triIndex: ti, slotId: pid, index: idx, size: pointList.length })
+            }
+        })
+        // I5 : partial tri inverted — p1 undefined mais p2/p3 presents,
+        // ou p2 undefined mais p3 present. Geometriquement impossible
+        // (invariant I5 : si p3 undefined, p1 et p2 sont forcement definis).
+        // Spec §4.4 anti-leak bloque deja la persistence des partiels
+        // donc cette erreur reste rare — protege contre les mutations
+        // directes (devtools) ou les bugs actifs dans editor.js.
+        if (t.p1 === undefined && (t.p2 !== undefined || t.p3 !== undefined)) {
+            errors.push({
+                kind: 'partial_inverted',
+                triIndex: ti,
+                missing: 'p1',
+                present: ['p1', 'p2', 'p3'].filter(pid => t[pid] !== undefined)
+            })
+        }
+        if (t.p2 === undefined && t.p3 !== undefined) {
+            errors.push({
+                kind: 'partial_inverted',
+                triIndex: ti,
+                missing: 'p2',
+                present: ['p1', 'p2', 'p3'].filter(pid => t[pid] !== undefined)
+            })
+        }
+        // fill type : doit etre string ou undefined
+        if (t.fill !== undefined && typeof t.fill !== 'string') {
+            errors.push({ kind: 'fill_not_string', triIndex: ti, type: typeof t.fill })
+        }
+    })
+    // I2 : orphelin — entry pointList non referencee par aucun tri slot
+    const refs = new Set()
+    tris.forEach((t) => {
+        if (!t || typeof t !== 'object') return
+        ;['p1', 'p2', 'p3'].forEach((pid) => {
+            if (Number.isInteger(t[pid]) && t[pid] >= 0 && t[pid] < pointList.length) refs.add(t[pid])
+        })
+    })
+    pointList.forEach((_, idx) => {
+        if (!refs.has(idx)) errors.push({ kind: 'orphan', pointIndex: idx })
+    })
+    // I3 : duplication (O(N²) — limitee a scenes < ~1000 vertices pour
+    // eviter bottleneck sur les gros meshes).
+    for (let i = 0; i < pointList.length; i++) {
+        for (let j = i + 1; j < pointList.length; j++) {
+            if (pointList[i] && pointList[j] && adjacentPoints(pointList[i], pointList[j], 0.01)) {
+                errors.push({ kind: 'duplication', pointIndexA: i, pointIndexB: j })
+            }
+        }
+    }
+    return errors.length === 0 ? { ok: true } : { ok: false, errors }
+}
+
+// (modifyShapeModel-spec §3.4) — le runtime produit directement
+// { pointList, tris } (memes champs que le wire format), au lieu du
+// collapse { triangles: [{p1,p2,p3 (point refs)}] } d'avant. Le chemin
+// legacy `shape.triangles` reste accepte pour les fichiers anciens
+// (decision Q3b silent back-compat) via une collapse via shapeToMesh.
 export const buildShapesFromPayload = (data) => {
     if (!data || typeof data !== 'object') return null
-    let result = []
+    const result = []
     if (Array.isArray(data.shapes)) {
         data.shapes.forEach(shape => {
             let pts = []
@@ -174,19 +320,24 @@ export const buildShapesFromPayload = (data) => {
                 pts = (mesh.pointList || []).map(p => ({ x: Number(p.x), y: Number(p.y) }))
                 trisSource = mesh.tris
             }
-            result.push({ triangles: resolveTrisToTriangles(trisSource, pts) })
+            result.push({ pointList: pts, tris: resolveTrisToIndices(trisSource, pts.length) })
         })
     } else {
         let pts = []
         if (Array.isArray(data.pointList)) {
             pts = data.pointList.map(p => ({ x: Number(p.x), y: Number(p.y) }))
         }
-        result.push({ triangles: resolveTrisToTriangles(data.tris, pts) })
+        result.push({ pointList: pts, tris: resolveTrisToIndices(data.tris, pts.length) })
     }
-    if (result.length === 0) result = [{ triangles: [] }]
+    if (result.length === 0) result = [{ pointList: [], tris: [] }]
     return result
 }
 
+// (modifyShapeModel-spec §3.4) — la rotation s'applique sur
+// pointList (la liste canonique des sommets par forme), pas sur les
+// refs des slots triangles. Meme resultat geometrique (chaque vertex
+// tourne autour du pivot) mais sans enumeration des slots triangulaires
+// puisque pointList[idx] couvre deja tous les sommets partages.
 const applyPendingRotationToShapes = (shapeArray) => {
     if (!state.pendingRotation || !shapeArray || shapeArray.length === 0) return
     const angle = state.pendingRotation.angle
@@ -194,20 +345,22 @@ const applyPendingRotationToShapes = (shapeArray) => {
     const cos = Math.cos(angle)
     const sin = Math.sin(angle)
     shapeArray.forEach((shape) => {
-        shape.triangles.forEach((t) => {
-            ['p1', 'p2', 'p3'].forEach((pid) => {
-                const p = t[pid]
-                if (!p) return
-                const dx = p.x - pivot.x
-                const dy = p.y - pivot.y
-                p.x = pivot.x + dx * cos - dy * sin
-                p.y = pivot.y + dx * sin + dy * cos
-            })
+        const pts = Array.isArray(shape.pointList) ? shape.pointList : []
+        pts.forEach((p) => {
+            if (!p) return
+            const dx = p.x - pivot.x
+            const dy = p.y - pivot.y
+            p.x = pivot.x + dx * cos - dy * sin
+            p.y = pivot.y + dx * sin + dy * cos
         })
     })
     state.pendingRotation = undefined
 }
 
+// Phase 4 (modifyShapeModel-spec §4 Phase 4) : detecte les scenes
+// corrompues post-hydratation via validateShape. Log-only — ne
+// modifie pas state.shapes (les downstream guards Number.isInteger
+// dans draw.js / editor.js absorbent les invalides sans planter).
 export const loadState = () => {
     const saved = localStorage.getItem(SCENE_STORAGE_KEY)
     if (!saved) return
@@ -251,6 +404,11 @@ export const loadState = () => {
         if (loaded) {
             state.activeConstructionTriangle = undefined
             state.shapes = loaded
+            // Phase 4 : detection post-hydratation
+            state.shapes.forEach((shape, i) => {
+                const v = validateShape(shape)
+                if (!v.ok) log('loadState: shape #' + i + ' — ' + v.errors.length + ' erreur(s): ' + JSON.stringify(v.errors))
+            })
             if (typeof data.activeShapeIndex === 'number' && data.activeShapeIndex >= 0 && data.activeShapeIndex < state.shapes.length) {
                 state.activeShapeIndex = data.activeShapeIndex
             } else {
@@ -323,6 +481,15 @@ export const saveStoredImportMode = (mode) => {
 
 let importModalShown = false
 
+// Phase 5 (modifyShapeModel-spec §4 Phase 5 observability + §B Q3b :
+// detecteur de fichiers legacy charges via shapeToMesh fallback
+// (.triangles inline-coord au lieu de .pointList). Decision Q3b
+// preserve la back-compat silencieusement — ce flag signale
+// l_evenement a l_utilisateur (une fois par session) pour l_inciter
+// a re-sauvegarder en nouveau format {pointList, tris}. Closure
+// scope — le refresh navigateur reset le flag.
+let legacyShapeDetected = false
+
 // Rationale : voir DESIGN.md §7.4
 const showImportModal = (opts, callback) => {
     if (importModalShown) {
@@ -376,7 +543,7 @@ const showImportModal = (opts, callback) => {
         if (e.key === 'Escape') onCancel()
     }
     const onBackdrop = (e) => {
-        if (e.target && (e.target === modal || e.target.classList && e.target.classList.contains('modal-backdrop'))) {
+        if (e.target && (e.target === modal || (target.classList && target.classList.contains('modal-backdrop')))) {
             onCancel()
         }
     }
@@ -414,8 +581,8 @@ export const importMeshFromText = (text) => {
         return true
     }
 
-    const currentTriCount = state.shapes.reduce((a, s) => a + (s && s.triangles ? s.triangles.length : 0), 0)
-    const importedTriCount = loaded.reduce((a, s) => a + (s && s.triangles ? s.triangles.length : 0), 0)
+    const currentTriCount = state.shapes.reduce((a, s) => a + (s && s.tris ? s.tris.length : 0), 0)
+    const importedTriCount = loaded.reduce((a, s) => a + (s && s.tris ? s.tris.length : 0), 0)
     const currentInfo = state.shapes.length + ' forme' + (state.shapes.length > 1 ? 's' : '') + ', ' + currentTriCount + ' triangle' + (currentTriCount > 1 ? 's' : '')
     const importedInfo = loaded.length + ' forme' + (loaded.length > 1 ? 's' : '') + ', ' + importedTriCount + ' triangle' + (importedTriCount > 1 ? 's' : '')
     showImportModal({ currentInfo, importedInfo }, (result) => {
@@ -468,7 +635,7 @@ export const applyImport = (parsed, loaded, mode) => {
         updateGridButtonText()
         updateShapeHud()
         drawBoard()
-        const totalTris = state.shapes.reduce((acc, s) => acc + s.triangles.length, 0)
+        const totalTris = state.shapes.reduce((acc, s) => acc + (s && s.tris ? s.tris.length : 0), 0)
         log('Import merge OK: +' + loaded.length + ' forme' + (loaded.length > 1 ? 's' : '') + ', ' + state.shapes.length + ' au total, ' + totalTris + ' triangles')
         return true
     }
@@ -490,7 +657,7 @@ export const applyImport = (parsed, loaded, mode) => {
     updateGridButtonText()
     updateShapeHud()
     drawBoard()
-    const totalTris = state.shapes.reduce((acc, s) => acc + s.triangles.length, 0)
+    const totalTris = state.shapes.reduce((acc, s) => acc + (s && s.tris ? s.tris.length : 0), 0)
     log('Import OK: ' + state.shapes.length + ' forme' + (state.shapes.length > 1 ? 's' : '') + ', ' + totalTris + ' triangle' + (totalTris > 1 ? 's' : ''))
     return true
 }
@@ -512,7 +679,7 @@ export const importMeshFromFile = (file) => {
 // ===== Reset =====
 
 export const resetAll = () => {
-    state.shapes = [{ triangles: [] }]
+    state.shapes = [{ pointList: [], tris: [] }]
     state.activeShapeIndex = 0
     state.selectedPoints = []
     state.selectedTriangles = []
