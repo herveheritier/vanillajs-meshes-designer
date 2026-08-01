@@ -236,12 +236,21 @@ exhaustive :
   - Retourne `[{shapeIndex, pointIndex, triangleIndex, slotId, startX, startY, fill?, drawState}, ...]`.
   - `selectedPointRef` **supprimé** (Q2c).
 
-- `beginGrabbing(e)` (la pre-branch §3.6.1 sparse-replace) : les
-  `sparseCursorGrabPoints` deviennent un array d'indices ; le replace
-  fait `selectedPoints = [...newIndices]`. Anti-flicker inchangé
-  (test par `isPointSelected` qui devient `selectedPoints.includes(idx)`
-  ou par adjacents — décision sur la sémantique exacte de
-  `isPointSelected` post-refactor à clarifier en phase 1).
+- `beginGrabbing(e)` (la pre-branch §3.6.1 sparse-replace, mode-aware) :
+  les `sparseCursorGrabIndices` sont un array d'indices ; le replace
+  fait `selectedPoints = [...newIndices]`. La predicate
+  `isSelectionSparse()` (ajoutée post-spec, refinement Phase 2 tardif)
+  couvre les 3 modes : **vertex** = cluster physique (tol 0.01 §3.2) ;
+  **segment** = ≤ 1 edge couverte par `selectedPoints` avec dédup par
+  paire non ordonnée (sinon une edge partagée entre N tris serait
+  comptée N fois) ; **triangle** = ≤ 1 triangle dont les 3 slots sont
+  dans `selectedPoints`. Anti-flicker inchangé (`!sparseCursorGrabIndices.every(idx => state.selectedPoints.includes(idx))`
+  fonctionne tel quel sur les 3 modes). Sémantique exacte de
+  `isPointSelected` post-refactor : voir le commentaire inline de
+  `isSelectionSparse()` dans `editor.js`. Sans cette généralisation,
+  le pre-branch §3.6.1 ne se déclenchait effectivement qu'en mode
+  vertex (les predicates vertex-only classaient segment/triangle
+  « sparsity » comme « not sparse »).
 
 - `deleteSelected{Point,Segment,Triangle}` : itèrent `tris[*]` et
   filtrent. Suppression d'un sommet = retirer le row `pointList[idx]` et
@@ -619,6 +628,7 @@ devtools à la demande.
 | Format v1 silent (Q3a)          | Nul — wire format inchangé                            |
 | Back-compat legacy (Q3b)        | Faible — `shapeToMesh` reste pour le legacy seulement |
 | Helper dev-only (Q3c)           | Faible — pas de coût runtime en prod                  |
+| §3.6.1 mode-aware (post-spec extens.) | Faible — helper `isSelectionSparse()` O(N) avec dédup edge-pair en mode segment ; aligne la parité click/drag WYSIWYG sur les 3 modes (vertex cluster / segment edge-pair / triangle exact-3-slot). |
 
 ## §C. Liens vers les sections DESIGN.md existantes à mettre à jour post-refactor
 

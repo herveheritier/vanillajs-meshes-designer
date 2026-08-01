@@ -295,28 +295,31 @@ règle suivante unifie les deux gestes pour le cas sparse :
 | **1 élément**       | Plain-click replace → `[under-cursor]` | §3.6.1 sparse-replace → `[under-cursor]` puis drag (parité stricte) |
 | **≥ 2 éléments**    | Plain-click replace → toute la sélection groupée perdue | PRÉSERVÉ (filet défensif — drag déplace le groupe engagé depuis n'importe où) |
 
-> **Note** : « 1 élément logique » dans cette table désigne un **cluster
-> physique** (toutes les `state.selectedPoints[i]` adjacentes entre elles
-> au sens `adjacentPoints(pointList[idx], pointList[arr[0]], 0.01)` §3.2),
-> **pas** le nombre d'indices dans le tableau. Un sommet partagé avec
-> N indices `pointList[*]` distincts (cluster de doublons adjacents jamais
-> compactés via Q2a — par ex. 3 triangles jamais mergés avec leur propre
-> coord commun) compte pour 1 et déclenche la sparse-replace.
-> Implémentation : `isSingleCluster` dans `beginGrabbing` (editor.js)
-> teste `state.selectedPoints.every((idx, i, arr) => i === 0 || adjacentPoints(pointList[idx], pointList[arr[0]], 0.01))`.
-> Sans cette garde, un drag d'un sommet partagé laissait `state.selectedPoints`
-> collé à l'ancien cluster — la condition `<= 1` était trop stricte (cf.
-> regression report : « après avoir déplacé le point 21, requérir un
-> clic-droit loin de tout point avant de bouger un autre »).
+> **Note (extension mode-aware post-refactor §3.6)** : « 1 élément
+> logique » désigne désormais l'entité engagée selon `state.selectionMode`,
+> via `isSelectionSparse()` dans `beginGrabbing` (editor.js). **vertex**
+> = cluster physique (tol 0.01 §3.2, byte-équivalent à l'ancien
+> `isSingleCluster`). **segment** = ≤ 1 edge couverte par
+> `selectedPoints`, dédup par paire non ordonnée `(min, max)` pour
+> éviter qu'une edge partagée entre plusieurs triangles soit comptée
+> N fois (regression validée : clic sur edge AB partagé entre T1/T2
+> retournait couvert=2 au lieu de 1 sans la dédup). **triangle** =
+> ≤ 1 triangle dont les 3 slots sont dans `selectedPoints` (pas de
+> dédup — un sommet partagé par N triangles reste N triangles dans
+> ce mode, sinon on sur-compterait). Maintient invariants **I1**
+> (défense `Number.isInteger` sur chaque slot avant lookup) et **I3**
+> (pointList dédupliqué par coord → comptage sans paires fantômes).
 
 Implémentation : `beginGrabbing` insère une **pre-branch §3.6.1** juste
 avant l'early branch « selectedPoints.length > 0 grab-from-selection ».
 Cette pre-branch ne déclenche un replace QUE si les trois conditions
 suivantes sont réunies :
 
-1. `state.selectedPoints.length === 1` (sparse — exclusive du 0 qui est
-   déjà traité par le fall-through de `beginGrabbing` via
-   `applySelectionModifiers`).
+1. `isSelectionSparse()` retourne `true` (gate mode-aware couvrant
+   les 3 modes via cluster / dédup edge-pair / exact-3-slot ; voir
+   bloc détaillé ci-dessus). Le 0-tuple est capturé par le
+   fall-through de `beginGrabbing` via `applySelectionModifiers` ; le
+   1-tuple (cluster / 1 edge / 1 triangle) est traité ici.
 2. Le curseur vise une entité (mode-aware : `findNearestTriangle` >
    `findSelectedLine` > `findNearestPoint`, chacun avec sa
    tolérance hit-radius en pixels écran).
