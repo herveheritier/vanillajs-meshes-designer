@@ -68,6 +68,17 @@ management + grab + pan selon le bouton ; `keydown` ⇒ shortcuts clavier). Les
 listeners locaux à un module vivent DANS leur module (`wireGridControl`,
 `wireHelpModal`, …) et sont appelés depuis `main.js`.
 
+**Schéma canonique des formes (post-refactor `modifyShapeModel-spec` §0–§5)** :
+`state.shapes[i]` = `{ pointList: [{x,y}, …], tris: [{p1,p2,p3 (indices)}, …] }`.
+Le `pointList` est la **liste canonique des sommets** d'une forme ; tous
+les `tris[k].pX` sont des indices dans ce tableau. Aucun partage
+cross-shape — chaque forme a son propre `pointList` (Q1a §modify-shape-
+model-spec.md §1). Plus de JS-refs dans les slots : tout est adressable
+par indice (Q1c), ce qui simplifie le drag d'un sommet partagé
+(`pointList[idx].x = targetX` en O(1) au lieu de N mutations de slots),
+la suppression avec compactage immediat (Q2a), et la fusion de doublons
+adjacents (invariant I3).
+
 ### §1.2 Le `state` comme objet unique (pas de `let` exports)
 
 Pourquoi un objet `state` mutable exporté plutôt que des `let` top-level ?
@@ -190,7 +201,7 @@ sur un edge existant).
 
 | Mode        | Cible du clic                                                       | Sélectionne                                                          |
 |-------------|---------------------------------------------------------------------|----------------------------------------------------------------------|
-| **vertex**  | Point le + proche dans un rayon de `POINT_HIT_RADIUS_PX` pixels écran | Cluster de refs partageant cette position                         |
+| **vertex**  | Point le + proche dans un rayon de `POINT_HIT_RADIUS_PX` pixels écran | Ensemble des indices `pointList[*]` partageant ce coord (cluster §3.2) |
 | **segment** | Edge (projection orthogonale entre 2 sommets), dans `LINE_HIT_RADIUS_PX` pixels | Tous les points dans les 2 endpoints via `collectUnderlyingPoints` |
 | **triangle**| Hit `pointInTriangle` (inclusif sur edge) + tolérance centroïde de `TRIANGLE_CENTROID_HIT_RADIUS_PX` pixels | 3 sommets du triangle hovered |
 
@@ -236,8 +247,8 @@ avant l'initialisation du grab. Il ne crée donc aucune entrée d'historique,
 ne mute aucune coordonnée et ne peut pas déplacer accidentellement la sélection.
 En mode `triangle`, l'index du triangle est ajouté de façon idempotente dans
 `selectedTriangles`; en mode `segment`, les points des deux endpoints sont
-ajoutés. En mode `vertex`, le cluster de références partageant la position est
-ajouté sans doublon.
+ajoutés. En mode `vertex`, l'ensemble des indices `pointList[*]` partageant ce
+coord (cluster §3.2) est ajouté sans doublon.
 
 Implémentation : `processMouseUpSelection` reçoit uniquement le geste gauche
 et neutralise Ctrl/Cmd pour les appels de sélection ; le geste
@@ -286,12 +297,13 @@ règle suivante unifie les deux gestes pour le cas sparse :
 
 > **Note** : « 1 élément logique » dans cette table désigne un **cluster
 > physique** (toutes les `state.selectedPoints[i]` adjacentes entre elles
-> au sens `adjacentPoints(p, arr[0], 0.01)` §3.2), **pas** le nombre de
-> refs JS dans le tableau. Un sommet partagé avec N refs JS distinctes
-> (par ex. 3 triangles jamais mergés avec leur propre point au même
-> coord) compte pour 1 et déclenche la sparse-replace. Implémentation
-> : `isSingleCluster` dans `beginGrabbing` (editor.js) teste
-> `state.selectedPoints.every((p, i, arr) => i === 0 || adjacentPoints(p, arr[0], 0.01))`.
+> au sens `adjacentPoints(pointList[idx], pointList[arr[0]], 0.01)` §3.2),
+> **pas** le nombre d'indices dans le tableau. Un sommet partagé avec
+> N indices `pointList[*]` distincts (cluster de doublons adjacents jamais
+> compactés via Q2a — par ex. 3 triangles jamais mergés avec leur propre
+> coord commun) compte pour 1 et déclenche la sparse-replace.
+> Implémentation : `isSingleCluster` dans `beginGrabbing` (editor.js)
+> teste `state.selectedPoints.every((idx, i, arr) => i === 0 || adjacentPoints(pointList[idx], pointList[arr[0]], 0.01))`.
 > Sans cette garde, un drag d'un sommet partagé laissait `state.selectedPoints`
 > collé à l'ancien cluster — la condition `<= 1` était trop stricte (cf.
 > regression report : « après avoir déplacé le point 21, requérir un
@@ -345,20 +357,30 @@ point sélectionné selon le cas, est dans la pile).
 
 ### §4.1 Règle par mode
 
-- **vertex** (`deleteSelectedPoint`) : supprime le point des slots des
-  triangles qui le référencent. Les triangles dont il reste < 2 points
-  survivants sont filtrés. Les **segments incidents** à P disparaissent
-  (l'un de leurs endpoints n'existe plus) ; le **segment OPPOSÉ** du triangle
-  survit si ses 2 autres sommets existent.
+- **vertex** (`deleteSelectedPoint`) : supprime l'**indice** `idx` du
+  pointList de la forme active des slots `tris.pX` des triangles qui le
+  référencent (les slots deviennent `undefined`). Les triangles dont il
+  reste < 2 slots définis sont filtrés. Les **segments incidents** à P
+  disparaissent (l'un de leurs endpoints n'existe plus) ; le **segment
+  OPPOSÉ** du triangle survit si ses 2 autres sommets existent.
 - **segment** (`deleteSelectedSegment`) : supprime TOUS les triangles dont
-  **≥ 2 slots** matchent les endpoints du segment. Les triangles dont 0-1
-  slot match survivent (leurs autres slots gardent leur ref → points GC
-  implicitement s'ils ne sont plus référencés ailleurs).
+  **≥ 2 slots** matchent les indices des endpoints du segment.
+  Les triangles dont 0-1 slot match survivent (leurs autres slots
+  conservent leur indice vers `pointList`).
 - **triangle** (`deleteSelectedTriangle`) : supprime UNIQUEMENT les triangles
-  dont les **3 slots** matchent les sommets du/des triangles sélectionnés.
-  Distinction stricte avec le mode segment : `matchCount === 3` ici (vs
-  `>= 2`) car "uniquement les triangles sélectionnés" — pas ceux qui partagent
-  un sommet ou un edge.
+  dont les **3 slots** matchent les indices des sommets du/des triangles
+  sélectionnées. Distinction stricte avec le mode segment : `matchCount === 3`
+  ici (vs `>= 2`) car "uniquement les triangles sélectionnés" — pas ceux qui
+  partagent un sommet ou un edge.
+
+**Compactage immédiat (Q2a spec §modify-shape-model-spec.md §2a)** : après
+chaque `delete*`, `compactPointList` (editor.js) retire les entrées
+`pointList[*]` non référencées par aucun slot survivant ET ré-indexe
+les `tris.pX` restants via une map `oldIdx → newIdx` (le décalage est
+soustrait pour les `oldIdx > deletedIdx`). L'invariant runtime **I2**
+(§spec §5) reste garanti en O(N) sans orphelins (zombies). `state.selectedPoints`
+est aussi mis à jour via la même map : les indices sélectionnés restants
+sont remappés pour pointer sur le même sommet logique post-compactage.
 
 ### §4.2 Anti-régression doublure (toutes les `delete*`)
 
@@ -441,6 +463,38 @@ couleur et `sauvegardée` après export ou restauration. Les changements de vue
 Préfixe `meshesDesigner.` partout explicite pour audit devtools rapide.
 Isolation entre les deux groupes : clear une clé preference n'affecte pas la
 scene.
+
+### §5.3 Invariants runtime du modèle {pointList, tris}
+
+Le runtime `state.shapes[i] = { pointList, tris }` (Phase 1) doit
+vérifier en permanence les invariants suivants sur chaque forme.
+Voir `modifyShapeModel-spec.md` §A pour la définition complète des
+catégories d'erreur (`out_of_bounds`, `orphan`, `duplication`,
+`partial_inverted`, `fill_not_string`). Les invariants ci-dessous
+sont enforced en soft-mode (log-only, jamais bloquant) par le helper
+dev `validateShape(shape)` de `io.js` (wire dans `persistState` et
+`loadState`), et détectés defensivement par les helpers de rendu
+(`drawShape`, `drawSelectedPoints`) lorsque la donnée est corrompue
+à l'entrée (reload localStorage legacy, import externe, etc.).
+
+| Invariant | Énoncé | Enforced par |
+|---|---|---|
+| **I1** — _out_of_bounds_ | Tout `tris[k].pX` est un entier dans `[0, pointList.length)`. Pas de NaN, string, float, ou index négatif. | `validateShape` (log); `shapeToMesh` (filtre), `drawTriangle` (Number.isInteger gate) |
+| **I2** — _orphelin_ | Toute entrée `pointList[idx]` est référencée par au moins un `tris[k].pX` d'idx. Pas de slot fantôme. | `validateShape` (log); Q2a compactage immédiat post-merge/delete (cf. §4.1) |
+| **I3** — _dedup_ | Au plus une entrée `pointList[*]` par coordonnée flottante (au sens §3.2 tolérance 0.01). Deux sommets à la même position = une seule entrée, N slots triangle si N triangles. | `validateShape` (log, O(N²)); `addPoint` (ignore voisins `≤ 1 px`); `mergeSelectedPoints` (compactage immediat) |
+| **I4** — _schema_ | `shape` est un object avec `Array.isArray(pointList) && Array.isArray(tris)`. Pas de table `triangles` legacy en runtime (chemin legacy toléré dans `shapeToMesh` sortie uniquement, Q3b back-compat). | `validateShape` (`shape_missing`, `pointList_missing`, `tris_missing`) |
+| **I5** — _partial_inverted_ | Un triangle partiel valide (`p3 === undefined`) conserve toujours `p1` et `p2` définis. Pas de `p1` undefined si `p2` ou `p3` sont presents (forme dégénérée). | `validateShape` (log); `shapeToMesh` (filtre `if (t.p1 === undefined …)`) |
+| **I6** — _fill type_ | Tout `tris[k].fill` est soit absent, soit une string non-vide. Pas de `null`, nombre, ou objet. Anti-leak symétrique à I5 sur la sérialisation. | `validateShape` (log); `shapeToMesh` (`if (typeof t.fill === 'string' && t.fill.length > 0) nt.fill = t.fill`) |
+| **I7** — _indice continuité_ | Après delete+compactage (§4.1 + Q2a), les indices `pX` referencent des slots contigus `[0..N)` sans saut. Pas de hole dans la séquence après une suppression. | _Implicite_ : delete+compactage immediat (cf. §4.1) — l'invariant est garanti par construction, pas testé par `validateShape` directement |
+| **I8** — _fill opacité cohérente_ | `fill` parsé en `rgba(r,g,b,a)` avec `a ∈ [0,1]`. Pas d'alpha négatif ou `> 1`. | _Observé_ : le panneau `triangleColor` (§7.3) contraint l'opacité à 45% par défaut — pas de test runtime dédié |
+
+**Corrélation I1 ↔ I2 ↔ I3** : l'invariant I3 (au plus une entrée par
+coord) combiné avec I2 (toute entrée est référencée) implique un
+mapping canonique 1:1 entre coord flottante et index `pointList`.
+Cette propriété justifie l'usage de `pointList.findIndex(v =>
+adjacentPoints(v, p, 0.01))` dans §7.8 (label) et l'absence de dedup
+dans `cloneShape` §3.8 (l'unicité est garantie à l'entrée —
+`validateShape` loguerait au reload si une scene legacy enfreint I3).
 
 ### §5.2 Cycle `meshesDesigner.consoleFrame`
 
@@ -567,11 +621,19 @@ d'action en cours". `ACTION_GRABBING = 1` (drag d'un point en cours).
 Quand le curseur passe au-dessus d'un sommet dans n'importe quel mode de
 sélection, `drawVertexLabel(p, idx)` rend une **pill sombre 10 px
 monospace** sous le sommet affichant l'**index 0-based** du vertex dans
-`getAllVertices()` (helper `getVertexIndex(p)` de `geometry.js`). La
-convention est dev-friendly : `getAllVertices()[0]` est le 1er point de
+le `pointList` de la forme active (`state.shapes[activeShapeIndex].pointList[idx]`).
+Le helper `getVertexIndex(p)` de `geometry.js` implémente la résolution
+via `activeShapePointList().findIndex(v => adjacentPoints(v, p, 0.01))` —
+corollairement, l'invariant I3 (pas de doublons au sens §3.2 tolérance
+0.01) garantit un index unique par coord : un `findIndex` est ici
+suffisant pour mapper un point écran vers son slot canonique.
+
+La convention est dev-friendly : `pointList[0]` est le 1er sommet de
 la forme active — alignement JS array natif qui rend la lecture debug
-immédiate (`state.shapes[i].triangles[k].p1 = vertex 7` → label "7"
-cohérent).
+immédiate (`state.shapes[i].tris[k].p1 = vertex 7` → label "7"
+cohérent). Toute la topologie est désormais en indices (cf. §3.4
+runtime indexe), donc un label "7" référence directement
+`shapes[i].pointList[7]`.
 
 **Géométrie** :
 - Background `rgba(0,0,0,0.6)` — semi-transparent pour rester lisible
@@ -582,13 +644,17 @@ cohérent).
   (`OFFSET_Y = +14`) sans chevauchement visuel.
 
 **Implémentation** :
-- Le helper `getVertexIndex(p)` itère `getAllVertices()` et retourne
+- Le helper `getVertexIndex(p)` itère `state.shapes[activeShapeIndex].pointList`
+  directement (le `pointList` de la forme active, pas de raccourci
+  helper — le code accède à la slice via `state.shapes[…].pointList` à
+  chaque call site) et retourne
   `findIndex(v => adjacentPoints(v, p, 0.01))` → -1 si absent
-  (defense).
+  (defense). `findIndex` est suffisant grace a l'invariant I3 (un
+  seul slot par coord, cf. §5.3) — pas de dedup a faire.
 - Fallback `'?'` côté caller (`editor.js:updateMouseHover`) si la
   défense retourne -1. Ce cas ne devrait jamais survenir dans le call
   site normal puisque `findNearestPoint` garantit que le point rendu
-  existe dans `activeTriangles()`.
+  existe dans le `pointList` de la forme active (invariants I1+I2 de §5.3).
 
 **Relation aux autres features** :
 - §7.4 montre "où" (cercle vert 5 px sur le sommet le + proche), §7.8
@@ -624,8 +690,12 @@ dans `editor.js:updateMouseHover` (call site hover).
 **Implémentation** :
 - Helper `getStackTriangleRefs(p, tolerance = 0.01)` de `geometry.js`
   (commit `05cabe3 feat(geometry): §7.x helpers`). Itère
-  `activeTriangles()` et pousse pour chaque triangle la liste des slots
-  (`p1`/`p2`/`p3`) dont `adjacentPoints(slot, p, tolerance)` est vrai.
+  `activeTriangles()` (alias court pour
+  `state.shapes[activeShapeIndex].tris`, helper exporté par
+  `geometry.js`) et pousse pour chaque triangle la liste des slots
+  (`p1`/`p2`/`p3`) dont `adjacentPoints(pointList[slot], p, tolerance)`
+  est vrai — la résolution coords passe par l'index du slot dans le
+  `pointList` (cf. §3.4 runtime indexe).
 - Tolerance par défaut 0.01 unité modèle (cohérent avec §3.2 cluster
   semantics et §4.1 delete). Paramétrable pour tests spécifiques.
 
@@ -642,7 +712,10 @@ peut retourner plusieurs entrées pour le même `triangleIndex` si 2+
 slots du même triangle sont adjacents au point (cas dégénéré topologique).
 Une dedup par référence (`!refs.some(r => r.ref === entry.ref)`)
 serait plus robuste mais n'est pas appliquée (dette technique
-consignée ; nit reviewer du commit `2c586fa`).
+consignée ; nit reviewer du commit `2c586fa`). Le slotId est
+identifié via la position de l'index dans le tableau `tris[k]` :
+`triangle.tris[k].p1` → slotId `"p1"`, etc. — le format affiche
+`{triangleIndex}.{slotId}` (cf. spec §3.10).
 
 ---
 
