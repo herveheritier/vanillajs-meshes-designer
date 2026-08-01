@@ -11,7 +11,7 @@ import {
 import { drawBoard } from './draw.js'
 import { updateGridButtonText, updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateSceneStatus } from './hud.js'
 import { log } from './log.js'
-import { isSceneEmpty } from './geometry.js'
+import { isSceneEmpty, adjacentPoints } from './geometry.js'
 
 // ===== Serialisation (state -> JSON) =====
 
@@ -99,8 +99,17 @@ export const serializeState = () => {
 
 // ===== Persistance (write to localStorage) =====
 
+// Phase 4 (modifyShapeModel-spec §A + §4 Phase 4 Q3c) : dev-only
+// validation gate avant serialisation. Log-only — ne bloque jamais
+// la persistance ; les downstream guards (shapeToMesh filtre les tris
+// invalides, draw.js tolere les entrees corrompues via Number.isInteger)
+// absorbent la corruption au prochain rendu.
 export const persistState = () => {
     try {
+        state.shapes.forEach((shape, i) => {
+            const v = validateShape(shape)
+            if (!v.ok) log('persistState: shape #' + i + ' — ' + v.errors.length + ' erreur(s): ' + JSON.stringify(v.errors))
+        })
         localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
         state.ctx.workIsSaved = 1
         updateSceneStatus()
@@ -193,6 +202,94 @@ export const validateScenePayload = (data) => {
     return null
 }
 
+// Phase 4 (modifyShapeModel-spec §A + §4 Phase 4 Q3c) : dev-only
+// validation helper. Categorie les erreurs selon les invariants I1
+// (out_of_bounds), I2 (orphan), I3 (duplication), I5 (partial_inverted)
+// et la grammaire du wire format (fill type string-only).
+//
+// Cout O(N²) pour la detection de duplication I3 — acceptable sur
+// scenes de taille raisonable (< 1000 vertices : < 1M comparisons,
+// < 100ms). Ne throw jamais : retourne { ok: true } ou
+// { ok: false, errors }. Les wire sites (persistState + loadState)
+// loggent les erreurs et laissent les downstream guards
+// (Number.isInteger dans draw.js / editor.js, shapeToMesh filtre
+// les tris invalides au prochain serialize) absorber la corruption.
+//
+// Spec §A categorie "shape_missing" : retourne directement cette
+// erreur si shape absent / non-objet / array, sans scanner les
+// autres invariants (qui seraient inexploitables sans shape valide).
+export const validateShape = (shape) => {
+    if (!shape || typeof shape !== 'object' || Array.isArray(shape)) {
+        return { ok: false, errors: [{ kind: 'shape_missing' }] }
+    }
+    const errors = []
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    const tris = Array.isArray(shape.tris) ? shape.tris : []
+    if (!Array.isArray(shape.pointList)) errors.push({ kind: 'pointList_missing' })
+    if (!Array.isArray(shape.tris)) errors.push({ kind: 'tris_missing' })
+    // I1 : out_of_bounds (slots pX non-entier ou hors range [0, pointList.length))
+    tris.forEach((t, ti) => {
+        if (!t || typeof t !== 'object' || Array.isArray(t)) {
+            errors.push({ kind: 'tri_invalid', triIndex: ti })
+            return
+        }
+        ;['p1', 'p2', 'p3'].forEach((pid) => {
+            const idx = t[pid]
+            if (idx === undefined) return
+            if (!Number.isInteger(idx) || idx < 0 || idx >= pointList.length) {
+                errors.push({ kind: 'out_of_bounds', triIndex: ti, slotId: pid, index: idx, size: pointList.length })
+            }
+        })
+        // I5 : partial tri inverted — p1 undefined mais p2/p3 presents,
+        // ou p2 undefined mais p3 present. Geometriquement impossible
+        // (invariant I5 : si p3 undefined, p1 et p2 sont forcement definis).
+        // Spec §4.4 anti-leak bloque deja la persistence des partiels
+        // donc cette erreur reste rare — protege contre les mutations
+        // directes (devtools) ou les bugs actifs dans editor.js.
+        if (t.p1 === undefined && (t.p2 !== undefined || t.p3 !== undefined)) {
+            errors.push({
+                kind: 'partial_inverted',
+                triIndex: ti,
+                missing: 'p1',
+                present: ['p1', 'p2', 'p3'].filter(pid => t[pid] !== undefined)
+            })
+        }
+        if (t.p2 === undefined && t.p3 !== undefined) {
+            errors.push({
+                kind: 'partial_inverted',
+                triIndex: ti,
+                missing: 'p2',
+                present: ['p1', 'p2', 'p3'].filter(pid => t[pid] !== undefined)
+            })
+        }
+        // fill type : doit etre string ou undefined
+        if (t.fill !== undefined && typeof t.fill !== 'string') {
+            errors.push({ kind: 'fill_not_string', triIndex: ti, type: typeof t.fill })
+        }
+    })
+    // I2 : orphelin — entry pointList non referencee par aucun tri slot
+    const refs = new Set()
+    tris.forEach((t) => {
+        if (!t || typeof t !== 'object') return
+        ;['p1', 'p2', 'p3'].forEach((pid) => {
+            if (Number.isInteger(t[pid]) && t[pid] >= 0 && t[pid] < pointList.length) refs.add(t[pid])
+        })
+    })
+    pointList.forEach((_, idx) => {
+        if (!refs.has(idx)) errors.push({ kind: 'orphan', pointIndex: idx })
+    })
+    // I3 : duplication (O(N²) — limitee a scenes < ~1000 vertices pour
+    // eviter bottleneck sur les gros meshes).
+    for (let i = 0; i < pointList.length; i++) {
+        for (let j = i + 1; j < pointList.length; j++) {
+            if (pointList[i] && pointList[j] && adjacentPoints(pointList[i], pointList[j], 0.01)) {
+                errors.push({ kind: 'duplication', pointIndexA: i, pointIndexB: j })
+            }
+        }
+    }
+    return errors.length === 0 ? { ok: true } : { ok: false, errors }
+}
+
 // Phase 1 (modifyShapeModel-spec §3.4) — le runtime produit directement
 // { pointList, tris } (memes champs que le wire format), au lieu du
 // collapse { triangles: [{p1,p2,p3 (point refs)}] } d'avant. Le chemin
@@ -250,6 +347,10 @@ const applyPendingRotationToShapes = (shapeArray) => {
     state.pendingRotation = undefined
 }
 
+// Phase 4 (modifyShapeModel-spec §4 Phase 4) : detecte les scenes
+// corrompues post-hydratation via validateShape. Log-only — ne
+// modifie pas state.shapes (les downstream guards Number.isInteger
+// dans draw.js / editor.js absorbent les invalides sans planter).
 export const loadState = () => {
     const saved = localStorage.getItem(SCENE_STORAGE_KEY)
     if (!saved) return
@@ -293,6 +394,11 @@ export const loadState = () => {
         if (loaded) {
             state.activeConstructionTriangle = undefined
             state.shapes = loaded
+            // Phase 4 : detection post-hydratation
+            state.shapes.forEach((shape, i) => {
+                const v = validateShape(shape)
+                if (!v.ok) log('loadState: shape #' + i + ' — ' + v.errors.length + ' erreur(s): ' + JSON.stringify(v.errors))
+            })
             if (typeof data.activeShapeIndex === 'number' && data.activeShapeIndex >= 0 && data.activeShapeIndex < state.shapes.length) {
                 state.activeShapeIndex = data.activeShapeIndex
             } else {
@@ -418,7 +524,7 @@ const showImportModal = (opts, callback) => {
         if (e.key === 'Escape') onCancel()
     }
     const onBackdrop = (e) => {
-        if (e.target && (e.target === modal || e.target.classList && e.target.classList.contains('modal-backdrop'))) {
+        if (e.target && (e.target === modal || (target.classList && target.classList.contains('modal-backdrop')))) {
             onCancel()
         }
     }
