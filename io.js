@@ -59,6 +59,16 @@ export const shapeToMesh = (shape) => {
         log('shapeToMesh FALLBACK: shape=' + JSON.stringify(shape) + ' (.triangles absent ou non-Array) => serialisation videe pour cette forme, le reste de la scene est persiste normalement. Capture ce message pour identifier la mutation fautive.')
         return { pointList, tris }
     }
+    // Phase 5 detecteur (spec §4 Phase 5 + §B Q3b) : shape legacy
+    // detecte (shape.triangles inline-coord valide). Log une seule
+    // fois par session — la decision Q3b preserve la back-compat
+    // silencieusement pour ne pas casser les fichiers d_avant Phase 1,
+    // mais on previent l_utilisateur qu_un re-save migrera au nouveau
+    // format {pointList, tris}.
+    if (!legacyShapeDetected && shape.triangles.length > 0) {
+        legacyShapeDetected = true
+        log('shapeToMesh: fichier legacy detecte (shape.triangles inline-coord, pointList absent). Back-compat silencieux actif (spec §B Q3b). Re-sauvegardez ce mesh dans le nouveau format {pointList, tris} pour migrer.')
+    }
     const pointMap = new Map()
     shape.triangles.forEach(t => {
         if (!t.p1 || !t.p2 || !t.p3) return
@@ -470,6 +480,15 @@ export const saveStoredImportMode = (mode) => {
 }
 
 let importModalShown = false
+
+// Phase 5 (modifyShapeModel-spec §4 Phase 5 observability + §B Q3b :
+// detecteur de fichiers legacy charges via shapeToMesh fallback
+// (.triangles inline-coord au lieu de .pointList). Decision Q3b
+// preserve la back-compat silencieusement — ce flag signale
+// l_evenement a l_utilisateur (une fois par session) pour l_inciter
+// a re-sauvegarder en nouveau format {pointList, tris}. Closure
+// scope — le refresh navigateur reset le flag.
+let legacyShapeDetected = false
 
 // Rationale : voir DESIGN.md §7.4
 const showImportModal = (opts, callback) => {
