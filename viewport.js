@@ -6,7 +6,7 @@ import {
     EDITING_MODE_STORAGE_KEY, EDITING_MODES,
     CONSOLE_VISIBLE_STORAGE_KEY,
 } from './constants.js'
-import { drawBoard } from './draw.js'
+import { drawBoard, requestDraw } from './draw.js'
 import { screenToModel } from './geometry.js'
 import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState } from './hud.js'
 import { persistState, snapZoom } from './io.js'
@@ -39,7 +39,7 @@ export const resetZoom = () => {
     state.ctx.viewCenter.x = 0
     state.ctx.viewCenter.y = 0
     state.ctx.rotationTracking = 0
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateZoomDisplay()
     persistState()
@@ -50,7 +50,7 @@ export const resetZoom = () => {
 export const toggleGrid = () => {
     state.activeGrid = !state.activeGrid
     updateGridButtonText()
-    drawBoard()
+    requestDraw()
     persistState()
 }
 
@@ -72,7 +72,7 @@ export const wireGridControl = () => {
             state.GRID_STEP = Math.max(MIN_GRID_STEP, state.GRID_STEP - 4)
         }
         updateGridButtonText()
-        drawBoard()
+        requestDraw()
         persistState()
     }, { passive: false })
 
@@ -82,7 +82,7 @@ export const wireGridControl = () => {
             if (!state.activeGrid) return
             state.GRID_STEP = DEFAULT_GRID_STEP
             updateGridButtonText()
-            drawBoard()
+            requestDraw()
             persistState()
         }
     })
@@ -97,7 +97,10 @@ export const wireGridControl = () => {
 export const toggleReticle = () => {
     state.reticleMode = (state.reticleMode + 1) % 3
     updateReticleButton()
-    drawBoard()
+    // Note : le reticule fait partie du calque transitoire (cf.
+    // draw.js renderTransient) et est repeint a chaque drawBoard ;
+    // un requestDraw suffit.
+    requestDraw()
     persistState()
 }
 
@@ -146,7 +149,7 @@ export const toggleSelectionMode = () => {
     updateSelectionHud()
     updateSelectionModeButton()
     updateColorButtonState()
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     try { localStorage.setItem(SELECTION_MODE_STORAGE_KEY, next) } catch (e) { /* ignore */ }
     log(`Selection mode -> ${next}`)
@@ -226,7 +229,7 @@ export const zoomCenteredOnCursor = (cursorScreen, deltaY) => {
     state.ctx.viewCenter.x += (cursorScreen.x - state.ctx.center.x) * (1 / oldZoom - 1 / newZoom)
     state.ctx.viewCenter.y -= (cursorScreen.y - state.ctx.center.y) * (1 / oldZoom - 1 / newZoom)
     state.ctx.zoomLevel = newZoom
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateZoomDisplay()
     persistState()
@@ -252,7 +255,7 @@ export const updatePan = (mouseScreen) => {
     const dy = mouseScreen.y - state.panStartMouse.y
     state.ctx.viewCenter.x = state.panStartViewCenter.x - dx / state.ctx.zoomLevel
     state.ctx.viewCenter.y = state.panStartViewCenter.y + dy / state.ctx.zoomLevel
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateZoomDisplay()
 }

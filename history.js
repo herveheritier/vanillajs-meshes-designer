@@ -4,7 +4,7 @@
 import { state } from './state.js'
 import { MAX_HISTORY, ACTION_NONE } from './constants.js'
 import { updateUndoRedoHud, updateSelectionHud, updateShapeHud, updateColorButtonState, updateSceneStatus } from './hud.js'
-import { drawBoard } from './draw.js'
+import { drawBoard, requestDraw } from './draw.js'
 import { updateMouseHover } from './editor.js'
 import { persistState } from './io.js'
 
@@ -79,7 +79,7 @@ export const undo = () => {
         state.activeShapeIndex = 0
     }
     clearEditingTransientState()
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateShapeHud()
     updateUndoRedoHud()
@@ -101,7 +101,7 @@ export const redo = () => {
         state.activeShapeIndex = 0
     }
     clearEditingTransientState()
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateShapeHud()
     updateUndoRedoHud()

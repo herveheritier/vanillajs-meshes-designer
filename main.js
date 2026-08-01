@@ -1,7 +1,7 @@
 // Rationale : voir DESIGN.md §4.1
 
 import { state, initDomRefs } from './state.js'
-import { drawBoard } from './draw.js'
+import { drawBoard, requestDraw } from './draw.js'
 import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
@@ -185,7 +185,7 @@ document.addEventListener('mouseup', (e) => {
             const dist = Math.hypot(state.selectionBoxCurrent.x - state.selectionBoxStart.x, state.selectionBoxCurrent.y - state.selectionBoxStart.y)
             if (dist < 5) {
                 processMouseUpSelection(e)
-                drawBoard()
+                requestDraw()
                 updateSelectionHud()
             }
         }

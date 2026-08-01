@@ -9,7 +9,7 @@ import {
     TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU,
     POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
 } from './constants.js'
-import { drawBoard, drawPoint, drawMouse, drawVertexLabel, drawStackList } from './draw.js'
+import { drawBoard, drawPoint, drawMouse, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
 import { updateSelectionHud, updateColorButtonState } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
@@ -159,6 +159,31 @@ export const findSelectedLine = (point) => {
 
 // ===== Hover et HUD bas-gauche =====
 
+// (feature/performance) clef de dedup pour updateMouseHover :
+// combine la position du curseur (arrondie a l'unite pour ignorer le
+// sub-pixel jitter) + les indices de nearest point/line/triangle (qui
+// changent a chaque franchissement de hit-radius) + l'indicateur
+// selection-dimmed + l'etat lasso (car le rectangle de selection est
+// peint dans le calque transitoire, pas dans les overlays d'update-
+// MouseHover). Tant que la clef est inchangee entre deux appels ET que
+// le cache scene n'est pas dirty, aucun redraw n'est necessaire (la
+// scene cachee du frame precedent contient deja le bon contenu).
+// isSceneDirty() est inclus dans la garde pour absorber les cas ou la
+// scene est mutee SANS avoir explicitement appele requestDraw (drag
+// raw qui mute pointList a la volee) — la garde seule sur la clef ne
+// suffirait pas.
+let lastHoverSignature = null
+const computeHoverSignature = (cursorScreen) => {
+    const npKey = state.nearestPoint ? state.nearestPoint.pointIndex : '_'
+    const nlKey = state.nearestLine ? state.nearestLine.triangleIndex + ':' + state.nearestLine.lineIndex : '_'
+    const ntKey = state.nearestTriangle ? state.nearestTriangle.triangleIndex : '_'
+    const cKey = cursorScreen ? (Math.round(cursorScreen.x) + ',' + Math.round(cursorScreen.y)) : '_'
+    const boxKey = state.isSelectingBox && state.selectionBoxStart && state.selectionBoxCurrent
+        ? '1|' + Math.round(state.selectionBoxCurrent.x) + ',' + Math.round(state.selectionBoxCurrent.y)
+        : '0'
+    return cKey + '|' + npKey + '|' + nlKey + '|' + ntKey + '|' + (state.isSelectionDimmed ? 'd' : 'n') + '|' + boxKey
+}
+
 export const updateMouseHover = (cursorScreen) => {
     updateCoordsDisplay(cursorScreen)
     if (!cursorScreen) return
@@ -176,6 +201,18 @@ export const updateMouseHover = (cursorScreen) => {
     state.nearestLine = findSelectedLine(target)
     if (!state.nearestLine || state.nearestLine.distance > lineHitRadiusModel()) state.nearestLine = undefined
     state.nearestTriangle = findNearestTriangle(target)
+
+    // (feature/performance) skip frame integral si la signature
+    // visuelle est inchangee ET que la scene cachee est encore
+    // valide. Le 2e terme absorbe les paths de mutation raw (drag qui
+    // mute pointList sans passer par un requestDraw explicite) — sans
+    // lui, on pourrait avoir un drag qui ne se reflete jamais a
+    // l'ecran si hover signature ne change pas. updateCoordsDisplay a
+    // deja ete execute (= le HUD bas-gauche reflete bien le curseur
+    // courant, on n'est pas en train de mentir a l'utilisateur).
+    const signature = computeHoverSignature(cursorScreen)
+    if (signature === lastHoverSignature && !isSceneDirty()) return
+    lastHoverSignature = signature
 
     drawBoard()
     drawMouse(cursorScreen)
@@ -263,7 +300,7 @@ export const resolveMouseClickOnBoard = (e) => {
     state.nearestLine = findSelectedLine(pointToAdd)
     if (!state.nearestLine || state.nearestLine.distance > lineHitRadiusModel()) state.nearestLine = undefined
     addPoint(pointToAdd)
-    drawBoard()
+    requestDraw()
     drawMouse(mouseScreen)
 }
 
@@ -349,7 +386,7 @@ export const selectAllPoints = () => {
         state.selectedTriangles = []
     }
     state.nearestPoint = undefined
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     updateColorButtonState()
@@ -605,7 +642,7 @@ export const deleteSelectedPoint = () => {
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.activeConstructionTriangle = undefined
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     updateColorButtonState()
@@ -646,7 +683,7 @@ export const deleteSelectedSegment = () => {
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.activeConstructionTriangle = undefined
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     updateColorButtonState()
@@ -687,7 +724,7 @@ export const deleteSelectedTriangle = () => {
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.nearestTriangle = undefined
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     updateColorButtonState()
@@ -733,7 +770,7 @@ const selectAtRightClick = (e, targetModel, additive = true) => {
             state.selectedTriangles = []
             updateSelectionHud()
             updateColorButtonState()
-            drawBoard()
+            requestDraw()
         }
         return false
     }
@@ -750,7 +787,7 @@ const selectAtRightClick = (e, targetModel, additive = true) => {
     updateSelectionHud()
     updateColorButtonState()
     state.nearestPoint = undefined
-    drawBoard()
+    requestDraw()
     return true
 }
 
@@ -1116,6 +1153,13 @@ export const resolveMouseMoveOnBoard = (e) => {
             state.grabbedGroup.forEach(item => {
                 applyGrabToPoint(item, getGrabTargetPosition(item, dx, dy))
             })
+            // (feature/performance) signale que la scene stable a
+            // change (positions des points drags mutees a la volee
+            // dans pointList). Sans ce flag, updateMouseHover pourrait
+            // early-return sur une signature inchangee et laisser la
+            // nouvelle position invisible. Le rAF interne a requestDraw
+            // coalescera les 60+ ticks de drag en au plus 1 paint / frame.
+            requestDraw()
         }
     }
 
@@ -1191,7 +1235,7 @@ export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
 
     state.ctx.rotationTracking = ((state.ctx.rotationTracking + angle) % TAU + TAU) % TAU
 
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateZoomDisplay()
 }
@@ -1232,7 +1276,7 @@ export const rotateSelectedPoints = (center, angle) => {
         sp.y = target.y
     })
 
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
 }
 
@@ -1255,7 +1299,7 @@ export const applyColorToSelectedTriangles = (color) => {
             t.fill = color
         }
     })
-    drawBoard()
+    requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     persistState()
 }

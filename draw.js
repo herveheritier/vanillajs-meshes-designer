@@ -111,13 +111,105 @@ export const drawStackList = (p, refs) => {
     state._ctx.fillText(bodyText, sp.x, y0 + STACK_LIST_PADDING_Y + STACK_LIST_HEIGHT * 1.5)
 }
 
-export const drawBoard = () => {
-    state._ctx.fillStyle = CANVAS_BACKGROUND
-    state._ctx.fillRect(0, 0, state.board.width, state.board.height)
-    if (state.activeGrid) drawGrid()
-    drawAxis()
-    drawShapes()
-    drawSelectedPoints()
+// ===== Scene cache (feature/performance) =====
+//
+// Rationale : avec l'ancien drawBoard, chaque mousemove repaintait
+// integralement le visible canvas (background + grid + axes + N
+// formes + selection + reticule + selectionBox). Meme quand rien
+// d'observable n'avait change (curseur qui derive sur zone vide,
+// mouseup sans mutation relle, etc.) on payait le cout de re-stroker
+// toutes les formes + toutes les lignes de la grille.
+//
+// Le nouveau pipeline separe la SCENE STABLE (tout ce qui depend de
+// state.shapes / state.ctx.zoomLevel-viewCenter / state.selectedPoints
+// / state.selectedTriangles / state.GRID_STEP / state.activeGrid) de
+// la SURFACE TRANSITOIRE (reticule + selectionBox, depend du runtime
+// pas du modele). La scene stable est rendue une fois dans un canvas
+// offscreen (offscreen board) puis blittee sur le visible via
+// drawImage (= 1 memcpy GPU/CPU rapide). Le transitoire est repeint
+// a chaque frame par-dessus (le reticule depend de la position du
+// curseur, la selectionBox de la drag en cours).
+//
+// API publique ajoutee :
+//   invalidateScene() : force le re-render offscreen au prochain
+//     drawBoard. A appeler apres TOUT path qui mute la scene stable.
+//     (Non obligatoire si on appelle requestDraw — voir ci-dessous.)
+//   requestDraw() : coalesce via requestAnimationFrame (= au plus un
+//     drawBoard par frame) + invalide la scene. Le chemin privilegie
+//     pour les paths de mutation asynchrones (undo, drag mousemove,
+//     wheel-zoom). Premier appel du frame pose le flag dirty, les
+//     appels suivants sont coalesces ; le rAF callback voit un seul
+//     drawBoard.
+//   isSceneDirty() : introspection pour les tests / debug.
+
+// Etat du cache offscreen. Le flag sceneDirty demarre a true pour
+// que le premier appel de drawBoard repeint integralement l'offscreen.
+// frameScheduled empeche les rafales d'appels requestDraw de
+// multiplier les callbacks rAF (= 1 max en parallele).
+let offscreen = null
+let offCtx = null
+let sceneDirty = true
+let frameScheduled = false
+
+export const invalidateScene = () => {
+    sceneDirty = true
+}
+
+export const isSceneDirty = () => sceneDirty
+
+export const requestDraw = () => {
+    sceneDirty = true
+    if (frameScheduled) return
+    frameScheduled = true
+    requestAnimationFrame(() => {
+        frameScheduled = false
+        drawBoard()
+    })
+}
+
+const ensureOffscreen = () => {
+    if (offscreen) return
+    offscreen = document.createElement('canvas')
+    offCtx = offscreen.getContext('2d')
+    sceneDirty = true
+}
+
+const syncOffscreenSize = () => {
+    if (!offscreen) return
+    const w = state.board.width
+    const h = state.board.height
+    if (offscreen.width !== w || offscreen.height !== h) {
+        offscreen.width = w
+        offscreen.height = h
+        sceneDirty = true
+    }
+}
+
+// renderSceneToOffscreen : repeint la scene stable dans l'offscreen.
+// Les draw* helpers lisent/ecrivent `state._ctx`, donc on swappe
+// temporairement vers offCtx le temps du rendu puis on restaure via
+// try/finally (defense : un helper qui throw ne casserait pas le
+// pipeline global).
+const renderSceneToOffscreen = () => {
+    const visibleCtx = state._ctx
+    state._ctx = offCtx
+    try {
+        offCtx.fillStyle = CANVAS_BACKGROUND
+        offCtx.fillRect(0, 0, offscreen.width, offscreen.height)
+        if (state.activeGrid) drawGrid()
+        drawAxis()
+        drawShapes()
+        drawSelectedPoints()
+    } finally {
+        state._ctx = visibleCtx
+    }
+}
+
+// renderTransient : dessine SUR le visible les calques transitoires
+// qui dependent du runtime (et non du modele). Toujours repeint a
+// chaque drawBoard parce que reticule / selectionBox peuvent bouger
+// entre deux frames meme si la scene stable est inchangee.
+const renderTransient = () => {
     if (typeof state.reticleMode !== 'undefined' && state.reticleMode > 0) drawReticle()
     if (
         typeof state.isSelectingBox !== 'undefined' &&
@@ -127,6 +219,19 @@ export const drawBoard = () => {
     ) {
         drawSelectionBox(state.selectionBoxStart, state.selectionBoxCurrent)
     }
+}
+
+export const drawBoard = () => {
+    ensureOffscreen()
+    syncOffscreenSize()
+    if (sceneDirty) {
+        renderSceneToOffscreen()
+        sceneDirty = false
+    }
+    // Blit offscreen → visible en une seule operation (rapide meme
+    // pour un grand canvas : 1 memcpy pour le framebuffer).
+    state._ctx.drawImage(offscreen, 0, 0)
+    renderTransient()
 }
 
 // (modifyShapeModel-spec §3.7) : avec state.selectedPoints
