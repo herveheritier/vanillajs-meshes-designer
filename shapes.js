@@ -46,7 +46,7 @@ export const nextShape = () => {
 
 export const addShape = () => {
     saveState()
-    state.shapes.push({ triangles: [] })
+    state.shapes.push({ pointList: [], tris: [] })
     goToShape(state.shapes.length - 1)
     persistState()
 }
@@ -59,7 +59,7 @@ export const performDeleteShape = () => {
     hideDeleteShapeModal()
     saveState()
     if (state.shapes.length === 1) {
-        state.shapes = [{ triangles: [] }]
+        state.shapes = [{ pointList: [], tris: [] }]
         state.activeShapeIndex = 0
     } else {
         state.shapes.splice(state.activeShapeIndex, 1)
