@@ -268,6 +268,207 @@ contenu textuel et la semantique evoluent).
 
 ---
 
+### §2.5 Optimiseurs de batch rendering (branch `feature/performance`)
+
+Trois optimiseurs s'empilent sur le hot path de `renderSceneToOffscreen`,
+complétés d'un safe-belt. Tous gardent la parité visuelle avec l'ancien
+`drawTriangle` per-tri par défaut : aucun mesh réel ne regresse sur le
+résultat, mais les meshes typiques (windings uniformes en canvas space,
+grille à step raisonnable, formes avec peu de tris custom-color)
+profitent du batching sans changement de comportement.
+
+#### §2.5.1 Opt #1 — `drawPointsBatch` (groupement des vertex en un seul path-stroke)
+
+Avant l'optim, pour N triangles, `drawShape` appelait 3N `drawPoint`,
+chacun faisant `setLineDash([])` + `setStrokeStyle` + `beginPath()` +
+`arc()` + `stroke()` = 5 API calls → 15N cycles pour le path-state machine.
+
+`drawPointsBatch(points, radius, color)` (draw.js) :
+- Une seule `setLineDash([])` + `setStrokeStyle` pour le batch.
+- Un seul `beginPath()`.
+- Pour chaque point : `moveTo(sp.x, sp.y)` + `arc(sp.x, sp.y, r, 0, TAU)`.
+  `moveTo` explicite entre chaque arc car `arc()` NE reset PAS le `current
+  point` du path après son tracé (spec Canvas 2D) — sans moveTo, le
+  path tracerait une ligne parasite entre les centres consécutifs.
+- Un seul `stroke()` final.
+
+**Sub-path moveTo obligatoire** : spec Canvas 2D `CanvasPath::arc` dit
+que si le `current point` du path n'est pas la position cible, le path
+dessine implicitement une ligne du current point vers le start de
+l'arc. Sans `moveTo` entre les arcs, chaque cercle du batch serait
+relié au précédent par un segment = bug visible. Le `moveTo(sp.x, sp.y)`
+avant chaque `arc` casse cette continuité et isole chaque cercle en
+sous-path fermé ; le `stroke()` final trace tout en un seul appel GPU.
+
+**Réduction mesurée attendue** : sur mesh-wail (33 pts, 36 tris ≈ 108
+strokes de vertex) → 1 beginPath/stroke. Ratio ~50-100x sur la sous-op
+vertex-stroke. Sous-effect quand le cache de scene reste valide (pas
+de dirty offscreen) = gain nul. Sous-effect maximal pendant
+drag/zoom/mutations sur gros meshes.
+
+**Resolve des shared vertex** : un sommet partagé entre plusieurs
+triangles (invariant Q1a : un sommet logique = une seule entrée
+`pointList`) produit plusieurs refs identiques dans `vertexPoints` —
+l'over-stroke d'un cercle de même couleur de même rayon au même
+emplacement est visuellement identique à un stroke unique.
+
+**Callers non-batchés** : `drawMouse` (cursor sur visible post-blit)
+et `editor.js:updateMouseHover` (nearest point radius 5 vert) utilisent
+toujours `drawPoint` direct car leurs cycles sont sur le visible
+canvas APRÈS le blit offscreen → pas dans le scope de batch.
+
+#### §2.5.2 Opt #2 — Grid LOD (skip sur step sub-pixel)
+
+`drawGrid` itère N_x = ceil(width/step) verticales et N_y = ceil(height/step)
+horizontales avant de stroke() le path global. À zoom 0.1 + GRID_STEP 32,
+`step = 3.2 px` → `N_x + N_y ≈ 1200 lignes` traçées alors que les
+lignes adjacentes fusionnent en bloc gris (aliasing per pixel) sans qu'un
+pixel distinct ne soit visible. Solution : early-return si `step <
+MIN_GRID_STEP_PX = 4` (constante module-level).
+
+Borne basse seule (pas de borne haute) : à zoom ×10, `step = 320 px`,
+le loop dessine 6-15 lignes par viewport — utile, pas de gain à
+skipper. Pas d'invalidation de cache : si GRID_STEP ou zoomLevel
+reviennent dans la plage visible, la prochaine
+`renderSceneToOffscreen` repeint la grille normalement.
+
+**Cas typique négligé** : viewport < 320 px sur mobile portrait avec
+GRID_STEP=8 peut rester sub-4 px à zoom ×1 → grille se masque. UX
+trade-off acceptable : l'utilisateur peut la désactiver via `G`.
+
+#### §2.5.3 Opt #3 — Triangle fill+stroke batching (3 passes par shape)
+
+Avant : pour N triangles de forme active, `drawTriangle` × N où chaque
+appel = 1 beginPath + (closePath si complet) + (fill si complet+fill) +
+1 stroke = jusqu'à 4N API calls en pure overhead.
+
+Après (`drawShape` draw.js) :
+1. **Resolved once** : `resolvedTris = [{p1, p2, p3, fill}]` itère
+   `shape.tris` une seule fois en résolvant les indices `pointList[t.pX]`
+   via lookup O(1) et en calculant `fill` canonique par shape-active.
+   Single source of truth consommé par les 3 passes en aval.
+2. **Fill pass** (active shape only, tris complètes only) :
+   groupage par `fill` color via `Map<string, Array<r>>`. K groupes =
+   K fill() (K = nombre de couleurs distinctes). Cas typique mesh-wail
+   1 default-color = 1 fill() au lieu de N.
+3. **Stroke pass** : `setLineDash` + `setStrokeStyle` une fois + 1
+   beginPath couvrant TOUS les tris (completes + partiels) +
+   `moveTo/lineTo/closePath` empilés en sub-paths + 1 stroke() final.
+   `setLineDash`/`setStrokeStyle` fixés une fois pour toute la shape
+   (mêmes pattern/color par `drawShape`).
+4. **Vertex pass** : `drawPointsBatch` opt #1.
+
+**Pourquoi fill et stroke sont scindés** : spec Canvas 2D applique
+`fill()` sur TOUS les sub-paths formés depuis le dernier `beginPath()`.
+Si on mettait plusieurs `fillStyle` dans un même beginPath (un par
+couleur custom), le dernier `fill()` repeindrait la totalité avec la
+dernière couleur (les précédents seraient perdus). Le fill DOIT donc
+être un beginPath par groupe de couleur. Stroke en revanche :
+`strokeStyle` peut transitionner dans un même path sans réinitialiser
+les segments dessinés — d'où un seul beginPath pour le stroke pass
+(gain maximal indépendant du nombre de groupes de couleurs).
+
+#### §2.5.4 Safe-belt (détection windings inconsistantes)
+
+L'opt #3 batching fill peut produire des **trous visibles** sous
+`fillRule=nonzero` (default Canvas 2D) si plusieurs tris de même fill
+ont des **windings inconsistantes** dans le même chemin. Cause
+rarement anticipée : `modelToScreen` flippe Y (cf. §2.1), donc une tri
+CCW en **model space** devient **CW en canvas space** et inversement.
+Un fan de 4 tris "CCW en math" peut devenir en canvas space "1 CCW +
+3 CW" (ex : `assets/mesh-overlap-test.json`, forme 3, après le Y-flip).
+Sous `fillRule=nonzero`+batch fill, les contributions +1 et -1
+s'annulent localement au voisinage du centre partagé → trou.
+
+Le safe-belt implémente une détection O(N) par groupe de couleur :
+
+1. Pre-calcul des screen coords (modelToScreen × 3 par tri) — évite
+   de re-invoquer `modelToScreen` dans la passe rendering.
+2. Loop de détection : cross product `(s2-s1) × (s3-s1)` en **screen
+   space**. Si tous les cross products du groupe ont le même signe ET
+   aucun n'est nul (tri dégénéré), `useBatchedFill = true`. Sinon
+   (signes hétérogènes OU tri dégénéré) → `useBatchedFill = false`.
+3. Bascule :
+   - `useBatchedFill = true` → batched (1 beginPath + sub-paths + 1
+     fill, gain opt #3 préservé).
+   - `useBatchedFill = false` → per-tri fallback (1 beginPath + 1
+     fill par tri, comportement équivalent à l'ancien `drawTriangle`,
+     zéro interaction de winding possible entre sub-paths isolés).
+
+**Coût du safe-belt** :
+- Cas safe (mesh typique, windings uniformes en canvas space, ex:
+  mesh-wail 33 pts) : 1 cross product par tri en screen space = O(N)
+  micro-arithmétique par groupe, négligeable face au gain batching.
+  `useBatchedFill = true` toujours. Aucune régression.
+- Cas pathologique (windings mixtes en canvas space, fan importé
+  avec doublons reversed dans le JSON, etc.) : per-tri = N beginPath +
+  N fill cycles. Parité pixel-perfect avec l'ancien `drawTriangle`.
+
+**Validation empirique** : test manuel sur `assets/mesh-overlap-test.json`
+avec 4 formes (control + reverse-winding duplicate + fan avec 1 CW +
+fan avec 3 CW). Le safe-belt pass→per-tri sur les 2 fans rend toutes
+les formes pleines. Sans le safe-belt, fan 3 (CCW en math, 1 CW en
+canvas) montrait un trou au centre — confirmé par observation dans
+Chrome interactif.
+
+**Cross-ref §2.1 (Y-flip)** : c'est précisément parce que `modelToScreen`
+flippe Y (une inversion non triviale, math=CCW ↔ canvas=CW) que cette
+détection est faite **en screen space**, pas en model space. Une
+détection naïve en model space donnerait uniformement CCW pour les 4
+tris du fan test → `useBatchedFill = true` → reprise du bug. Le
+`modelToScreen` invariant (§2.1) doit être respecté par tous les
+calculs de winding dans `draw.js`.
+
+#### §2.5.5 Mesure et instrumentation
+
+Outils disponibles sans modif UI :
+
+- `state.debugRenderTime = true` (toggleable depuis la console
+  navigateur, désactivé par défaut, gate `console.time('renderScene')`
+  dans `renderSceneToOffscreen` — cf. draw.js). Une fois activé,
+  Chrome devtools Console agrège min/max/avg/x sur le label
+  `renderScene`.
+- `#fpsDisplay` ON (toolbar bouton `#fps` ou raccourci `F`). Affiche
+  `X redraws/s (Y offscreen)`. Avec le safe-belt, le batched path
+  reste actif sur mesh typique — gain opt #3 visible comme baisse
+  du temps moyen par offscreen repaint.
+- Console overlay (`#messageBoard`) : `log(...)` emissions des paths
+  de mutation (add/undo/grab) — utile pour event-order, pas pour perf.
+
+**Protocole de capture** :
+
+1. Charger `assets/mesh-wail.json` (33 pts, 36 tris, case typique
+   windings uniformes dans la convention naturelle de mesh-wail).
+2. Toggle `#fpsDisplay` ON et bastion navigateur ouvert.
+3. Activer `state.debugRenderTime = true` dans devtools Console.
+4. Effectuer 60+ drag-uniformes (e.g., drag d'un sommet du mesh dans
+   une amplitude fixée) — laisser Chrome devtools Console agréger.
+5. Noter dans le tableau de bord :
+   - `renderScene: Xms` moyenne (opt #1, #2 actifs).
+   - Comparer avec mesurable du même drag sur le même mesh après
+     `git stash` des optimiseurs.
+
+Note : les counts `redraws/s` + `offscreen/s` du `#fpsDisplay` ne
+changent PAS en valeur absolue entre avant/après opt (mêmes triggers
+d'invalidation). Seule la `renderScene: Xms` moyenne chute. C'est
+attendu et correct.
+
+#### §2.5.6 Anti-régression checklist
+
+- [ ] mesh-wail rendu pixel-perfect (aucun trou, aucun décalage).
+- [ ] alphabet2 / complexe-shape (assets fournis) ne regressent pas.
+- [ ] `assets/mesh-overlap-test.json` : 4 formes toutes pleines après
+      safe-belt (mixte windings en canvas → fallback per-tri).
+- [ ] Rotation AltGr + drag continu (`§6.1`) : pas de stutter visible
+      au path batched.
+- [ ] Lasso (`renderTransient`) : `selectionBox` rendu inchangé
+      (post-blit, hors scope batched).
+- [ ] Hover (`editor.js:updateMouseHover`) : `drawPoint` radius 5
+      vert sur le nearest continue de fonctionner (chemin non
+      batched, sur visible post-blit).
+
+---
+
 ## §3. Modes de sélection (vertex / segment / triangle)
 
 Cycle via le bouton toolbar `#selectionMode` (cf. `SELECTION_MODES = ['vertex',

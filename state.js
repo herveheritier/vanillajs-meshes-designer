@@ -84,6 +84,14 @@ export const state = {
     // ===== FPS HUD =====
     fpsVisible: false,
 
+    // ===== Render time instrumentation (gate) =====
+    // Flag dev pour activer console.time('renderScene')/timeEnd dans
+    // renderSceneToOffscreen (cf. draw.js). Default false pour eviter
+    // la pollution devtools en prod. Activation runtime depuis la
+    // console navigateur : `state.debugRenderTime = true`. Voir
+    // DESIGN.md §2.5.5 pour le protocole de capture.
+    debugRenderTime: false,
+
     // ===== Modal focus restoration =====
     lastFocusedElement: undefined,
 
