@@ -8,7 +8,8 @@
     "smoke:edit": "node scripts/smoke-edit.mjs",
     "smoke:import": "node scripts/smoke-import.mjs",
     "smoke:gestures": "node scripts/smoke-gestures.mjs",
-    "smoke": "npm run smoke:preview && npm run smoke:edit && npm run smoke:import && npm run smoke:gestures"
+    "smoke:modals": "node scripts/smoke-modals.mjs",
+    "smoke": "npm run smoke:preview && npm run smoke:edit && npm run smoke:import && npm run smoke:gestures && npm run smoke:modals"
   },
   "devDependencies": {
     "playwright-core": "1.49.1"
