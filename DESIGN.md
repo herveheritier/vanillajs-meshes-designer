@@ -789,6 +789,104 @@ dans `cloneShape` §3.8 (l'unicité est garantie à l'entrée —
 persisté après chaque drag/resize (mouseup document-level — pas à chaque tick,
 pour éviter de polluer ainsi que la history stack).
 
+### §5.4 Persistance de l'historique undo/redo (`meshesDesigner.undo`)
+
+L'historique undo/redo (`state.historyStack` / `state.redoStack`) est
+persisté dans `localStorage` et restauré au boot, pour que l'utilisateur
+retrouve son historique en revenant dans l'application (reload navigateur,
+fermeture/rouverture). Spec utilisateur : « conserver le undo en localhost
+pour le retrouver au retour dans l'application ; le réinit de l'undo est
+effectué au réinit de la scène ou au load replace d'une scène ».
+
+#### §5.4.1 Clé dédiée, séparée de la scène
+
+La clé `meshesDesigner.undo` (`UNDO_STORAGE_KEY`) est distincte de
+`meshesDesigner.scene` : `serializeState()` alimente aussi `saveMesh`
+(export fichier) — l'historique ne doit JAMAIS transiter par le wire format
+exporté (fichiers boursouflés + fuite de données d'édition).
+
+Format : `{ scene, historyStack, redoStack }` où `historyStack` /
+`redoStack` sont les piles telles quelles (entries delta OU fallback
+snapshot, cf. §8.2 — les slots `undefined` survivent au round-trip JSON
+en tant que clés absentes, ce qui préserve les invariants I5/I6), et
+`scene` est le **fingerprint** (cf. §5.4.3).
+
+#### §5.4.2 Écriture conditionnelle via le flag `undoPersistDirty`
+
+`persistState()` est appelé en continu (zoom/pan via `viewport.js`,
+mutations via `editor.js` / `shapes.js` / `merge.js`). Re-sérialiser
+l'historique à chaque appel coûterait cher (jusqu'à `MAX_HISTORY = 50`
+entries × patches/snapshots). Un flag module-scope `undoPersistDirty`
+(io.js — pas un champ de `state` : donnée de persistance interne, pas
+état applicatif) limite l'écriture aux moments où les piles changent :
+
+- `saveState` / `undo` / `redo` (history.js) posent le flag via
+  `markUndoPersistDirty()` ; la `persistState()` suivante (appelée par le
+  call site juste après `saveState`, ou en fin d'`undo`/`redo`)
+  ré-écrit la clé.
+- L'import MERGE pose le flag aussi : les piles ne changent pas mais le
+  fingerprint de scène doit être rafraîchi après l'append (cf. §5.4.4).
+- Zoom/pan ne touchent jamais le flag → la clé n'est pas ré-écrite.
+
+#### §5.4.3 Atomicité d'écriture + fingerprint de scène
+
+Les deux clés (`meshesDesigner.scene` et `meshesDesigner.undo`) sont
+écrites dans le MÊME appel synchrone de `persistState()` (la même string
+`sceneJson` sert à la fois à la clé scene et au champ fingerprint du JSON
+undo) : aucun crash ne peut s'intercaler entre les deux `setItem` — les
+deux clés restent cohérentes, ou aucune ne bouge.
+
+Au boot, `restoreUndoHistory()` (io.js, appelé depuis `loadState` avant
+`captureSceneBaseline`) compare le fingerprint stocké avec
+`serializeState()` de la scène réhydratée. En cas de divergence, les
+entries sont ignorées (log `Undo restore: historique ignore ...`) plutôt
+que restaurées sur une scène qui ne leur correspond pas (les indices des
+patches pointeraient faux). Cas de divergence couverts :
+
+- **Quota dépassé** sur l'écriture undo (la scène passe, l'undo non). Le
+  flag est neutralisé pour éviter de re-tenter + re-logger à chaque
+  zoom/pan ; l'undo ne survit simplement pas au reload (dégradation
+  silencieuse, loggée).
+- **Onglets croisés** : deux onglets partagent le localStorage ; leurs
+  `setItem` peuvent s'intercaler entre la clé scene et la clé undo.
+- **Ancien build / clé absente** : restore no-op.
+
+Garde-fous du restore : JSON corrompu / structure invalide → abandon
+silencieux (les piles restent vides) ; piles recoupées à `MAX_HISTORY`
+(defense in depth — `saveState` plafonne déjà à l'écriture).
+
+`onBeforeUnload` flushe le même couple clé + fingerprint si un flag est
+resté en attente (fermeture avant le prochain `persistState`) — miroir
+strict de `persistState`.
+
+#### §5.4.4 Points de réinit (spec utilisateur)
+
+Le réinit de l'undo se fait à DEUX moments, en mémoire ET sur disque :
+
+| Événement | En mémoire | Sur disque |
+|---|---|---|
+| **Reset complet** (`resetAll`) | `state.historyStack/redoStack = []` | `clearPersistedUndo()` : `removeItem(UNDO_STORAGE_KEY)` + flag neutralisé (la `persistState` suivante — ex. un zoom — ne ré-écrit pas la clé) |
+| **Import REPLACE** (`applyImport` mode `replace`) | `resetEphemeralState(true)` | `clearPersistedUndo()` |
+| **Import MERGE** (`applyImport` mode `merge`) | CONSERVÉ (`resetEphemeralState(false)`) | CONSERVÉ ; `markUndoPersistDirty()` rafraîchit juste le fingerprint |
+
+Pourquoi MERGE conserve : les entries existantes référencent des indices
+de forme `< beforeCount` — un append ne les invalide pas. Conséquence
+assumée : après un MERGE, `Ctrl+Z` annule la dernière action d'avant le
+merge (le merge lui-même n'est pas annulable — il n'est pas représenté
+dans la pile).
+
+#### §5.4.5 Cycle de vie complet (walkthrough)
+
+1. Mutation → `saveState` (push entry + flag) → `persistState` écrit
+   scene + undo ensemble (fingerprint = scène post-mutation).
+2. Reload → `loadState` réhydrate la scène → `restoreUndoHistory`
+   compare le fingerprint → match → les deux piles sont restaurées
+   (`updateUndoRedoHud` affiche la profondeur).
+3. Undo/redo → transfert d'entries + flag + `persistState` ré-écrit les
+   deux clés (fingerprint = scène post-undo/redo).
+4. Reset / REPLACE → piles vidées + clé retirée → un reload ne
+   ressuscite pas l'undo de l'ancienne scène.
+
 ---
 
 ## §6. Rotation AltGr (molette)

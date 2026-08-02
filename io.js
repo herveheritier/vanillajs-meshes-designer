@@ -7,8 +7,14 @@ import {
     MIN_GRID_STEP, MAX_GRID_STEP, MIN_ZOOM, MAX_ZOOM,
     IMPORT_MODE_STORAGE_KEY, TAU,
     SCENE_FORMAT, SCENE_FORMAT_VERSION,
+    MAX_HISTORY, UNDO_STORAGE_KEY,
 } from './constants.js'
 import { drawBoard, requestDraw } from './draw.js'
+// updateZoomDisplay est appele dans resetAll (rafraichit le HUD zoom
+// apres le reset). Import explicite depuis viewport.js — cycle
+// io <-> viewport autorise : les deux modules ne lisent les imports
+// de l'autre qu'au call-time, jamais a l'evaluation du module.
+import { updateZoomDisplay } from './viewport.js'
 import { updateGridButtonText, updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateSceneStatus } from './hud.js'
 import { log } from './log.js'
 import { isSceneEmpty, adjacentPoints } from './geometry.js'
@@ -170,15 +176,76 @@ export const serializeState = () => {
 // la persistance ; les downstream guards (shapeToMesh filtre les tris
 // invalides, draw.js tolere les entrees corrompues via Number.isInteger)
 // absorbent la corruption au prochain rendu.
+// ===== Persistance undo/redo =====
+// Rationale : voir DESIGN.md §5.4
+//
+// L'historique undo/redo est persiste dans une cle dediee
+// (UNDO_STORAGE_KEY), ecrite dans le MEME appel synchrone que la
+// scene : les deux cles restent coherentes (un crash ne peut pas
+// s'intercaler entre les deux setItem). Deux garde-fous :
+//   - le flag `undoPersistDirty` (pose par history.js saveState/
+//     undo/redo et par l'import MERGE) limite l'ecriture aux moments
+//     ou les piles changent — les zoom/pan, qui appellent
+//     persistState en continu, ne re-serialisent jamais l'historique.
+//   - le fingerprint `scene` (= le string serializeState ecrit dans
+//     SCENE_STORAGE_KEY au meme instant) est compare au boot : si la
+//     scene restauree differe (quota depasse sur l'ecriture undo,
+//     onglets croises, ancien build), les entries sont ignorees plutot
+//     que restaurees sur une scene qui ne leur correspond pas.
+//
+// Le flag est un `let` module-scope (et pas un champ de state) :
+// c'est une donnee de persistance interne, pas un etat applicatif.
+let undoPersistDirty = false
+
+// Pose le flag « les piles ont change, la prochaine persistState
+// doit re-ecrire UNDO_STORAGE_KEY ». Appele par history.js
+// (saveState / undo / redo) et par l'import MERGE (qui conserve les
+// piles mais doit rafraichir le fingerprint `scene` apres append).
+export const markUndoPersistDirty = () => {
+    undoPersistDirty = true
+}
+
+// Efface la copie persiste de l'historique (reset scene / import
+// REPLACE). L'historique en memoire est gere par l'appelant
+// (resetEphemeralState / resetAll). Le flag est aussi neutralise :
+// la persistState suivante (ex. un zoom) ne doit pas re-ecrire une
+// cle qu'on vient de retirer.
+const clearPersistedUndo = () => {
+    undoPersistDirty = false
+    try { localStorage.removeItem(UNDO_STORAGE_KEY) } catch (e) { /* ignore */ }
+}
+
 export const persistState = () => {
     try {
         state.shapes.forEach((shape, i) => {
             const v = validateShape(shape)
             if (!v.ok) log('persistState: shape #' + i + ' — ' + v.errors.length + ' erreur(s): ' + JSON.stringify(v.errors))
         })
-        localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
+        const sceneJson = serializeState()
+        localStorage.setItem(SCENE_STORAGE_KEY, sceneJson)
         state.ctx.workIsSaved = 1
         updateSceneStatus()
+        // Historique undo/redo : ecrit uniquement si les piles ont
+        // change depuis la derniere persistance (flag ci-dessus).
+        // `sceneJson` est reutilise tel quel pour le fingerprint —
+        // meme string, meme instant, donc restore fiable.
+        if (undoPersistDirty) {
+            try {
+                localStorage.setItem(UNDO_STORAGE_KEY, JSON.stringify({
+                    scene: sceneJson,
+                    historyStack: state.historyStack,
+                    redoStack: state.redoStack,
+                }))
+                undoPersistDirty = false
+            } catch (e) {
+                // Quota depasse typiquement : la scene est sauvee,
+                // l'undo ne survivra pas au reload (degradation
+                // silencieuse, loggee). Le flag est neutralise pour
+                // eviter de re-tenter + re-logger a chaque zoom/pan.
+                undoPersistDirty = false
+                log('Undo persist fail: ' + e.message)
+            }
+        }
     } catch (e) {
         log('Persist fail: ' + e.message)
     }
@@ -496,6 +563,12 @@ export const loadState = () => {
             // baseline = scene par defaut, capturee a la fin.
         }
     }
+    // Restauration de l'historique undo/redo persiste, AVANT la
+    // capture de baseline : serializeState() (utilise par le
+    // fingerprint) doit voir les shapes rehydrates. Le fingerprint
+    // garantit que les entries restaurees correspondent bien a la
+    // scene courante (cf. restoreUndoHistory).
+    restoreUndoHistory()
     // Capture de baseline inconditionnelle : pose
     // sceneBaselineFingerprint sur l'etat courant (restaure ou
     // par defaut) et force sceneDirty = false. Garanti que la
@@ -506,10 +579,54 @@ export const loadState = () => {
     updateUndoRedoHud()
 }
 
+// Restaure l'historique undo/redo depuis UNDO_STORAGE_KEY au boot
+// (appele uniquement par loadState). Garde-fous :
+//   - cle absente / JSON corrompu / structure invalide → abandon
+//     silencieux (l'etat par defaut state.js a deja vide les piles).
+//   - fingerprint `scene` != serializeState() de la scene rehydratee
+//     → les entries sont obsoletes (ecriture undo echouee sur quota,
+//     onglets croises, scene remplacee par un autre onglet) →
+//     abandon : on ne restaure jamais d'undo sur une scene qui ne
+//     lui correspond pas (les indices d'entries pointeraient faux).
+//   - les piles sont recoupees a MAX_HISTORY (defense in depth —
+//     saveState plafonne deja a l'ecriture).
+const restoreUndoHistory = () => {
+    try {
+        const raw = localStorage.getItem(UNDO_STORAGE_KEY)
+        if (!raw) return
+        const data = JSON.parse(raw)
+        if (!data || typeof data !== 'object' || typeof data.scene !== 'string') return
+        if (data.scene !== serializeState()) {
+            log('Undo restore: historique ignore (scene differente du dernier undo enregistre)')
+            return
+        }
+        if (!Array.isArray(data.historyStack) || !Array.isArray(data.redoStack)) return
+        state.historyStack = data.historyStack.slice(0, MAX_HISTORY)
+        state.redoStack = data.redoStack.slice(0, MAX_HISTORY)
+        if (state.historyStack.length > 0 || state.redoStack.length > 0) {
+            log('Undo restore: ' + state.historyStack.length + ' undo / ' + state.redoStack.length + ' redo')
+        }
+    } catch (e) {
+        log('Undo restore fail: ' + e.message)
+    }
+}
+
 const onBeforeUnload = () => {
     clearTimeout(state.persistTimer)
     try {
-        localStorage.setItem(SCENE_STORAGE_KEY, serializeState())
+        const sceneJson = serializeState()
+        localStorage.setItem(SCENE_STORAGE_KEY, sceneJson)
+        // Miroir de persistState : si un flag est reste en attente
+        // (fermeture avant le prochain persistState), on flushe les
+        // deux cles ensemble pour garder le fingerprint coherent.
+        if (undoPersistDirty) {
+            localStorage.setItem(UNDO_STORAGE_KEY, JSON.stringify({
+                scene: sceneJson,
+                historyStack: state.historyStack,
+                redoStack: state.redoStack,
+            }))
+            undoPersistDirty = false
+        }
     } catch (e) { /* ignore */ }
 }
 
@@ -697,9 +814,16 @@ export const importMeshFromText = (text, sourceName) => {
     return true
 }
 
-const resetEphemeralState = () => {
-    state.historyStack = []
-    state.redoStack = []
+// clearHistory = false pour l'import MERGE : l'historique undo/redo
+// est CONSERVE (spec utilisateur — seuls le reset de scene et
+// l'import REPLACE reinitialisent l'undo ; les entries existantes
+// referencent des indices < beforeCount, toujours valides apres un
+// append). true (default) pour REPLACE, qui reinitialise tout.
+const resetEphemeralState = (clearHistory = true) => {
+    if (clearHistory) {
+        state.historyStack = []
+        state.redoStack = []
+    }
     state.selectedPoints = []
     state.selectedTriangles = []
     state.nearestPoint = undefined
@@ -738,7 +862,14 @@ export const applyImport = (parsed, loaded, mode, sourceName) => {
         if (state.activeShapeIndex < 0 || state.activeShapeIndex >= state.shapes.length) {
             state.activeShapeIndex = Math.max(0, state.shapes.length - 1)
         }
-        resetEphemeralState()
+        // MERGE conserve l'historique undo/redo (spec utilisateur —
+        // seuls reset scene et import REPLACE le reinitialisent). On
+        // marque juste le flag : la persistState ci-dessous re-ecrit
+        // la cle undo avec le NOUVEAU fingerprint de scene (append de
+        // formes), pour que la restauration au prochain reload reste
+        // coherente sans perdre les entries.
+        resetEphemeralState(false)
+        markUndoPersistDirty()
         persistState()
         captureSceneBaseline()
         updateGridButtonText()
@@ -764,7 +895,12 @@ export const applyImport = (parsed, loaded, mode, sourceName) => {
     if (parsed.GRID_STEP !== undefined && typeof parsed.GRID_STEP === 'number') {
         state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, parsed.GRID_STEP))
     }
-    resetEphemeralState()
+    // REPLACE reinitialise l'historique undo/redo (spec utilisateur :
+    // load replace d'une scene = reinit de l'undo), en memoire ET
+    // persiste — un reload ne doit pas ressusciter l'undo de l'ancienne
+    // scene remplacee.
+    resetEphemeralState(true)
+    clearPersistedUndo()
     persistState()
     // Spec utilisateur : « après chargement du fichier ne pas
     // afficher l'indicateur de non sauvegarde » — le REPLACE pose
@@ -825,6 +961,11 @@ export const resetAll = () => {
     // Spec utilisateur : « si la scène a été réinitialisée alors
     // lui donner par défaut le nom de nouvelleScene ».
     state.sceneName = 'nouvelleScene'
+    // Reinit de l'undo (spec utilisateur : reset scene = reinit de
+    // l'undo) — en memoire (fait ci-dessus) ET persiste : un reload
+    // apres reset ne doit pas ressusciter l'historique de l'ancienne
+    // scene.
+    clearPersistedUndo()
     persistState()
     // Spec utilisateur : « ne pas afficher l'indicateur de non
     // sauvegarde » apres reset (= baseline = scene vide indexe).

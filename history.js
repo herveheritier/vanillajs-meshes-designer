@@ -16,7 +16,7 @@ import { MAX_HISTORY, ACTION_NONE } from './constants.js'
 import { updateUndoRedoHud, updateSelectionHud, updateShapeHud, updateColorButtonState, updateSceneStatus } from './hud.js'
 import { drawBoard, requestDraw } from './draw.js'
 import { updateMouseHover } from './editor.js'
-import { persistState, recomputeSceneDirty } from './io.js'
+import { persistState, recomputeSceneDirty, markUndoPersistDirty } from './io.js'
 
 // ===== Snapshot fallback =====
 
@@ -489,6 +489,10 @@ export const saveState = (opts) => {
         state.historyStack.shift()
     }
     state.redoStack = []
+    // L'historique a change : la prochaine persistState (appelee par
+    // le call site juste apres saveState) re-ecrira UNDO_STORAGE_KEY
+    // avec le fingerprint de scene courant (cf. io.js persistState).
+    markUndoPersistDirty()
     updateUndoRedoHud()
 }
 
@@ -514,6 +518,9 @@ export const undo = () => {
     // identiques (before/after conservés) ; la direction est
     // appliquée via 'inverse' ci-dessous puis 'forward' au redo.
     state.redoStack.push(transferEntry(entry, state.activeShapeIndex))
+    // Historique transfere : re-ecriture de la cle persiste dans la
+    // persistState() ci-dessous (fingerprint = scene post-undo).
+    markUndoPersistDirty()
     applyEntry(entry, 'inverse')
     clearEditingTransientState()
     requestDraw()
@@ -540,6 +547,9 @@ export const redo = () => {
     state.currentAction = ACTION_NONE
     const entry = state.redoStack.pop()
     state.historyStack.push(transferEntry(entry, state.activeShapeIndex))
+    // Historique transfere : re-ecriture de la cle persiste dans la
+    // persistState() ci-dessous (fingerprint = scene post-redo).
+    markUndoPersistDirty()
     applyEntry(entry, 'forward')
     clearEditingTransientState()
     requestDraw()

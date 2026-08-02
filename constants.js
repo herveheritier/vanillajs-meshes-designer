@@ -53,6 +53,13 @@ export const CONSOLE_MIN_HEIGHT = 30
 
 // Rationale : voir DESIGN.md §2.2
 export const SCENE_STORAGE_KEY = 'meshesDesigner.scene'
+// Historique undo/redo persiste (cle separee de la scene : l'undo ne
+// doit jamais transiter par le wire format des fichiers exportes —
+// serializeState alimente aussi saveMesh). Vaut pour historyStack ET
+// redoStack, plus un fingerprint `scene` (= le string serializeState
+// ecrit au meme instant dans SCENE_STORAGE_KEY) pour verifier au
+// boot que les entries appartiennent bien a la scene courante.
+export const UNDO_STORAGE_KEY = 'meshesDesigner.undo'
 export const GRID_STEP_STORAGE_KEY = 'meshesDesigner.gridStep'
 export const ACTIVE_GRID_STORAGE_KEY = 'meshesDesigner.activeGrid'
 export const ZOOM_STORAGE_KEY = 'meshesDesigner.zoom'
