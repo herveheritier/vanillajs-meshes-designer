@@ -235,12 +235,12 @@ Il faudrait aussi quelques scénarios navigateur :
 La vérification compatible ES modules passe avec :
 
 ```bash
-node --experimental-default-type=module --check main.js
-node --experimental-default-type=module --check draw.js
-node --experimental-default-type=module --check convert.js
+node --check main.js
+node --check draw.js
+node --check convert.js
 ```
 
-En revanche, la commande actuellement indiquée dans la documentation avec un simple `node --check` échoue dans une configuration Node standard, car les fichiers utilisent les imports ES modules. Il serait utile d’aligner la documentation de développement sur la commande réellement fonctionnelle.
+Depuis Node 24 (LTS de ce poste), la détection automatique du type de module est activée par défaut : un simple `node --check` suffit pour les fichiers `.js` en ES modules. Le flag `--experimental-default-type=module`, obligatoire de Node 18 à 22 pour parser les imports, a disparu de Node 24.
 
 ---
 

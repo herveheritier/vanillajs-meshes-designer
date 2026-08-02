@@ -1441,5 +1441,5 @@ de `history.js`. Backward-compat :
   `zoomLevel` clampé `[0.1, 10]`, snapé à 0.1 près pour que valeur réelle,
   persistée et affichée matchent.
 - **No build / no transpile** : édits + reload = itération. Pas de HMR.
-- **Validation syntaxique** : utiliser `node --experimental-default-type=module --check` sur chaque fichier `.js` ; un simple `node --check` traite ces fichiers comme CommonJS et produit une fausse erreur sur `import`.
+- **Validation syntaxique** : depuis Node 24 (LTS du poste), un simple `node --check` suffit — la détection du type de module est automatique. De Node 18 à 22 il fallait `--experimental-default-type=module` (flag disparu de Node 24) pour ne pas traiter les `.js` en ES modules comme du CommonJS.
 - **Import meshes** : le bouton dédié passe par `convert.js` ; un triangle complet est valide dès deux séparateurs `;` (trois sommets). Les reliquats partiels restent représentables par le parseur texte, mais sont filtrés à la frontière IO et ne sont pas hydratés dans la scène. Le hit-testing de hover, clic gauche et clic droit utilise la même cible accrochée à la grille lorsque celle-ci est active.

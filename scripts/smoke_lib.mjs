@@ -1,6 +1,7 @@
 // Harnais partagé des smoke tests (smoke-preview.mjs, smoke-edit.mjs…).
-// playwright-core est une devDependency pinnée 1.49.1 : les versions
-// plus récentes exigent Node ≥ 20, ce poste est en Node 18.
+// playwright-core est une devDependency pinnée 1.49.1 (engines ≥ 18) :
+// elle reste compatible avec le Node 24 LTS de ce poste et les 6 suites
+// passent dessus — pas de raison de monter tant que tout est vert.
 
 import { chromium } from 'playwright-core'
 import fs from 'node:fs'

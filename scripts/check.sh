@@ -6,9 +6,10 @@
 #                          # (si le port 8000 est libre) puis arrêté
 #
 # Ordre :
-#   1. node --check sur tous les fichiers JS (l'app est en ES modules :
-#      flag --experimental-default-type=module obligatoire sous Node 18
-#      pour parser les import/export de *.js) + les scripts smoke.
+#   1. node --check sur tous les fichiers JS (l'app est en ES modules ;
+#      depuis Node 24 la détection automatique du type de module est
+#      activée par défaut — le flag --experimental-default-type=module,
+#      obligatoire sous Node 18, a disparu de Node 24) + les scripts smoke.
 #   2. npm run smoke (les 6 suites headless).
 #
 # Serveur : on réutilise un serveur déjà actif sur :8000 (probe curl
@@ -22,9 +23,10 @@ cd "$(dirname "$0")/.." || { echo 'check : répertoire du projet introuvable.'; 
 
 echo '=== 1/2 Syntaxe JS (node --check) ==='
 fail=0
-# Racine : app ES modules (main.js, editor.js, draw.js, …)
+# Racine : app ES modules (main.js, editor.js, draw.js, …) — Node 24
+# auto-détecte la syntaxe ESM dans --check, aucun flag requis.
 for f in *.js; do
-    node --experimental-default-type=module --check "$f" >/dev/null 2>&1 || {
+    node --check "$f" >/dev/null 2>&1 || {
         echo "SYNTAX FAIL: $f"
         fail=1
     }

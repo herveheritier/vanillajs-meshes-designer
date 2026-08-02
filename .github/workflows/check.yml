@@ -8,8 +8,10 @@ name: check
 # (/usr/bin/google-chrome) — les suites le pilotent via CHROMIUM_PATH
 # (défaut local : /usr/bin/chromium). Le smoke_lib lance headless avec
 # --no-sandbox, requis sur le runner (utilisateur non-root).
-# Node 18 : la devDependency playwright-core est pinnée 1.49.1 car les
-# versions plus récentes exigent Node ≥ 20.
+# Node 24 (LTS — même version que le poste de dev, le runner ubuntu-24.04
+# la fournit) : la détection de module est activée par défaut dans --check.
+# playwright-core reste pinnée 1.49.1 (engines ≥ 18) tant que les suites
+# passent dessus.
 
 on:
   push:
@@ -30,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 24
           cache: npm
       - name: Install devDependencies
         run: npm ci

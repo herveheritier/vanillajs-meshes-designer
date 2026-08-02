@@ -514,7 +514,7 @@ sélection. Documenter la sémantique en §3.6 du DESIGN.md.
 for f in editor.js main.js viewport.js hud.js merge.js constants.js \
          state.js history.js draw.js convert.js io.js shapes.js \
          geometry.js log.js modals.js console_overlay.js; do
-    node --experimental-default-type=module --check "$f"
+    node --check "$f"
 done
 ```
 

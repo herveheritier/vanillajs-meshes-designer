@@ -181,12 +181,12 @@ Un drop direct d'un fichier JSON sur le canvas déclenche aussi l'import.
   ```
   **Tout-en-un** : `npm run check` enchaîne `node --check` (syntaxe de tous les `.js`/`.mjs`) puis les six suites — le serveur dev est démarré (si le port 8000 est libre) puis arrêté automatiquement.
   **CI** : `.github/workflows/check.yml` lance `npm run check` à chaque push (Chrome du runner via `CHROMIUM_PATH`). [![check](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml/badge.svg)](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml)
-  Le binaire Chromium est `CHROMIUM_PATH` (défaut `/usr/bin/chromium`) ; la base URL est le 1er argument des scripts. `playwright-core@1.49.1` est pinné — les versions plus récentes exigent Node ≥ 20.
+  Le binaire Chromium est `CHROMIUM_PATH` (défaut `/usr/bin/chromium`) ; la base URL est le 1er argument des scripts. `playwright-core@1.49.1` est pinné (engines ≥ 18) et passe sur le Node 24 LTS du poste.
 - Lancer le serveur en arrière-plan et recharger la page suffit pour itérer sur `main.js` / `draw.js` / `convert.js` (pas de HMR).
 - Pour tester un import meshes sans picker (headless / script) :
   `http://localhost:8000/main.html?autoimport=<texte-base64-URL-safe>`
-- Vérifier la syntaxe après modifications (les fichiers sont des ES modules) :
-  `for f in *.js; do node --experimental-default-type=module --check "$f" || exit 1; done`
+- Vérifier la syntaxe après modifications (les fichiers sont des ES modules ; Node ≥ 24 auto-détecte la syntaxe ESM dans `--check`) :
+  `for f in *.js; do node --check "$f" || exit 1; done`
 - Vérifier l’absence de doublons HTML et la présence des contrôles avec un parseur HTML léger avant une revue navigateur.
 - La persistance `localStorage` survit au rechargement — utile de l'effacer depuis les devtools entre deux tests (`Clear storage`).
 
