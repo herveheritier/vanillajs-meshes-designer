@@ -19,7 +19,7 @@ import {
     getIndicesAtSamePosition,
     adjacentPoints, computeOrthogonalProjection, isInsideSegmentByDot,
 } from './geometry.js'
-import { saveState } from './history.js'
+import { saveState, movePointsPatch, insertPointPatch, replaceShapePatch, setFillsPatch, cloneShape } from './history.js'
 import { persistState, importMeshFromFile } from './io.js'
 import { log } from './log.js'
 
@@ -310,6 +310,14 @@ export const resolveMouseClickOnBoard = (e) => {
 // triangulaire). On push le nouveau point dans pointList et on
 // assigne son INDEX dans le slot du triangle. Maintient l'invariant
 // I5 (p1/p2/p3 toujours definis pour le tri en cours).
+//
+// (delta) l'entry d'historique utilise le patch `insertPoint` (DESIGN
+// §8) : ne stocke que la coord insérée + le tri concerné (before +
+// after) au lieu de cloner toute la scène. Le cas-path est codé en
+// 4 actions atomiques (push | modify-p2 | modify-p3 | push-new-tri)
+// — chaque branche construit lastTriAfter au saveState time (avant
+// la mutation) à partir de la connaissance complète des entrées
+// (coord pushée, indices nearestLine, état pré-mutation).
 export const addPoint = (point) => {
     const shape = activeShape()
     const tris = Array.isArray(shape.tris) ? shape.tris : []
@@ -335,34 +343,86 @@ export const addPoint = (point) => {
         log('addPoint: triangle partiel inactif - clic ignore')
         return
     }
-    saveState()
+
+    // (delta) construction du patch AVANT la mutation (toutes les
+    // entrées sont connues : coord pushée, indices nearestLine, état
+    // pré-mutation du shape). On capture aussi le lastTri pré-mut
+    // pour permettre le rollback undo.
+    // NOTE invariant §5.3 (insertPointPatch conv) :
+    //   - lastTriIndexBefore = -1 si shape vide avant, sinon index.
+    //   - triDelta = 1 si on pousse un nouveau tri (cas 'push' empty
+    //     OU 'push-new-tri'), 0 si on modifie en place.
+    // Le pré-fix (lastTriIndexAfter < 0 = "push") était ambigu car 0
+    // est un index valide post-mutation pour le tri #0 ; on a donc
+    // externalisé le signal via triDelta.
+    const insertedPoint = { x: point.x, y: point.y }
+    const newPointIdx = pointList.length  // index après le push
+    const lastTriIndexBefore = tris.length - 1  // -1 si vide
+    const lastTriBefore = lastTriIndexBefore >= 0
+        ? { p1: lastTriangle.p1, p2: lastTriangle.p2, p3: lastTriangle.p3, fill: lastTriangle.fill }
+        : null
+
+    let lastTriIndexAfter, lastTriAfter, action, triDelta
     if (tris.length === 0) {
-        pointList.push({ x: point.x, y: point.y })
+        action = 'push'
+        triDelta = 1
+        // lastTriIndexAfter inutilisé quand triDelta = 1.
+        lastTriAfter = { p1: newPointIdx, p2: undefined, p3: undefined }
+    } else if (lastTriangle.p2 === undefined) {
+        action = 'modify-p2'
+        triDelta = 0
+        lastTriIndexAfter = lastTriIndexBefore
+        lastTriAfter = { p1: lastTriangle.p1, p2: newPointIdx, p3: lastTriangle.p3, fill: lastTriangle.fill }
+    } else if (lastTriangle.p3 === undefined && isActivePartial && !nearestLine) {
+        action = 'modify-p3'
+        triDelta = 0
+        lastTriIndexAfter = lastTriIndexBefore
+        lastTriAfter = { p1: lastTriangle.p1, p2: lastTriangle.p2, p3: newPointIdx, fill: lastTriangle.fill }
+    } else if (nearestLine) {
+        action = 'push-new-tri'
+        triDelta = 1
+        // lastTriIndexAfter inutilisé quand triDelta = 1.
+        lastTriAfter = {
+            p1: nearestLine.firstPointIndex,
+            p2: nearestLine.secondPointIndex,
+            p3: newPointIdx,
+        }
+    } else {
+        // Garde défensive, devrait être inatteignable après les checks
+        // précédents.
+        log('addPoint: cas non couvert')
+        return
+    }
+
+    saveState({
+        patches: [insertPointPatch(
+            state.activeShapeIndex,
+            lastTriIndexBefore, lastTriBefore,
+            lastTriIndexAfter, lastTriAfter,
+            insertedPoint,
+            triDelta,
+        )],
+    })
+
+    // Mutation réelle, le case est déjà résolu ci-dessus.
+    pointList.push(insertedPoint)
+    if (action === 'push') {
         const partial = { p1: pointList.length - 1 }
         tris.push(partial)
         state.activeConstructionTriangle = partial
-    } else {
-        const triangle = lastTriangle
-        if (triangle.p2 === undefined) {
-            pointList.push({ x: point.x, y: point.y })
-            triangle.p2 = pointList.length - 1
-            state.activeConstructionTriangle = triangle
-        } else if (triangle.p3 === undefined && isActivePartial && !nearestLine) {
-            pointList.push({ x: point.x, y: point.y })
-            triangle.p3 = pointList.length - 1
-            state.activeConstructionTriangle = undefined
-        } else if (nearestLine) {
-            // Triangle sur edge : on reutilise les indices existants pour
-            // les endpoints (l'edge survit en topologie), on push le 3e
-            // sommet comme nouvelle entree pointList.
-            pointList.push({ x: point.x, y: point.y })
-            tris.push({
-                p1: nearestLine.firstPointIndex,
-                p2: nearestLine.secondPointIndex,
-                p3: pointList.length - 1,
-            })
-            state.activeConstructionTriangle = undefined
-        }
+    } else if (action === 'modify-p2') {
+        lastTriangle.p2 = pointList.length - 1
+        state.activeConstructionTriangle = lastTriangle
+    } else if (action === 'modify-p3') {
+        lastTriangle.p3 = pointList.length - 1
+        state.activeConstructionTriangle = undefined
+    } else { // 'push-new-tri'
+        tris.push({
+            p1: nearestLine.firstPointIndex,
+            p2: nearestLine.secondPointIndex,
+            p3: pointList.length - 1,
+        })
+        state.activeConstructionTriangle = undefined
     }
     state.ctx.workIsSaved = 0
     state.ctx.workIsBackuped = 0
@@ -603,6 +663,12 @@ const compactPointList = (shape) => {
 // suppression d'un sommet = retirer ses refs des slots puis compacter
 // (invariant I2). Les tris avec < 2 sommets survivants disparaissent
 // (regle §4.1 'segment oppose survit').
+//
+// (delta) on capture l'état avant+après du shape actif et on
+// émet un `replaceShapePatch` (DESIGN §8). C'est PLUS ÉCONOME qu'un
+// cloneScene plein dès que la scène contient plusieurs formes
+// (pour une scène mono-shape, le seuil shouldUseSnapshot bascule en
+// snapshot, parité avec l'ancien comportement).
 export const deleteSelectedPoint = () => {
     const shape = activeShape()
     let targets = []
@@ -612,7 +678,13 @@ export const deleteSelectedPoint = () => {
         targets = getIndicesAtSamePosition(state.nearestPoint.point)
     }
     if (targets.length === 0) return
-    saveState()
+
+    // Capture pré-mutation du shape actif (pour la branche BEFORE du patch).
+    const shapeIdx = state.activeShapeIndex
+    const clonedShapeBefore = cloneShape(shape)
+    const pointListBefore = clonedShapeBefore.pointList
+    const trisBefore = clonedShapeBefore.tris
+
     const targetSet = new Set(targets)
     // Retrait par slot : un slot pX egal a un indice cible devient
     // undefined ; les tris avec < 2 survivants sont filtres. p3
@@ -642,6 +714,19 @@ export const deleteSelectedPoint = () => {
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.activeConstructionTriangle = undefined
+
+    // (delta) capture post-mutation du shape actif et saveState
+    // avec patch replaceShape (snapshot fallback automatique si
+    // mono-shape, voir shouldUseSnapshot).
+    const clonedShapeAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            pointListBefore, trisBefore,
+            clonedShapeAfter.pointList, clonedShapeAfter.tris,
+        )],
+    })
+
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
@@ -654,6 +739,8 @@ export const deleteSelectedPoint = () => {
 // §4.1 : suppression des triangles dont 2+ slots matchent les
 // endpoints du segment. Les triangles avec 0-1 match survivent (leurs
 // autres slots conservent leur ref). Compact pointList invariant I2.
+//
+// (delta) replaceShapePatch pré + post, voir deleteSelectedPoint.
 export const deleteSelectedSegment = () => {
     const shape = activeShape()
     let targets = []
@@ -668,7 +755,12 @@ export const deleteSelectedSegment = () => {
         }
     }
     if (targets.length === 0) return
-    saveState()
+
+    const shapeIdx = state.activeShapeIndex
+    const clonedShapeBefore = cloneShape(shape)
+    const pointListBefore = clonedShapeBefore.pointList
+    const trisBefore = clonedShapeBefore.tris
+
     const targetSet = new Set(targets)
     shape.tris = shape.tris.filter(t => {
         let matchCount = 0
@@ -683,6 +775,16 @@ export const deleteSelectedSegment = () => {
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.activeConstructionTriangle = undefined
+
+    const clonedShapeAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            pointListBefore, trisBefore,
+            clonedShapeAfter.pointList, clonedShapeAfter.tris,
+        )],
+    })
+
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
@@ -696,6 +798,8 @@ export const deleteSelectedSegment = () => {
 // matchent le triangle selectionne (matchCount === 3). Distinct du
 // mode segment : on ne supprime pas les triangles partageant un sommet.
 // Compact pointList I2.
+//
+// (delta) replaceShapePatch pré + post, voir deleteSelectedPoint.
 export const deleteSelectedTriangle = () => {
     const shape = activeShape()
     let targets = []
@@ -709,7 +813,12 @@ export const deleteSelectedTriangle = () => {
         }
     }
     if (targets.length === 0) return
-    saveState()
+
+    const shapeIdx = state.activeShapeIndex
+    const clonedShapeBefore = cloneShape(shape)
+    const pointListBefore = clonedShapeBefore.pointList
+    const trisBefore = clonedShapeBefore.tris
+
     const targetSet = new Set(targets)
     shape.tris = shape.tris.filter(t => {
         let matchCount = 0
@@ -724,6 +833,16 @@ export const deleteSelectedTriangle = () => {
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.nearestTriangle = undefined
+
+    const clonedShapeAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            pointListBefore, trisBefore,
+            clonedShapeAfter.pointList, clonedShapeAfter.tris,
+        )],
+    })
+
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
@@ -883,6 +1002,12 @@ export const beginGrabbing = (e) => {
     state.grabbedGroup = []
     state.grabHistorySaved = false
     state.hasDragged = false
+    // Filet défensif : tout patch deferred non committé d'un grab
+    // précédent est effacé. Sans cela, un grab interrompu avant
+    // mouseup (très rare, ex. via Ctrl+Z mid-grab) laisserait un
+    // _pendingGrabPatch orphelin qui pourrait être commité à tort
+    // par un grab futur. Reset pour partir propre.
+    state._pendingGrabPatch = null
 
     if (isAltGrDown) {
         state.currentAction = ACTION_GRABBING
@@ -1089,6 +1214,15 @@ export const endGrabbing = (e) => {
         processRightClickSelection(e)
     }
 
+    // (delta) commit le patch deferred capturé dans
+    // resolveMouseMoveOnBoard à la première tick de mouvement
+    // significatif. L'AFTER est résolu ici depuis le live state
+    // (les points mutés sont à leur position finale).
+    if (state._pendingGrabPatch) {
+        saveState({ patches: [state._pendingGrabPatch] })
+        state._pendingGrabPatch = null
+    }
+
     state.currentAction = ACTION_NONE
     state.grabHistorySaved = false
     state.hasDragged = false
@@ -1156,7 +1290,18 @@ export const resolveMouseMoveOnBoard = (e) => {
                 const targetPos = getGrabTargetPosition(item, dx, dy)
                 return Math.abs(targetPos.x - item.startX) > 0.01 || Math.abs(targetPos.y - item.startY) > 0.01
             })) {
-                saveState()
+                // (delta) movePointsPatch *deferred* : on capture
+                // le BEFORE (startX/startY de chaque item du
+                // grabbedGroup) à ce tick, l'AFTER est résolu en
+                // lisant le live state à la fin du geste (mouseup).
+                // Cf. §8 DESIGN.md (deferred fill).
+                state._pendingGrabPatch = movePointsPatch(
+                    state.grabbedGroup.map(item => ({
+                        s: item.shapeIndex, i: item.pointIndex,
+                        x: item.startX, y: item.startY,
+                    })),
+                    null,
+                )
                 state.grabHistorySaved = true
             }
             state.grabbedGroup.forEach(item => {
@@ -1213,10 +1358,27 @@ const applyGrabToPoint = (item, targetPos) => {
 // la rotation opere sur le pointList canonique (Q1a per-shape),
 // une seule mutation par sommet logique (au lieu de N mutations sur les
 // slots triangulaires).
+//
+// (delta) le patch movePoints sur tous les points de toutes les
+// formes est *deferred* : capture du BEFORE à la première tick, fill
+// du AFTER au commit à la fin du geste (debounce 400 ms). Gros patch
+// (~5 N points × 2 directions) mais reste ≪ full cloneScene qui
+// clonerait aussi les tris — gain typique marqué sur mesh multi-tris.
 export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
     if (!state.shapes || state.shapes.length === 0) return
     if (!state.isEachShapeRotating) {
-        saveState()
+        // Capture BEFORE pour movePoints deferred : tous les points
+        // de toutes les formes, avant le premier tick de rotation.
+        const beforeEntries = []
+        state.shapes.forEach((shape, sidx) => {
+            if (!Array.isArray(shape.pointList)) return
+            for (let i = 0; i < shape.pointList.length; i++) {
+                const p = shape.pointList[i]
+                if (!p) continue
+                beforeEntries.push({ s: sidx, i: i, x: p.x, y: p.y })
+            }
+        })
+        state._pendingEachShapeRotatePatch = movePointsPatch(beforeEntries, null)
         state.isEachShapeRotating = true
         state.selectedPoints = []
         updateSelectionHud()
@@ -1225,6 +1387,10 @@ export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
     clearTimeout(state.eachShapeRotateTimer)
     state.eachShapeRotateTimer = setTimeout(() => {
         state.isEachShapeRotating = false
+        if (state._pendingEachShapeRotatePatch) {
+            saveState({ patches: [state._pendingEachShapeRotatePatch] })
+            state._pendingEachShapeRotatePatch = null
+        }
         persistState()
     }, 400)
 
@@ -1254,15 +1420,31 @@ export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
 // par N triangles produit N mises a jour identiques sur la meme
 // coord - l'effet visuel est identique, la complexite est O(N) en
 // selectedPoints au lieu de O(M*N) en tri*slots.
+//
+// (delta) movePoints deferred sur selectedPoints du shape actif.
+// Capture BEFORE à la première tick, commit au debounce du wheel
+// timer. Patch compact (O(N) sur N sélectionnés) ≪ full cloneScene.
 export const rotateSelectedPoints = (center, angle) => {
     if (state.selectedPoints.length < 2 || state.isSelectionDimmed) return
     if (!state.isWheelRotating) {
-        saveState()
+        const activeShapeRef = state.shapes[state.activeShapeIndex]
+        const pointList = Array.isArray(activeShapeRef.pointList) ? activeShapeRef.pointList : []
+        const beforeEntries = []
+        state.selectedPoints.forEach(idx => {
+            const p = pointList[idx]
+            if (!p) return
+            beforeEntries.push({ s: state.activeShapeIndex, i: idx, x: p.x, y: p.y })
+        })
+        state._pendingSelectedRotatePatch = movePointsPatch(beforeEntries, null)
         state.isWheelRotating = true
     }
     clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = setTimeout(() => {
         state.isWheelRotating = false
+        if (state._pendingSelectedRotatePatch) {
+            saveState({ patches: [state._pendingSelectedRotatePatch] })
+            state._pendingSelectedRotatePatch = null
+        }
         persistState()
     }, 400)
 
@@ -1292,13 +1474,31 @@ export const rotateSelectedPoints = (center, angle) => {
 // ===== Coloration des triangles (mode 'triangle') =====
 
 // (modifyShapeModel-spec §3.6) : la liste de triangles de la
-// forme active est `tris` (indexe) $
+// forme active est `tris` (indexe)
+//
+// (delta) setFillsPatch ne stocke que les fills modifiés
+// (`{s, t, fill}`). Le fill absent (clear) est encodé par
+// `fill: undefined`. Différentiel typique : juste les N tris
+// sélectionnés, ~24 B/tri × 2 directions vs cloneScene plein
+// (=O(forme)).
 export const applyColorToSelectedTriangles = (color) => {
     if (!state.shapes || !state.shapes[state.activeShapeIndex]) return
     if (!state.selectedTriangles || state.selectedTriangles.length === 0) return
     const tris = state.shapes[state.activeShapeIndex].tris
     if (!Array.isArray(tris)) return
-    saveState()
+
+    // (delta) capture BEFORE fills (avant mutation).
+    const beforeEntries = []
+    state.selectedTriangles.forEach(idx => {
+        const t = tris[idx]
+        if (!t) return
+        beforeEntries.push({
+            s: state.activeShapeIndex, t: idx,
+            fill: typeof t.fill === 'string' ? t.fill : undefined,
+        })
+    })
+
+    // Mutation réelle.
     state.selectedTriangles.forEach(idx => {
         const t = tris[idx]
         if (!t) return
@@ -1308,6 +1508,19 @@ export const applyColorToSelectedTriangles = (color) => {
             t.fill = color
         }
     })
+
+    // (delta) capture AFTER fills (post-mutation).
+    const afterEntries = []
+    state.selectedTriangles.forEach(idx => {
+        const t = tris[idx]
+        if (!t) return
+        afterEntries.push({
+            s: state.activeShapeIndex, t: idx,
+            fill: typeof t.fill === 'string' ? t.fill : undefined,
+        })
+    })
+    saveState({ patches: [setFillsPatch(beforeEntries, afterEntries)] })
+
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     persistState()

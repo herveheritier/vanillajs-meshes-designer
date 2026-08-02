@@ -5,7 +5,7 @@ import { activeTriangles, adjacentPoints } from './geometry.js'
 import { ACTION_NONE } from './constants.js'
 import { drawBoard, requestDraw } from './draw.js'
 import { updateSelectionHud } from './hud.js'
-import { saveState } from './history.js'
+import { saveState, replaceShapePatch, cloneShape } from './history.js'
 import { persistState } from './io.js'
 import { updateMouseHover } from './editor.js'
 import { log } from './log.js'
@@ -160,10 +160,15 @@ export const mergeSelectedPoints = () => {
         return false
     }
 
-    // Capture pre-mutation pour undo : restaure l'etat exact avant la
-    // fusion (sinon cloneScene ne pourrait pas revenir en arriere).
-    saveState()
+    // (delta) capture l'état pré-mutation du shape actif pour le
+    // replaceShapePatch (gain net dès que la scène contient
+    // plusieurs formes). Pour une scène mono-shape, le seuil
+    // shouldUseSnapshot bascule automatiquement en snapshot.
+    const shapeIdx = state.activeShapeIndex
     const shape = activeShape()
+    const clonedShapeBefore = cloneShape(shape)
+    const pointListBefore = clonedShapeBefore.pointList
+    const trisBefore = clonedShapeBefore.tris
     const pointList = shape.pointList
     const tris = shape.tris
 
@@ -263,6 +268,17 @@ export const mergeSelectedPoints = () => {
     state.eachShapeRotateTimer = undefined
     state.isEachShapeRotating = false
     state.moveAllActive = false
+
+    // (delta) capture post-mutation et saveState avec replaceShapePatch.
+    const clonedShapeAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            pointListBefore, trisBefore,
+            clonedShapeAfter.pointList, clonedShapeAfter.tris,
+        )],
+    })
+
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()

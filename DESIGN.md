@@ -954,59 +954,265 @@ runtime indexe), donc un label "7" référence directement
 
 ### §7.9 Liste des slots triangles partageant la position survee
 
-Quand le sommet surve a plusieurs refs (cluster §3.2 ou topologie de
-mesh dense), `drawStackList(p, refs)` rend une **pill 2-lignes** sous le
-label §7.8 listant les `(triangleIndex, slotId)` adjacents.
+Quand le sommet surve a plusieurs refs (cluster §3.2 ou topologie de mesh dense), `drawStackList(p, refs)` rend une **pill 2-lignes** sous le label §7.8 listant les `(triangleIndex, slotId)` adjacents.
 
 **Géométrie** :
-- Header ligne 1 : `stack (N)` en `#FFD700` (golden) sur fond opaque
-  `rgba(0,0,0,0.7)`. N = nombre de slots triangles à cette position.
-- Body ligne 2 : `T0.p1, T2.p3, ...` en `#FFFFFF` (blanc), séparés par
-  virgule + espace. Format `{triangleIndex}.{slotId}` (slotId = `p1`,
-  `p2` ou `p3`).
-- Font 10 px monospace, padding 6 px horizontal, height 14 px par ligne
-  + 4 px padding vertical.
-- Position `OFFSET_Y = +32` — sous §7.8 (offset +14) sans overlap
-  visuel.
+- Header ligne 1 : `stack (N)` en `#FFD700` (golden) sur fond opaque `rgba(0,0,0,0.7)`. N = nombre de slots triangles à cette position.
+- Body ligne 2 : `T0.p1, T2.p3, ...` en `#FFFFFF` (blanc), séparés par virgule + espace. Format `{triangleIndex}.{slotId}` (slotId = `p1`, `p2` ou `p3`).
+- Font 10 px monospace, padding 6 px horizontal, height 14 px par ligne + 4 px padding vertical.
+- Position `OFFSET_Y = +32` — sous §7.8 (offset +14) sans overlap visuel.
 
-**Affichage conditionnel** : la pill n'est rendue que si `refs.length > 1`.
-Un seul slot adjacent ne déclenche pas §7.9 (ce serait redondant avec
-le label §7.8 qui suffit à identifier le sommet). Filtre `if (stackRefs.length > 1)`
-dans `editor.js:updateMouseHover` (call site hover).
+**Affichage conditionnel** : la pill n'est rendue que si `refs.length > 1`. Un seul slot adjacent ne déclenche pas §7.9 (ce serait redondant avec le label §7.8 qui suffit à identifier le sommet). Filtre `if (stackRefs.length > 1)` dans `editor.js:updateMouseHover` (call site hover).
 
 **Implémentation** :
-- Helper `getStackTriangleRefs(p, tolerance = 0.01)` de `geometry.js`
-  (commit `05cabe3 feat(geometry): §7.x helpers`). Itère
-  `activeTriangles()` (alias court pour
-  `state.shapes[activeShapeIndex].tris`, helper exporté par
-  `geometry.js`) et pousse pour chaque triangle la liste des slots
-  (`p1`/`p2`/`p3`) dont `adjacentPoints(pointList[slot], p, tolerance)`
-  est vrai — la résolution coords passe par l'index du slot dans le
-  `pointList` (cf. §3.4 runtime indexe).
-- Tolerance par défaut 0.01 unité modèle (cohérent avec §3.2 cluster
-  semantics et §4.1 delete). Paramétrable pour tests spécifiques.
+- Helper `getStackTriangleRefs(p, tolerance = 0.01)` de `geometry.js` (commit `05cabe3 feat(geometry): §7.x helpers`). Itère `activeTriangles()` (alias court pour `state.shapes[activeShapeIndex].tris`, helper exporté par `geometry.js`) et pousse pour chaque triangle la liste des slots (`p1`/`p2`/`p3`) dont `adjacentPoints(pointList[slot], p, tolerance)` est vrai — la résolution coords passe par l'index du slot dans le `pointList` (cf. §3.4 runtime indexe).
+- Tolerance par défaut 0.01 unité modèle (cohérent avec §3.2 cluster semantics et §4.1 delete). Paramétrable pour tests spécifiques.
 
 **Cas d'usage** :
-- Topologie normale (deux triangles partageant un sommet) : 1 slot
-  adjacent → §7.9 ne s'affiche PAS (filtre `> 1`).
-- Cluster intentionnel (`getPointsAtSamePosition(p).length > 1`, §3.2) :
-  N>1 → §7.9 liste les slots triangles.
-- Stress-test ou import avec doublons accidentels : N visible permet de
-  détecter rapidement la multiplicité sans ouvrir devtools.
+- Topologie normale (deux triangles partageant un sommet) : 1 slot adjacent → §7.9 ne s'affiche PAS (filtre `> 1`).
+- Cluster intentionnel (`getPointsAtSamePosition(p).length > 1`, §3.2) : N>1 → §7.9 liste les slots triangles.
+- Stress-test ou import avec doublons accidentels : N visible permet de détecter rapidement la multiplicité sans ouvrir devtools.
 
-**Edge case (filet défensif non appliqué)** : `getStackTriangleRefs`
-peut retourner plusieurs entrées pour le même `triangleIndex` si 2+
-slots du même triangle sont adjacents au point (cas dégénéré topologique).
-Une dedup par référence (`!refs.some(r => r.ref === entry.ref)`)
-serait plus robuste mais n'est pas appliquée (dette technique
-consignée ; nit reviewer du commit `2c586fa`). Le slotId est
-identifié via la position de l'index dans le tableau `tris[k]` :
-`triangle.tris[k].p1` → slotId `"p1"`, etc. — le format affiche
-`{triangleIndex}.{slotId}` (cf. spec §3.10).
+**Edge case (filet défensif non appliqué)** : `getStackTriangleRefs` peut retourner plusieurs entrées pour le même `triangleIndex` si 2+ slots du même triangle sont adjacents au point (cas dégénéré topologique). Une dedup par référence (`!refs.some(r => r.ref === entry.ref)`) serait plus robuste mais n'est pas appliquée (dette technique consignée ; nit reviewer du commit `2c586fa`). Le slotId est identifié via la position de l'index dans le tableau `tris[k]` : `triangle.tris[k].p1` → slotId `"p1"`, etc. — le format affiche `{triangleIndex}.{slotId}` (cf. spec §3.10).ols.
+
+**Edge case (filet défensif non appliqué)** : `getStackTriangleRefs` peut retourner plusieurs entrées pour le même `triangleIndex` si 2+ slots du même triangle sont adjacents au point (cas dégénéré topologique). Une dedup par référence (`!refs.some(r => r.ref === entry.ref)`) serait plus robuste mais n'est pas appliquée (dette technique consignée ; nit reviewer du commit `2c586fa`). Le slotId est identifié via la position de l'index dans le tableau `tris[k]` : `triangle.tris[k].p1` → slotId `"p1"`, etc. — le format affiche `{triangleIndex}.{slotId}` (cf. spec §3.10).
 
 ---
 
-## §8. Conventions diverses
+## §8. Pile d'historique avec stockage delta
+
+### §8.1 Motivation
+
+L'implémentation historique de `history.js` utilisait un **deep clone
+complet** de `state.shapes` à chaque `saveState()` : pour N points et
+M triangles sur K formes, chaque entry de la pile pèse ≈
+`K × (N + M) × ~80 B` (overhead JS object + 2-4 floats typiques)
+plafonnée à `MAX_HISTORY = 50` (cf. `constants.js`). Sur une session
+de peinture typique (« on dessine, on drag, on dessine encore »),
+l'utilisateur génère ~50 entrées — pour un mesh moyen (33 pts, 36
+tris), ça représente ~280 KB de clones complets en mémoire à tout
+instant, peu importe que la majorité des entrées diffèrent de la
+précédente par le déplacement de 1 sommet.
+
+**L'observation** : la plupart des opérations undo concernent un
+**petit sous-ensemble** de la scène :
+
+- Grab / drag d'un sommet : 1 à N points déplacés (souvent 1).
+- Rotation AltGr d'une sélection : N points tournés autour d'un pivot.
+- AddPoint : 1 point + 1 tri modifié.
+- applyColorToSelectedTriangles : N fills modifiés.
+- addShape / performDeleteShape : 1 forme insérée/retirée.
+
+Cloisonner la mémoire à cette sous-partie via un **delta** plutôt
+qu'à la scène entière est le gain mémoire escompté. Pour 50 drags
+d'un seul sommet sur mesh-wail : 50 × 32 B = 1.6 KB vs 280 KB
+snapshot — gain ~175×.
+
+### §8.2 Format d'entry (delta + fallback snapshot)
+
+Chaque entry sur `state.historyStack` (ou `state.redoStack`) est :
+
+```js
+// Format delta (preferred)
+{
+  activeShapeIndex: <number>,
+  patches: [
+    { kind: 'movePoints',
+      before: [{ s, i, x, y }, ...],
+      after:  [{ s, i, x, y }, ...] },
+    { kind: 'insertPoint',
+      shapeIdx, lastTriIndexBefore, lastTriBefore,
+      lastTriIndexAfter, lastTriAfter, insertedPoint },
+    { kind: 'replaceShape',
+      shapeIdx,
+      pointListBefore, trisBefore,
+      pointListAfter, trisAfter },
+    { kind: 'setFills',
+      before: [{ s, t, fill }, ...],
+      after:  [{ s, t, fill }, ...] },
+    { kind: 'shapeArray',
+      shapeIndex, before, after },
+    { kind: 'activeShapeIndex', from, to },
+  ],
+}
+
+// Format snapshot (fallback ou chemin legacy)
+{
+  activeShapeIndex,
+  snapshotShapes: cloneSceneSnapshot(state.shapes),
+}
+
+// Discrimination : entry.patches OU entry.snapshotShapes (constante
+// au runtime dans applyEntry, history.js).
+```
+
+Le format choisi est **forward + reverse par patch** : chaque patch
+porte `before` et `after` simultanément plutôt qu'une direction unique.
+Conséquence :
+- `saveState` peut être appelé à n'importe quel moment du geste.
+- `undo` applique `before` (inverse), `redo` applique `after` (forward).
+- Pas de calcul d'inverse runtime — les deux extrémités sont déjà
+  matérialisées dans le patch. Coût mémoire : 2× celui d'un
+  single-side, mais c'est borné (la tranche modifiée n'est pas
+  toute la scène) — voir tableau §8.4.
+
+### §8.3 Patch kinds et leur domaine
+
+| Patch           | Domaines mutés                                     | Champs principaux                                           |
+|-----------------|----------------------------------------------------|-------------------------------------------------------------|
+| `movePoints`    | coords des points `state.shapes[s].pointList[i]`    | `before`/`after` = `[{s, i, x, y}, ...]`                  |
+| `insertPoint`   | push 1 entrée pointList + update/append last tri    | `lastTriIndexBefore/After`, `lastTriBefore/After`, `insertedPoint` |
+| `replaceShape`  | remplace pointList + tris d'1 seul shape             | `pointListBefore/After`, `trisBefore/After`                 |
+| `setFills`      | fill de N tris (set / clear)                        | `before`/`after` = `[{s, t, fill}, ...]`                   |
+| `shapeArray`    | insert / remove / replace une forme                 | `before` (forme à l'index avant) ou `null` (insert), `after` idem |
+| `activeShapeIndex` | index de la forme active                         | `from`, `to`                                              |
+
+Convention de direction :
+- `movePoints` / `setFills` / `activeShapeIndex` : `forward` =
+  appliquer `after`, `inverse` = appliquer `before`.
+- `insertPoint` : `forward` = push point + apply lastTriAfter,
+  `inverse` = pop point + apply lastTriBefore.
+- `replaceShape` : `forward` = apply `pointListAfter`/`trisAfter`,
+  `inverse` = apply `pointListBefore`/`trisBefore`.
+- `shapeArray` : triplet `before`/`shapeIndex`/`after` selon
+  (`before=shape, after=null` = remove ; `before=null, after=shape`
+  = insert ; `before, after=shapes` = replace).
+
+### §8.4 Patch memory footprint vs snapshot baseline
+
+Heuristique de coût mémoire estimée (par entry) :
+
+| Patch kind            | Coût typique (par entry)                  | Cas pathologique            |
+|-----------------------|-------------------------------------------|-----------------------------|
+| `movePoints`          | `n × 32 B` (n = nb points déplacés)       | mutation AltGr globale = O(total points) |
+| `insertPoint`         | ~ 80 B (1 coord + 2 lastTri)              | —                           |
+| `replaceShape`        | `2 × (pointList + tris) × 24 B` (1 shape) | full shape if mono-scène     |
+| `setFills`            | `N × 24 B` (N = nb tris modifiés)         | —                           |
+| `shapeArray`          | ~ 200 B (le shape complet cloné)          | —                           |
+| `activeShapeIndex`    | 8 B                                       | —                           |
+| full snapshot         | `Σ (pointList + tris) × 24 B` (toute la scène) | toujours O(scene)        |
+
+**Comparaison qualitative** :
+
+- Pour un `movePoints` sur 1-5 points : 160-800 B vs 5-6 KB full
+  snapshot (mesh-wail) → **gain 7-30×**.
+- Pour AltGr rotation global (100 points déplacés) :
+  3.2 KB vs 5-6 KB → **gain ~2×**.
+- Pour un `replaceShape` sur une scène mono-shape : ~10 KB vs 5 KB
+  full → **régression 2×** (covered par snapshot fallback §8.5).
+- Pour un `replaceShape` sur scelle multi-shape (5 formes,
+  suppression sur 1) : 10 KB vs 25 KB → **gain ~2.5×**.
+- Pour un `insertPoint` : 80 B vs 5-6 KB → **gain ~70×**.
+
+### §8.5 Snapshot fallback et seuil de bascule
+
+Le helper `shouldUseSnapshot(patches, shapes)` dans `history.js`
+estime la taille cumulée des patches et la compare à `2 ×
+snapshotByteSize(shapes)`. Si les patches dépassent ce seuil, on
+bascule en snapshot complet (`snapshotShapes`).
+
+Justification du seuil `×2` :
+- Un snapshot complet est **structurellement simple** (1 seul
+  tableau de refs, avant en lui-même fait déjà la moitié du snapshot
+  avec ses paires `{x, y}` adjacentes pour les points). Sa taille
+  overhead est comparable à la somme `pointList + tris` × 24 B.
+- Un delta coûte naturellement 2× (avant + après). Tant qu'il
+  ne dépasse pas grossièrement 2× le snapshot, il reste un gain
+  net (deux représentations symétriques plus simples à cloner /
+  comparer qu'une seule grosse structure indexée hiérarchiquement).
+
+Cas concret où le seuil déclenche :
+- `replaceShape` sur scène mono-shape avec ≥ 1 point / tri :
+  `2 × (pointList + tris) × 24 B > 2 × (pointList + tris) × 24 B`
+  → bascule en snapshot (égalité stricte déclenche, gain marginal
+  mais parité avec ancien comportement).
+- `movePoints` couvrant > 50 % des points du scene total :
+  bascule en snapshot (rare : AltGr globale sur petites scènes).
+
+### §8.6 Pattern deferred fill (geste long)
+
+Les gestes longs (grab, rotations wheel) ne connaissent pas l'**état
+final post-mutation** au moment où la première tick est détectée :
+l'utilisateur n'a pas encore relâché. Pour ne pas capturer inutilement
+le snapshot complet juste pour le commit, le pattern **deferred fill**
+permet de pousser un patch dont le slot `after` est résolu depuis le
+live state au moment du commit :
+
+```js
+// Capture BEFORE à la première tick du geste :
+state._pendingGrabPatch = movePointsPatch(
+  startCoordsOfAllGrabbedItems,  // [{s, i, x, y}, ...]
+  null,  // after = null = "à remplir"
+)
+// ... mutations live pendant le drag ...
+
+// Commit au relâchement / fin de debounce :
+saveState({ patches: [state._pendingGrabPatch] })
+//        ^^^ saveState résout `after = live` via resolveDeferredAfter
+```
+
+`history.js resolveDeferredAfter` itère les patches et, pour tout
+`movePoints` avec `after === null`, lit le live state de chaque
+`(s, i)` et remplit `after`. Pas de re-clone complet, juste une
+lecture O(N) au commit.
+
+**Champ state associé** : `state._pendingGrabPatch`,
+`state._pendingEachShapeRotatePatch`, `state._pendingSelectedRotatePatch` —
+champs nullables réinitialisés dans `clearEditingTransientState` pour
+qu'un geste interrompu (Ctrl+Z mid-rotation, etc.) ne laisse pas un
+patch orphelin qui se commit incorrectement au geste suivant.
+
+### §8.7 Granularité des entrées et coalescing implicite
+
+La granularité de l'historique est calée sur les **gestes longs**, pas
+sur les ticks individuels :
+
+- Grab : un seul `saveState` au premier tick significatif (≥ 5 px),
+  via le flag `state.grabHistorySaved`. Pas d'entrée par pixel
+  déplacé.
+- Rotation AltGr : un seul `saveState` pour la durée du geste
+  (~ 400 ms de debounce entre ticks). Pas d'entrée par tick.
+- Rotation sélection molette : idem.
+- Clic addPoint / delete / color : un saveState par action, déjà
+  naturellement granulaire.
+
+Le coalescing n'est donc pas une optimisation à rajouter : il est
+déjà implicite via les flags `grabHistorySaved` / `isWheelRotating` /
+`isEachShapeRotating` qui distinguent « nouvelle entrée » de « suite
+du même geste ». Le delta ne change pas cette sémantique, il
+diminue simplement le coût mémoire par entrée.
+
+### §8.8 Call sites (rappel exhaustive)
+
+11 sites `saveState` au total. Mapping vers patch :
+
+| Site (fichier:ligne, fonction)                              | Patch appliqué                              |
+|-------------------------------------------------------------|---------------------------------------------|
+| `editor.js:addPoint`                                        | `insertPointPatch`                          |
+| `editor.js:deleteSelectedPoint`                             | `replaceShapePatch` (1 shape)               |
+| `editor.js:deleteSelectedSegment`                           | `replaceShapePatch` (1 shape)               |
+| `editor.js:deleteSelectedTriangle`                          | `replaceShapePatch` (1 shape)               |
+| `editor.js:resolveMouseMoveOnBoard` (1ʳᵉ tick grab)        | `movePointsPatch` (deferred fill)           |
+| `editor.js:rotateEachShapeAroundPivot` (AltGr wheel)        | `movePointsPatch` (deferred, multi-shape)   |
+| `editor.js:rotateSelectedPoints` (wheel sélection)          | `movePointsPatch` (deferred, sélection seulement) |
+| `editor.js:applyColorToSelectedTriangles`                   | `setFillsPatch`                             |
+| `shapes.js:addShape`                                        | `shapeArrayPatch` + `activeShapeIndexPatch` |
+| `shapes.js:performDeleteShape`                              | `shapeArrayPatch` (remove ou replace) + `activeShapeIndexPatch` |
+| `merge.js:mergeSelectedPoints`                              | `replaceShapePatch` (1 shape, mais avec reindex complet) |
+
+### §8.9 API publique inchangée
+
+`saveState`/`undo`/`redo`/`cloneScene` restent les exports publics
+de `history.js`. Backward-compat :
+- `saveState()` sans argument → snapshot (comportement legacy, pour
+  les chemins qui n'ont pas encore migré).
+- `saveState({ patches })` → delta avec auto-fill deferred.
+- `cloneScene` reste exporté (utilisable par patches `replaceShape`
+  en interne OU pour des tests).
+
+---
+
+## §9. Conventions diverses
 
 - **Mouse buttons** : `e.button === 0` est le left-click canonique partout.
   `middle-click` sur canvas = pan.

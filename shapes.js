@@ -4,7 +4,7 @@ import { state } from './state.js'
 import { ACTION_NONE } from './constants.js'
 import { drawBoard, requestDraw } from './draw.js'
 import { updateShapeHud, updateSelectionHud, updateColorButtonState } from './hud.js'
-import { saveState } from './history.js'
+import { saveState, shapeArrayPatch, activeShapeIndexPatch, cloneShape } from './history.js'
 import { persistState } from './io.js'
 import { log } from './log.js'
 import { updateMouseHover } from './editor.js'
@@ -45,9 +45,20 @@ export const nextShape = () => {
 }
 
 export const addShape = () => {
-    saveState()
-    state.shapes.push({ pointList: [], tris: [] })
-    goToShape(state.shapes.length - 1)
+    // (delta) shapeArrayPatch.insert : new empty shape at end
+    // of state.shapes + activeShapeIndexPatch from current to new.
+    // Insert ≈ 200 B vs full cloneScene ≈ O(scene) — gain typique.
+    const fromIndex = state.activeShapeIndex
+    const newShape = { pointList: [], tris: [] }
+    const newIndex = state.shapes.length
+    saveState({
+        patches: [
+            shapeArrayPatch(newIndex, null, newShape),
+            activeShapeIndexPatch(fromIndex, newIndex),
+        ],
+    })
+    state.shapes.push(newShape)
+    goToShape(newIndex)
     persistState()
 }
 
@@ -57,13 +68,43 @@ export const deleteShape = () => {
 
 export const performDeleteShape = () => {
     hideDeleteShapeModal()
-    saveState()
+
+    // (delta) shapeArrayPatch.remove : shape supprimé à l'index
+    // courant + sa valeur pré-mut (pour pouvoir le restaurer à
+    // l'undo). On capture aussi activeShapeIndex pour la nouvelle
+    // valeur (post-splice).
+    const removedIndex = state.activeShapeIndex
+    const removedShape = state.shapes[removedIndex]
+    const newActiveIndex = state.shapes.length === 1
+        ? 0
+        : (removedIndex >= state.shapes.length - 1
+            ? state.shapes.length - 2
+            : removedIndex)
+
     if (state.shapes.length === 1) {
+        // Cas spécial : une seule forme → on la REMPLACE par une
+        // forme vide (re-place au lieu de remove-then-insert pour
+        // éviter d'avoir à gérer une transition activeShapeIndex
+        // bizarre). Patch replace : before = old, after = empty.
+        const clonedBefore = cloneShape(removedShape)
+        saveState({
+            patches: [
+                shapeArrayPatch(0, clonedBefore, { pointList: [], tris: [] }),
+                activeShapeIndexPatch(removedIndex, 0),
+            ],
+        })
         state.shapes = [{ pointList: [], tris: [] }]
         state.activeShapeIndex = 0
     } else {
-        state.shapes.splice(state.activeShapeIndex, 1)
-        if (state.activeShapeIndex >= state.shapes.length) state.activeShapeIndex = state.shapes.length - 1
+        // Forward direction = remove : before = removedShape, after = null.
+        saveState({
+            patches: [
+                shapeArrayPatch(removedIndex, removedShape, null),
+                activeShapeIndexPatch(removedIndex, newActiveIndex),
+            ],
+        })
+        state.shapes.splice(removedIndex, 1)
+        state.activeShapeIndex = newActiveIndex
     }
     state.selectedPoints = []
     state.selectedTriangles = []

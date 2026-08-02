@@ -95,6 +95,14 @@ export const state = {
     // ===== Modal focus restoration =====
     lastFocusedElement: undefined,
 
+    // ===== Pending deferred history patches (delta storage §8) =====
+    // Patch "en attente" dont le slot `after` sera rempli depuis
+    // le live state à la fin du geste (mouseup pour grab, fin de
+    // debounce pour rotation). Cf. history.js resolveDeferredAfter.
+    _pendingGrabPatch: null,
+    _pendingEachShapeRotatePatch: null,
+    _pendingSelectedRotatePatch: null,
+
     // ===== DOM refs (queries faites au boot depuis main.js) =====
     board: undefined,
     body: undefined,
