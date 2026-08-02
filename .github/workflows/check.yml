@@ -12,6 +12,8 @@ name: check
 # la fournit) : la détection de module est activée par défaut dans --check.
 # playwright-core reste pinnée 1.49.1 (engines ≥ 18) tant que les suites
 # passent dessus.
+# Actions checkout/setup-node en v7 : les versions ≤ v4 tournent sur un
+# runtime Node 20, déprécié par GitHub (warning + force sur Node 24).
 
 on:
   push:
@@ -29,8 +31,8 @@ jobs:
     env:
       CHROMIUM_PATH: /usr/bin/google-chrome
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
