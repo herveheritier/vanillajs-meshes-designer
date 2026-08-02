@@ -9,7 +9,8 @@
     "smoke:import": "node scripts/smoke-import.mjs",
     "smoke:gestures": "node scripts/smoke-gestures.mjs",
     "smoke:modals": "node scripts/smoke-modals.mjs",
-    "smoke": "npm run smoke:preview && npm run smoke:edit && npm run smoke:import && npm run smoke:gestures && npm run smoke:modals"
+    "smoke:rotate": "node scripts/smoke-rotate.mjs",
+    "smoke": "npm run smoke:preview && npm run smoke:edit && npm run smoke:import && npm run smoke:gestures && npm run smoke:modals && npm run smoke:rotate"
   },
   "devDependencies": {
     "playwright-core": "1.49.1"
