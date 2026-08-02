@@ -371,7 +371,7 @@ export const togglePreview = () => {
     updatePreviewButton()
     applyPreviewMode()
     log(state.previewMode
-        ? 'Preview active - P / Echap pour sortir (molette = zoom, clic milieu = pan)'
+        ? 'Preview active - P, Echap ou clic gauche pour sortir (molette = zoom, clic milieu = pan)'
         : 'Preview desactivee')
 }
 

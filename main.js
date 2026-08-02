@@ -152,12 +152,16 @@ document.addEventListener('contextmenu', (e) => {
 
 document.addEventListener('mousedown', (e) => {
     if (e.target.id !== 'board') return
-    // Preview = visualisation seule : seuls le pan (clic milieu) et
-    // le zoom molette restent autorises ; clic gauche (lasso /
-    // selection) et clic droit (grab) sont ignores pour ne jamais
-    // muter la scene qu'on est en train de regarder.
+    // Preview = visualisation seule : seul le clic milieu reste un
+    // geste de navigation (pan). Le clic GAUCHE sort de la preview
+    // (« sortir au clic ») : le clic est avalé (return avant de poser
+    // la selectionBox) pour ne pas déclencher un lasso / une selection
+    // sur le coup qui quitte. Le clic droit reste ignoré (grab).
     // Rationale : voir DESIGN.md §2.6.2
-    if (state.previewMode && e.button !== 1) return
+    if (state.previewMode) {
+        if (e.button === 0) togglePreview()
+        if (e.button !== 1) return
+    }
     const mousePos = {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
@@ -222,7 +226,8 @@ document.addEventListener('mouseup', (e) => {
 document.addEventListener('keydown', (e) => {
     // Preview : aucune action d'edition au clavier — meme le
     // Backspace (suppression) est ignore pour ne pas muter la scene
-    // qu'on visualise. Les raccourcis P / Echap sortent de la preview.
+    // qu'on visualise. Les raccourcis P / Echap sortent de la preview
+    // (le clic gauche sur le canvas aussi, cf. mousedown §2.6.2).
     // Rationale : voir DESIGN.md §2.6.2
     if (e.code === 'Backspace' && !state.previewMode) {
         if (e.shiftKey) {

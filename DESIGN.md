@@ -519,7 +519,7 @@ ne permet AUCUNE mutation de la scène.
 |---|---|
 | **Molette** | **Toujours zoom** — les deux chemins de rotation sont bloqués : `onBoardWheel` (viewport.js) gate la rotation AltGr (`§6`) et `canRotate` avec `!state.previewMode`. Sans cette garde, une sélection non vide (masquée mais toujours présente dans l'état) ferait pivoter la géométrie au lieu de zoomer — mutation invisible interdite. |
 | **Clic milieu + drag** | Pan, inchangé — seul geste souris autorisé (`e.button === 1`). |
-| **Clic gauche** | Ignoré (gate mousedown `state.previewMode && e.button !== 1` dans main.js) — pas de lasso, pas de sélection, pas de `addPoint`. |
+| **Clic gauche** | **Sort du mode** — le clic est avalé : le mousedown quitte la preview AVANT de poser la selectionBox, donc pas de lasso / sélection / `addPoint` sur le coup qui quitte. |
 | **Clic droit** | Ignoré — pas de grab, et `processRightClickSelection` gate par `!state.previewMode` sur le mouseup. |
 | **`Backspace` / `⇧+Backspace`** | Ignorés (suppression = mutation). |
 | **`Ctrl+Z` / `Ctrl+⇧+Z` / `Ctrl+Y`** | Ignorés (undo/redo muteraient une scène invisible à l'écran). |
@@ -533,8 +533,8 @@ clic-droit + drag entrerait en preview alors que
 `resolveMouseMoveOnBoard` continuerait de muter la scène jusqu'au
 mouseup. Le bouton toolbar est inatteignable pendant un drag (souris
 occupée sur le canvas) — le clavier est la seule voie d'entrée, d'où la
-garde côté `togglePreview` (P et Échap passent tous deux par cette
-fonction).
+garde côté `togglePreview` (P, Échap et le clic gauche de sortie
+passent tous par cette fonction).
 
 À l'entrée, `applyPreviewMode` nettoie aussi les gestes en cours
 (`isSelectingBox`, hover state) pour ne rien laisser transiter d'un mode
@@ -565,9 +565,13 @@ preview est un état de **focus passager**, pas une préférence de vue.
 - Raccourci clavier `P` (gate `!e.repeat` : maintenir P ne doit pas faire
   clignoter toute la chrome on/off — impact visuel bien plus lourd que
   G/R/F).
-- Sortie : `Échap` — **priorité absolue** sur la fermeture de modale dans
-  le keydown handler (la chrome étant masquée, un modal ouvert n'a pas de
-  sens à l'écran) — ou `P`.
+- Sortie clavier : `Échap` — **priorité absolue** sur la fermeture de
+  modale dans le keydown handler (la chrome étant masquée, un modal ouvert
+  n'a pas de sens à l'écran) — ou `P`.
+- **Sortie souris : clic gauche** sur le canvas — clic avalé (cf. §2.6.2) :
+  le mousedown quitte le mode et retourne avant toute action d'édition.
+  Le clic milieu conserve son contrat de pan (navigation), le clic droit
+  reste ignoré.
 
 Anti-régression : à la sortie, le `requestDraw` du toggle re-rend
 l'offscreen avec grille / axes / points restaurés ; `updateMouseHover`
