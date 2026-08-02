@@ -1,0 +1,38 @@
+name: check
+
+# Validation complète à chaque push : syntaxe JS (node --check) + les
+# 6 suites smoke navigateur, via `npm run check` (scripts/check.sh
+# démarre/arrête le serveur dev python lui-même).
+#
+# Chrome : les runners ubuntu ont Google Chrome pré-installé
+# (/usr/bin/google-chrome) — les suites le pilotent via CHROMIUM_PATH
+# (défaut local : /usr/bin/chromium). Le smoke_lib lance headless avec
+# --no-sandbox, requis sur le runner (utilisateur non-root).
+# Node 18 : la devDependency playwright-core est pinnée 1.49.1 car les
+# versions plus récentes exigent Node ≥ 20.
+
+on:
+  push:
+  workflow_dispatch:
+
+# Les pushes rapides ne s'empilent pas : on annule le run en cours.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CHROMIUM_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+      - name: Install devDependencies
+        run: npm ci
+      - name: npm run check (syntaxe + 6 suites smoke)
+        run: npm run check

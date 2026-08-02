@@ -180,6 +180,7 @@ Un drop direct d'un fichier JSON sur le canvas déclenche aussi l'import.
   npm run smoke:rotate
   ```
   **Tout-en-un** : `npm run check` enchaîne `node --check` (syntaxe de tous les `.js`/`.mjs`) puis les six suites — le serveur dev est démarré (si le port 8000 est libre) puis arrêté automatiquement.
+  **CI** : `.github/workflows/check.yml` lance `npm run check` à chaque push (Chrome du runner via `CHROMIUM_PATH`). [![check](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml/badge.svg)](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml)
   Le binaire Chromium est `CHROMIUM_PATH` (défaut `/usr/bin/chromium`) ; la base URL est le 1er argument des scripts. `playwright-core@1.49.1` est pinné — les versions plus récentes exigent Node ≥ 20.
 - Lancer le serveur en arrière-plan et recharger la page suffit pour itérer sur `main.js` / `draw.js` / `convert.js` (pas de HMR).
 - Pour tester un import meshes sans picker (headless / script) :
