@@ -122,6 +122,13 @@ export const state = {
     // ===== FPS HUD =====
     fpsVisible: false,
 
+    // ===== Preview (mode visualisation seule) =====
+    // Vue transitoire de focus : masque les points de contrôle, axes,
+    // grille, HUD et boutons pour ne laisser que la géométrie. Non
+    // persistée en localStorage (cf. viewport.js togglePreview) : au
+    // reload, on retombe toujours sur l'état d'édition par défaut.
+    previewMode: false,
+
     // ===== Render time instrumentation (gate) =====
     // Flag dev pour activer console.time('renderScene')/timeEnd dans
     // renderSceneToOffscreen (cf. draw.js). Default false pour eviter

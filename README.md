@@ -77,6 +77,7 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
 | `Ctrl+S` | Sauvegarder la scène en JSON |
 | `Ctrl+0` | Réinitialiser le zoom (100 %, recentré sur l'origine) |
 | `G` | Afficher / masquer la grille |
+| `P` | Prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons ; `Échap` pour quitter — molette = zoom, clic milieu = pan, aucune édition) |
 | `E` | (Supprimé — un seul mode édition) |
 | `?` | Afficher / masquer l'aide |
 | **Souris** | |
@@ -94,7 +95,7 @@ Carte flottante en haut à gauche, séparée en groupes cohérents par des trait
 
 Légende (de gauche à droite) :
 
-- **Canevas / édition** — `▦` *Grille* : afficher / masquer la grille (raccourci `G`). Affiche le pas à droite de l’icône ; molette sur ce bouton = ajuster le pas, *clic milieu* sur le bouton = réinitialiser le pas. `Réticule` cycle trois états (`R`). Le bouton cible cycle *sommet / segment / triangle*. `↻` *Reset* : réinitialiser complètement la scène (`⇧+Backspace`, modale de confirmation). `▢` *Tout sélectionner* : sélectionne tous les points de la forme active.
+- **Canevas / édition** — `▦` *Grille* : afficher / masquer la grille (raccourci `G`). Affiche le pas à droite de l’icône ; molette sur ce bouton = ajuster le pas, *clic milieu* sur le bouton = réinitialiser le pas. `Réticule` cycle trois états (`R`). `👁` *Prévisualiser* : masque les points de contrôle, axes, grille, HUD et boutons pour ne laisser que la géométrie (raccourci `P`, sortie `Échap` ; molette = zoom, clic milieu = pan, aucune édition). Le bouton cible cycle *sommet / segment / triangle*. `↻` *Reset* : réinitialiser complètement la scène (`⇧+Backspace`, modale de confirmation). `▢` *Tout sélectionner* : sélectionne tous les points de la forme active.
 - **Annuler / Rétablir** (2 boutons gris + compteur) — `↶` *Annuler* (`Ctrl+Z`) : dépile une entrée de `historyStack` (jusqu'à `MAX_HISTORY = 50`, les plus anciennes étant évincées à mesure). `↷` *Rétablir* (`Ctrl+Shift+Z` ou `Ctrl+Y`) : dépile `redoStack`. Le compteur central est une pilule verte read-only `(N)` qui affiche la profondeur de `historyStack`. Les boutons sont automatiquement grisés (attribut HTML `disabled` + opacité 0.35 + curseur `not-allowed`) quand leur pile respective est vide, pour que l'état disponible soit visible d'un coup d'œil ; clic impossible dans cet état. Le compteur et l'état disabled sont synchronisés par `updateUndoRedoHud()`, appelée à chaque mutation des piles (saveState / undo / redo / import / reset complet / boot). L'historique est persisté dans `localStorage` (clé `meshesDesigner.undo`) et restauré au retour dans l'application (rechargement) tant que la scène restaurée correspond ; il est réinitialisé au reset complet de la scène et à l'import en mode *Remplacer* — l'import *Fusionner* le conserve.
 - **Sortie** (1 bouton vert, accent vert + silhouette disquette) — `▤ SAVE` : exporte la scène courante en JSON (`Ctrl+S`). La couleur et la silhouette (disquette) sont distinctes des entrées pour éviter l'ambiguïté (les anciennes flèches haut/bas étaient des miroirs faciles à inverser).
 - **Entrées** (2 boutons bleus) — `▤△ MESHES` : importe un fichier texte « meshes » (1 ligne = 1 forme). `▤ JSON` : importe une scène JSON (round-trip exact) ; un drop direct d'un fichier `.json` sur le canvas déclenche aussi l'import.

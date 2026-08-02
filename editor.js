@@ -185,6 +185,13 @@ const computeHoverSignature = (cursorScreen) => {
 }
 
 export const updateMouseHover = (cursorScreen) => {
+    // Preview (mode visualisation seule) : aucun overlay de survol
+    // (cercle vert du point le plus proche, labels §7.8/§7.9, ligne /
+    // triangle highlights) — ils sont des aides d'edition, pas de la
+    // geometrie. Le rendu canvas est deja propre cote draw.js ; on
+    // retourne avant tout calcul de hover (et avant le drawBoard).
+    // Rationale : voir DESIGN.md §2.6
+    if (state.previewMode) return
     updateCoordsDisplay(cursorScreen)
     if (!cursorScreen) return
     const actionModel = screenToModel(cursorScreen)

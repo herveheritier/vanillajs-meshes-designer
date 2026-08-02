@@ -278,10 +278,18 @@ const renderSceneToOffscreen = () => {
     try {
         offCtx.fillStyle = CANVAS_BACKGROUND
         offCtx.fillRect(0, 0, offscreen.width, offscreen.height)
-        if (state.activeGrid) drawGrid()
-        drawAxis()
+        // Preview (mode visualisation seule) : la scene stable est
+        // reduite a la geometrie — pas de grille, pas d'axes, pas de
+        // points selectionnes. Les points de controle (vertex dots)
+        // sont sautes dans drawShape (pass vertex). L'invalidation du
+        // cache offscreen est garantie par applyPreviewMode (requestDraw).
+        // Rationale : voir DESIGN.md §2.6
+        if (!state.previewMode) {
+            if (state.activeGrid) drawGrid()
+            drawAxis()
+        }
         drawShapes()
-        drawSelectedPoints()
+        if (!state.previewMode) drawSelectedPoints()
     } finally {
         state._ctx = visibleCtx
     }
@@ -293,6 +301,10 @@ const renderSceneToOffscreen = () => {
 // chaque drawBoard parce que reticule / selectionBox peuvent bouger
 // entre deux frames meme si la scene stable est inchangee.
 const renderTransient = () => {
+    // Preview : aucun calque transitoire — le reticule et la box de
+    // selection sont des aides d'edition, pas de la geometrie.
+    // Rationale : voir DESIGN.md §2.6
+    if (state.previewMode) return
     if (typeof state.reticleMode !== 'undefined' && state.reticleMode > 0) drawReticle()
     if (
         typeof state.isSelectingBox !== 'undefined' &&
@@ -644,7 +656,11 @@ export const drawShape = (shape, isActive) => {
     }
     state._ctx.stroke()
 
-    drawPointsBatch(vertexPoints, 2, pointColor)
+    // Pass vertex = points de controle de l'edition (petits disques
+    // sur chaque sommet). Sautes en preview : seule la geometrie
+    // (lignes / fills) doit rester visible.
+    // Rationale : voir DESIGN.md §2.6
+    if (!state.previewMode) drawPointsBatch(vertexPoints, 2, pointColor)
 }
 
 export const drawTriangle = (p1, p2, p3, pattern, color, fill) => {

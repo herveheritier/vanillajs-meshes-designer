@@ -16,6 +16,7 @@ import {
     rotateEachShapeAroundPivot,
     rotateSelectedPoints,
     updateMouseHover,
+    grabbed,
 } from './editor.js'
 
 // ===== Zoom display =====
@@ -312,6 +313,77 @@ export const wireConsoleToggle = () => {
     })
 }
 
+// ===== Preview (mode visualisation seule) =====
+//
+// Rationale : voir DESIGN.md §2.6
+//
+// Vue transitoire de focus : bascule state.previewMode et applique la
+// classe body.preview-mode (cf. CSS dans main.html) qui masque la
+// chrome (toolbar, console, HUD bas-gauche, sceneStatus, panneau de
+// couleur, modales). Le rendu canvas est nettoye cote draw.js (pas de
+// grille / axes / points de controle / overlays transitoires).
+//
+// PAS de persistance localStorage : a la difference des toggles de
+// prefs (grille, reticule, fps, console), la preview est un etat de
+// focus passager. Un reload en preview laisserait l'utilisateur sans
+// boutons (masques) — seule la sortie clavier (P / Echap) resterait
+// dispo, et l'etat d'edition par defaut au boot est plus sur.
+
+export const applyPreviewMode = () => {
+    const body = state.body
+    if (body) body.classList.toggle('preview-mode', !!state.previewMode)
+    if (state.previewMode) {
+        // Nettoie les gestes en cours (lasso en cours de drag, hover
+        // fantome) pour ne rien laisser transiter d'un mode a l'autre.
+        // Le grab est deja inatteignable : le mousedown droit est
+        // ignore en preview (cf. main.js), mais le reset reste gratuit
+        // et defensif.
+        state.isSelectingBox = false
+        state.selectionBoxStart = undefined
+        state.selectionBoxCurrent = undefined
+        state.nearestPoint = undefined
+        state.nearestLine = undefined
+        state.nearestTriangle = undefined
+    }
+    // force le re-render offscreen : la scene stable (grille / axes /
+    // points de controle) change avec previewMode, il faut donc
+    // invalider le cache, pas juste blitter.
+    requestDraw()
+}
+
+export const updatePreviewButton = () => {
+    const btn = document.querySelector('#preview')
+    if (!btn) return
+    btn.classList.toggle('preview-active', !!state.previewMode)
+    btn.setAttribute('aria-pressed', state.previewMode ? 'true' : 'false')
+}
+
+export const togglePreview = () => {
+    // Filet : ne pas basculer en pleine gesture de grab (clic droit +
+    // drag en cours, P/Echap enfonce pendant le drag). Sans ce garde,
+    // resolveMouseMoveOnBoard continuerait de muter la scene sous la
+    // preview jusqu'au mouseup. La gesture se termine au release ; un
+    // nouveau P / Echap bascule alors. Le bouton toolbar est inatteign-
+    // able dans ce cas (souris occupee sur le canvas), le clavier est
+    // la seule voie d'entree.
+    if (grabbed()) return
+    state.previewMode = !state.previewMode
+    updatePreviewButton()
+    applyPreviewMode()
+    log(state.previewMode
+        ? 'Preview active - P / Echap pour sortir (molette = zoom, clic milieu = pan)'
+        : 'Preview desactivee')
+}
+
+export const wirePreviewControl = () => {
+    const btn = document.querySelector('#preview')
+    if (!btn) return
+    btn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        togglePreview()
+    })
+}
+
 // ===== Wheel handler (sur board) =====
 
 export const onBoardWheel = (e) => {
@@ -320,14 +392,19 @@ export const onBoardWheel = (e) => {
     const boardRect = state.board.getBoundingClientRect()
     const cursorScreen = { x: e.x - boardRect.x, y: e.y - boardRect.y }
     const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))
-    if (isAltGrDown) {
+    // Preview = visualisation seule : la molette NE PEUT PAS muter la
+    // scene. On bloque les deux chemins de rotation (AltGr = tourner
+    // chaque forme, selection >= 2 points = pivoter la selection) pour
+    // que la molette zoome TOUJOURS en preview — meme si la selection
+    // n'est pas vide (elle reste masquee mais toujours dans l'etat).
+    if (isAltGrDown && !state.previewMode) {
         state.altGrRotationPivot = screenToModel(cursorScreen)
         const angle = e.deltaY < 0 ? -ROTATE_STEP : ROTATE_STEP
         rotateEachShapeAroundPivot(state.altGrRotationPivot, angle)
         return
     }
     if (state.altGrRotationPivot) state.altGrRotationPivot = undefined
-    const canRotate = state.selectedPoints.length >= 2 && !state.isSelectionDimmed
+    const canRotate = !state.previewMode && state.selectedPoints.length >= 2 && !state.isSelectionDimmed
     if (canRotate) {
         const center = screenToModel(cursorScreen)
         const angle = e.deltaY < 0 ? -ROTATE_STEP : ROTATE_STEP

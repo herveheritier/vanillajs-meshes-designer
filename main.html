@@ -210,8 +210,8 @@
             /* Une card flottante qui regroupe tous les boutons de l'app.
                7 sous-groupes coherents (cf. div.toolbar-group) separes
                par un trait vertical (cf. .toolbar-sep) :
-                 1) canvas ops (grille, reticule, reset, select all,
-                    fusion, compteur selection)
+                 1) canvas ops (grille, reticule, preview, reset,
+                    select all, fusion, compteur selection)
                  2) undo / redo (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
                  3) file save (export JSON via Ctrl+S)
                  4) file read (meshes text + JSON)
@@ -862,6 +862,44 @@
                 border-color: rgba(55, 194, 0, 0.45);
             }
 
+            /* ========= Preview (mode visualisation seule) ========= */
+            /* Bouton toolbar Preview (oeil) : meme langage d'etat actif
+               que #fps.fps-active — vert accent quand la preview est
+               activee. Jumeau pattern des toggles grid/reticle/fps
+               (meme groupe Canvas ops). */
+            #toolbar #preview.preview-active {
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border-color: rgba(55, 194, 0, 0.45);
+            }
+
+            /* body.preview-mode : masque TOUTE la chrome de l'editeur
+               pour ne laisser que le canvas propre (geometrie seule).
+               Cibles : toolbar (boutons), messageBoard (console),
+               HUD bas-gauche (#coords / #zoomDisplay / #fpsDisplay),
+               #sceneStatus, panneau de couleur des triangles, et les
+               modales (aucune action n'a de sens en visualisation).
+               display: none !important pour surpasser les styles
+               inline/attributs poses en JS : updateConsoleButton pose
+               #messageBoard.style.display, #fpsDisplay porte l'attribut
+               hidden. Le curseur du canvas passe en 'grab' (indice de
+               pan) — !important necessaire car #board porte un
+               cursor:'none' inline pose en JS (haute priorite), meme
+               pattern que body.dragging-console. */
+            body.preview-mode #toolbar,
+            body.preview-mode #messageBoard,
+            body.preview-mode #coords,
+            body.preview-mode #zoomDisplay,
+            body.preview-mode #fpsDisplay,
+            body.preview-mode #sceneStatus,
+            body.preview-mode #triangleColorPanel,
+            body.preview-mode .modal {
+                display: none !important;
+            }
+            body.preview-mode #board {
+                cursor: grab !important;
+            }
+
             /* ========= HUD bas-gauche : indicateur de zoom ========= */
             /* Une petite pilule affichee juste au-dessus de #coords.
                Affiche le niveau de zoom courant (ex. "1.2x") pour que
@@ -1137,11 +1175,11 @@
     <body>
         <div id="toolbar">
             <!-- Groupe "Canvas ops" : toggles d'affichage (grille,
-                 reticule) + reset + outils de selection (select all,
-                 fusion, compteur). 6 items dans le meme bloc :
-                 l'utilisateur cherche ces controles au meme endroit,
-                 ils basculent ensemble sur la ligne suivante quand la
-                 toolbar wrappe sur viewport etroit. -->
+                 reticule, preview) + reset + outils de selection
+                 (select all, fusion, compteur). 7 items dans le meme
+                 bloc : l'utilisateur cherche ces controles au meme
+                 endroit, ils basculent ensemble sur la ligne suivante
+                 quand la toolbar wrappe sur viewport etroit. -->
             <div class="toolbar-group">
                 <button id="grid" title="Afficher / masquer la grille (G, molette pour ajuster le pas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12"/><line x1="6" y1="2" x2="6" y2="14"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="2" y1="10" x2="14" y2="10"/></svg><span id="gridText"></span></button>
                 <!-- Réticule : guide visuel au curseur (crosshair en
@@ -1165,6 +1203,16 @@
                      voisins). Le raccourci F est mentionne dans le
                      title pour la discoverabilite. -->
                 <button id="fps" title="Afficher / masquer le compteur FPS (F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="13" x2="3" y2="9"/><line x1="7" y1="13" x2="7" y2="5"/><line x1="11" y1="13" x2="11" y2="11"/><line x1="2" y1="14" x2="14" y2="14"/></svg></button>
+                <!-- Preview : mode visualisation propre de la scene —
+                     masque les points de controle, axes, grille, HUD et
+                     boutons pour ne laisser que la geometrie
+                     (triangles / lignes / couleurs). Navigation
+                     conservee (molette = zoom, clic milieu = pan),
+                     aucune edition possible. Sortie via Echap ou P.
+                     Jumeau pattern des toggles grid/reticle/fps (meme
+                     groupe Canvas ops, meme langage d'etat actif : vert
+                     accent quand la preview est active). Icone oeil. -->
+                <button id="preview" title="Prévisualiser la scène (P / Échap) : masque points de contrôle, axes, grille, HUD et boutons"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2.2"/></svg></button>
                 <!-- Mode de selection : cycle vertex / segment / triangle.
                      Mode "vertex" = comportement actuel (clic sur un
                      sommet). Mode "segment" = clic sur un edge
@@ -1380,6 +1428,7 @@
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">S</kbd><span>sauvegarder la scene en JSON</span></div>
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd">R</kbd><span>réticule : off / simple / projection symétrique (cycle)</span></div>
+                    <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; Échap pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd wide">Molette</kbd><span>zoomer (centre sur le curseur) ; pivoter si 2+ points sont selectionnes</span></div>
                     <!-- Modificateurs souris pour la selection point-par-point.

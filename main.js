@@ -25,7 +25,7 @@ import {
     startPan, updatePan, endPan,
     restoreEditingMode, restoreSelectionMode, wireSelectionModeControl,
     restoreFpsVisible, wireFpsControl, toggleFps, updateFpsButton,
-    wireGridControl,
+    wireGridControl, togglePreview, wirePreviewControl,
 } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
 import { showHelp, hideHelp, wireHelpModal, showResetModal, hideResetModal, wireResetModal } from './modals.js'
@@ -66,6 +66,7 @@ wireGridControl()
     wireSelectionModeControl()
     wireConsoleToggle()
     wireFpsControl()
+    wirePreviewControl()
     wireConsoleOverlay()
     wireClearConsole()
 wireHelpModal()
@@ -151,6 +152,12 @@ document.addEventListener('contextmenu', (e) => {
 
 document.addEventListener('mousedown', (e) => {
     if (e.target.id !== 'board') return
+    // Preview = visualisation seule : seuls le pan (clic milieu) et
+    // le zoom molette restent autorises ; clic gauche (lasso /
+    // selection) et clic droit (grab) sont ignores pour ne jamais
+    // muter la scene qu'on est en train de regarder.
+    // Rationale : voir DESIGN.md §2.6.2
+    if (state.previewMode && e.button !== 1) return
     const mousePos = {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
@@ -205,7 +212,7 @@ document.addEventListener('mouseup', (e) => {
         state.selectionBoxStart = undefined
         state.selectionBoxCurrent = undefined
     }
-    if (!wasGrabbing && e.button === 2 && boardTarget && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+    if (!wasGrabbing && e.button === 2 && boardTarget && !state.previewMode && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         // If no grab target was armed, a plain right click still has
         // selection semantics (including empty-space deselection).
         processRightClickSelection(e)
@@ -213,7 +220,11 @@ document.addEventListener('mouseup', (e) => {
 })
 
 document.addEventListener('keydown', (e) => {
-    if (e.code === 'Backspace') {
+    // Preview : aucune action d'edition au clavier — meme le
+    // Backspace (suppression) est ignore pour ne pas muter la scene
+    // qu'on visualise. Les raccourcis P / Echap sortent de la preview.
+    // Rationale : voir DESIGN.md §2.6.2
+    if (e.code === 'Backspace' && !state.previewMode) {
         if (e.shiftKey) {
             showResetModal()
         } else if (state.selectionMode === 'segment') {
@@ -250,6 +261,14 @@ document.addEventListener('keydown', (e) => {
     const isResetOpen = resetM && !resetM.hidden
     const isDeleteShapeOpen = deleteShapeM && !deleteShapeM.hidden
     const isMergeErrorOpen = mergeErrorM && !mergeErrorM.hidden
+    // Escape : en preview, priorite absolue — on quitte la preview
+    // avant toute consideration de modale (la chrome est masquee, un
+    // modal ouvert n'a pas de sens a l'ecran).
+    if (e.code === 'Escape' && !e.repeat && state.previewMode) {
+        e.preventDefault()
+        togglePreview()
+        return
+    }
     if (e.code === 'Escape' && !e.repeat && (isHelpOpen || isResetOpen || isDeleteShapeOpen || isMergeErrorOpen)) {
         e.preventDefault()
         if (isHelpOpen) hideHelp()
@@ -266,13 +285,26 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault()
         toggleFps()
     }
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z')) {
+    const inPreviewBtn = t && typeof t.closest === 'function' && t.closest('#preview')
+    // !e.repeat : maintenir P enfonce ne doit pas faire clignoter la
+    // preview on/off (impact visuel beaucoup plus lourd que G/R/F :
+    // toute la chrome disparait/reapparait). Même pattern que le '?'
+    // et Ctrl+0.
+    if (!typing && !inPreviewBtn && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyP' && !e.repeat) {
+        e.preventDefault()
+        togglePreview()
+    }
+    // Preview = visualisation seule : undo/redo sont des mutations de
+    // scene — elles resteraient invisibles a l'ecran (geometrie
+    // masquee) et sont donc ignorees. Ctrl+S (export) et Ctrl+0
+    // (reset zoom) restent disponibles : non-mutants de la scene.
+    if (!state.previewMode && (e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z')) {
         e.preventDefault()
         redo()
-    } else if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z')) {
+    } else if (!state.previewMode && (e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z')) {
         e.preventDefault()
         undo()
-    } else if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || e.key === 'y' || e.key === 'Y')) {
+    } else if (!state.previewMode && (e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || e.key === 'y' || e.key === 'Y')) {
         e.preventDefault()
         redo()
     } else if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.key === 's' || e.key === 'S')) {
