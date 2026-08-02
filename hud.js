@@ -65,12 +65,35 @@ export const updateAccessibilityLabels = () => {
     })
 }
 
+// Marqueur visuel de non-sauvegarde : caractère bullet (U+2022)
+// accolé au nom quand la scène a été mutée depuis le dernier
+// save persistant. Le choix du bullet (vs asterisk ou +) tient en
+// qu'il reste lisible même en petite taille (11px monospace)
+// tout en étant sémantiquement neutre (pas un operateur de
+// modification publique comme `*` qui pourrait évoquer un éditeur
+// de texte WISIWYG). Le leading space isole le bullet du nom pour
+// qu'il soit clairement perçu comme une annotation.
+// Cf. spec utilisateur : « si la scène est modifiée alors mettre
+// un indicateur de non sauvegarde à côté de son nom ».
+const SCENE_DIRTY_INDICATOR = ' •'
+const SCENE_DIRTY_INDICATOR_FOR_ARIA = ' (non sauvegardée)'
+
 export const updateSceneStatus = () => {
     const status = document.querySelector('#sceneStatus')
     if (!status) return
-    status.textContent = state.sceneDirty ? 'modifiée' : 'sauvegardée'
+    const baseName = (typeof state.sceneName === 'string' && state.sceneName.length > 0)
+        ? state.sceneName
+        : 'nouvelleScene'
+    const displayText = state.sceneDirty ? baseName + SCENE_DIRTY_INDICATOR : baseName
+    status.textContent = displayText
     status.dataset.dirty = state.sceneDirty ? 'true' : 'false'
-    status.setAttribute('aria-label', state.sceneDirty ? 'Scène modifiée' : 'Scène sauvegardée')
+    const ariaLabel = state.sceneDirty ? baseName + SCENE_DIRTY_INDICATOR_FOR_ARIA : baseName
+    status.setAttribute('aria-label', ariaLabel)
+    // Title (tooltip) reflete l'etat courant en francais.
+    // Approfondit l'info aria pour les lecteurs d'ecran ET le
+    // survol souris : « nouvelleScene non sauvegardée » /
+    // « mesh-wail sauvegardée ».
+    status.setAttribute('title', ariaLabel)
 }
 
 export const updateColorButtonState = () => {

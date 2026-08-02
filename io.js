@@ -94,10 +94,66 @@ export const shapeToMesh = (shape) => {
 // Rationale : voir DESIGN.md §3.5
 export const snapZoom = (z) => Math.round(z * 10) / 10
 
+// Filename -> basename sans extension. Le wire format JSON exporte
+// `mesh-{timestamp}.json` (saveMesh) — sur reimport, le basename
+// serait `mesh-1785093938339`, ce qui n'est PAS ce que veut
+// l'utilisateur comme identifiant stable. On laisse le basename
+// passer tel quel (cf. décision spec utilisateur « nomme d'apres le
+// fichier dont elle provient ») ; l'utilisateur qui veut un nom
+// stable doit nommer ses fichiers avant import.
+const stripFileExtension = (fileName) => {
+    if (typeof fileName !== 'string') return ''
+    return fileName.replace(/\.[^.]+$/, '')
+}
+
+// ===== Scene dirty baseline =====
+//
+// `sceneDirty` reflete « la scene a diverge du dernier evenement
+// clean (save / load / import / reset / undo-vers-clean) ». On
+// materialise cet evenement clean comme un fingerprint JSON de
+// `state.shapes` (= baseline). Toute mutation utilisateur passe
+// par `saveState` (history.js) qui bascule dirty a `true`. Apres
+// undo ou redo, dirty est recalcule par comparaison au baseline
+// (gere aussi le cas partiel : save → modify → undo = matched
+// baseline, dirty repasse a `false`).
+
+// Capture la baseline courante et force sceneDirty = false.
+// Idempotent : peut etre rappele apres n'importe quel evenement
+// clean sans effet de bord.
+// Cout : 1 JSON.stringify de state.shapes (proportionnel au nombre
+// de points + tris, negligeable en pratique). Justification
+// d'utiliser un string plutot qu'un cloneShape : la cle est
+// partagee entre plusieurs call sites (persistState, undo, redo)
+// dont la majorite ne consomme pas le shape — un fingerprint
+// evite les N clones a chaque mutation triviale.
+export const captureSceneBaseline = () => {
+    state.sceneBaselineFingerprint = JSON.stringify(state.shapes)
+    state.sceneDirty = false
+    updateSceneStatus()
+}
+
+// Recompute sceneDirty via comparaison de l'etat courant au
+// baseline. Utilise par history.undo / history.redo apres
+// application d'une entry inverse / forward.
+// Cas defensif : si la baseline n'a jamais ete capturee
+// (= ''), on conserve dirty=true (un etat sans baseline n'est
+// pas fiable comme « clean » — devrait etre inatteignable des
+// le boot puisque loadState capture la baseline ou l'etat vide
+// par defaut).
+export const recomputeSceneDirty = () => {
+    if (!state.sceneBaselineFingerprint) {
+        state.sceneDirty = true
+    } else {
+        state.sceneDirty = JSON.stringify(state.shapes) !== state.sceneBaselineFingerprint
+    }
+    updateSceneStatus()
+}
+
 export const serializeState = () => {
     return JSON.stringify({
         format: SCENE_FORMAT,
         version: SCENE_FORMAT_VERSION,
+        name: state.sceneName,
         activeGrid: state.activeGrid,
         GRID_STEP: state.GRID_STEP,
         shapes: state.shapes.map(shapeToMesh),
@@ -363,67 +419,90 @@ const applyPendingRotationToShapes = (shapeArray) => {
 // dans draw.js / editor.js absorbent les invalides sans planter).
 export const loadState = () => {
     const saved = localStorage.getItem(SCENE_STORAGE_KEY)
-    if (!saved) return
-    try {
-        state.pendingRotation = undefined
-        const data = JSON.parse(saved)
-        const validationError = validateScenePayload(data)
-        if (validationError) {
-            log('Load fail: ' + validationError)
-            return
-        }
-        if (data.activeGrid !== undefined) state.activeGrid = !!data.activeGrid
-        if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') {
-            state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
-        }
-        if (typeof data.zoomLevel === 'number' && data.zoomLevel > 0) {
-            state.ctx.zoomLevel = snapZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, data.zoomLevel)))
-        }
-        if (data.viewCenter && typeof data.viewCenter.x === 'number' && typeof data.viewCenter.y === 'number') {
-            state.ctx.viewCenter.x = data.viewCenter.x
-            state.ctx.viewCenter.y = data.viewCenter.y
-        }
-        if (typeof data.rotation === 'number' && Number.isFinite(data.rotation) && data.rotation !== 0) {
-            let r = data.rotation % TAU
-            if (r < 0) r += TAU
-            const pivot = { x: 0, y: 0 }
-            if (data.rotationPivot && typeof data.rotationPivot.x === 'number' && typeof data.rotationPivot.y === 'number' && Number.isFinite(data.rotationPivot.x) && Number.isFinite(data.rotationPivot.y)) {
-                if (data.rotationPivot.kind === 'model') {
-                    pivot.x = data.rotationPivot.x
-                    pivot.y = data.rotationPivot.y
-                } else {
-                    pivot.x = state.ctx.viewCenter.x + (data.rotationPivot.x - state.ctx.center.x) / state.ctx.zoomLevel
-                    pivot.y = state.ctx.viewCenter.y - (data.rotationPivot.y - state.ctx.center.y) / state.ctx.zoomLevel
-                }
-            }
-            state.pendingRotation = { angle: r, pivot }
-        } else {
+    if (!saved) {
+        // Pas de sauvegarde en localStorage : la baseline sera
+        // capturee a la fin = scene vide (l'etat par defaut de
+        // state.js).
+    } else {
+        try {
             state.pendingRotation = undefined
-        }
-        const loaded = buildShapesFromPayload(data)
-        if (loaded) {
-            state.activeConstructionTriangle = undefined
-            state.shapes = loaded
-            // Phase 4 : detection post-hydratation
-            state.shapes.forEach((shape, i) => {
-                const v = validateShape(shape)
-                if (!v.ok) log('loadState: shape #' + i + ' — ' + v.errors.length + ' erreur(s): ' + JSON.stringify(v.errors))
-            })
-            if (typeof data.activeShapeIndex === 'number' && data.activeShapeIndex >= 0 && data.activeShapeIndex < state.shapes.length) {
-                state.activeShapeIndex = data.activeShapeIndex
+            const data = JSON.parse(saved)
+            const validationError = validateScenePayload(data)
+            if (validationError) {
+                log('Load fail: ' + validationError)
+                // baseline = scene par defaut, capturee a la fin.
             } else {
-                state.activeShapeIndex = 0
+                // restore du nom de scene (back-compat : anciens
+                // fichiers sans `name` retombent sur le default).
+                if (typeof data.name === 'string' && data.name.length > 0) {
+                    state.sceneName = data.name
+                } else {
+                    state.sceneName = 'nouvelleScene'
+                }
+                if (data.activeGrid !== undefined) state.activeGrid = !!data.activeGrid
+                if (data.GRID_STEP !== undefined && typeof data.GRID_STEP === 'number') {
+                    state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, data.GRID_STEP))
+                }
+                if (typeof data.zoomLevel === 'number' && data.zoomLevel > 0) {
+                    state.ctx.zoomLevel = snapZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, data.zoomLevel)))
+                }
+                if (data.viewCenter && typeof data.viewCenter.x === 'number' && typeof data.viewCenter.y === 'number') {
+                    state.ctx.viewCenter.x = data.viewCenter.x
+                    state.ctx.viewCenter.y = data.viewCenter.y
+                }
+                if (typeof data.rotation === 'number' && Number.isFinite(data.rotation) && data.rotation !== 0) {
+                    let r = data.rotation % TAU
+                    if (r < 0) r += TAU
+                    const pivot = { x: 0, y: 0 }
+                    if (data.rotationPivot && typeof data.rotationPivot.x === 'number' && typeof data.rotationPivot.y === 'number' && Number.isFinite(data.rotationPivot.x) && Number.isFinite(data.rotationPivot.y)) {
+                        if (data.rotationPivot.kind === 'model') {
+                            pivot.x = data.rotationPivot.x
+                            pivot.y = data.rotationPivot.y
+                        } else {
+                            pivot.x = state.ctx.viewCenter.x + (data.rotationPivot.x - state.ctx.center.x) / state.ctx.zoomLevel
+                            pivot.y = state.ctx.viewCenter.y - (data.rotationPivot.y - state.ctx.center.y) / state.ctx.zoomLevel
+                        }
+                    }
+                    state.pendingRotation = { angle: r, pivot }
+                } else {
+                    state.pendingRotation = undefined
+                }
+                const loaded = buildShapesFromPayload(data)
+                if (loaded) {
+                    state.activeConstructionTriangle = undefined
+                    state.shapes = loaded
+                    // Phase 4 : detection post-hydratation
+                    state.shapes.forEach((shape, i) => {
+                        const v = validateShape(shape)
+                        if (!v.ok) log('loadState: shape #' + i + ' — ' + v.errors.length + ' erreur(s): ' + JSON.stringify(v.errors))
+                    })
+                    if (typeof data.activeShapeIndex === 'number' && data.activeShapeIndex >= 0 && data.activeShapeIndex < state.shapes.length) {
+                        state.activeShapeIndex = data.activeShapeIndex
+                    } else {
+                        state.activeShapeIndex = 0
+                    }
+                    applyPendingRotationToShapes(state.shapes)
+                }
+                state.ctx.workIsSaved = 1
+                updateGridButtonText()
+                updateShapeHud()
+                // NB : captureSceneBaseline() est invoque en bas
+                // de la fonction (= baseline = scene restauree ou,
+                // en cas d'exceptions ci-dessus, scene par defaut).
             }
-            applyPendingRotationToShapes(state.shapes)
+        } catch (e) {
+            state.pendingRotation = undefined
+            log('Load fail: ' + e.message)
+            // baseline = scene par defaut, capturee a la fin.
         }
-        state.ctx.workIsSaved = 1
-        state.sceneDirty = false
-        updateGridButtonText()
-        updateShapeHud()
-    } catch (e) {
-        state.pendingRotation = undefined
-        log('Load fail: ' + e.message)
     }
+    // Capture de baseline inconditionnelle : pose
+    // sceneBaselineFingerprint sur l'etat courant (restaure ou
+    // par defaut) et force sceneDirty = false. Garanti que la
+    // baseline reste bien definie pour les recomputeSceneDirty
+    // ulterieurs (cf. cas defensif dans recomputeSceneDirty si
+    // fingerprint est vide).
+    captureSceneBaseline()
     updateUndoRedoHud()
 }
 
@@ -451,8 +530,15 @@ export const saveMesh = () => {
         a.click()
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
-        state.sceneDirty = false
-        updateSceneStatus()
+        // saveMesh pose la baseline sur la scene qui vient d'etre
+        // exportee en fichier (dirty = false jusqu'à modification).
+        // Equivaut a captureSceneBaseline() mais apres avoir
+        // desactive la baseline precedente (= ce qui etait sur
+        // disque n'est plus le baseline courant). On capture
+        // directement pour eviter une race avec une mutation
+        // pendante qui aurait pu modifier state.shapes entre
+        // serializeState et updateSceneStatus.
+        captureSceneBaseline()
         log('Export OK: ' + a.download)
     } catch (e) {
         log('Export fail: ' + e.message)
@@ -559,7 +645,20 @@ const showImportModal = (opts, callback) => {
 
 // ===== Import (text et file) =====
 
-export const importMeshFromText = (text) => {
+// Source unique de vérité pour la résolution du nom de scène à
+// l'import. Séquence de priorité : nom du fichier source (sans
+// extension, cf. stripFileExtension) > nom embarqué dans le wire
+// format (cas auto-import URL sans filename, ou données
+// programmatique) > default 'nouvelleScene'. Centralise la logique
+// pour eviter la duplication entre importMeshFromText et
+// applyImport, et pour garantir une seule sémantique de fallback.
+const resolveImportSceneName = (sourceName, parsed) => {
+    if (typeof sourceName === 'string' && sourceName.length > 0) return sourceName
+    if (parsed && typeof parsed.name === 'string' && parsed.name.length > 0) return parsed.name
+    return 'nouvelleScene'
+}
+
+export const importMeshFromText = (text, sourceName) => {
     let parsed = null
     let loaded = null
     try {
@@ -576,8 +675,10 @@ export const importMeshFromText = (text) => {
         return false
     }
 
+    const resolvedName = resolveImportSceneName(sourceName, parsed)
+
     if (isSceneEmpty()) {
-        applyImport(parsed, loaded, 'replace')
+        applyImport(parsed, loaded, 'replace', resolvedName)
         return true
     }
 
@@ -591,7 +692,7 @@ export const importMeshFromText = (text) => {
             return
         }
         saveStoredImportMode(result.mode)
-        applyImport(parsed, loaded, result.mode)
+        applyImport(parsed, loaded, result.mode, resolvedName)
     })
     return true
 }
@@ -616,7 +717,7 @@ const resetEphemeralState = () => {
     updateSelectionHud()
 }
 
-export const applyImport = (parsed, loaded, mode) => {
+export const applyImport = (parsed, loaded, mode, sourceName) => {
     if (mode === 'merge') {
         const beforeCount = state.shapes.length
         if (parsed.activeGrid !== undefined) state.activeGrid = !!parsed.activeGrid
@@ -624,7 +725,14 @@ export const applyImport = (parsed, loaded, mode) => {
             state.GRID_STEP = Math.min(MAX_GRID_STEP, Math.max(MIN_GRID_STEP, parsed.GRID_STEP))
         }
         loaded.forEach(s => state.shapes.push(s))
-        state.sceneDirty = true
+        // MERGE preserve le nom existant — les formes ajoutees
+        // ne renommment pas la scene (« mesh-wail » + 3 formes
+        // mergées reste « mesh-wail »). Cohérent avec la sémantique
+        // MERGE : on étend, on ne remplace pas.
+        // Spec utilisateur : « après chargement du fichier ne pas
+        // afficher l'indicateur de non sauvegarde ». Le MERGE est
+        // une forme de chargement : la baseline devient le résultat
+        // merge (dirty = false jusqu'à la prochaine modification).
         applyPendingRotationToShapes(loaded)
         state.activeShapeIndex = beforeCount
         if (state.activeShapeIndex < 0 || state.activeShapeIndex >= state.shapes.length) {
@@ -632,6 +740,7 @@ export const applyImport = (parsed, loaded, mode) => {
         }
         resetEphemeralState()
         persistState()
+        captureSceneBaseline()
         updateGridButtonText()
         updateShapeHud()
         requestDraw()
@@ -641,7 +750,10 @@ export const applyImport = (parsed, loaded, mode) => {
     }
 
     state.shapes = loaded
-    state.sceneDirty = true
+    // REPLACE adopte le nom résolu (helper centralisé cf.
+    // resolveImportSceneName — single source of truth pour la
+    // précédence filename > wire-format name > default).
+    state.sceneName = resolveImportSceneName(sourceName, parsed)
     applyPendingRotationToShapes(state.shapes)
     if (typeof parsed.activeShapeIndex === 'number' && parsed.activeShapeIndex >= 0 && parsed.activeShapeIndex < state.shapes.length) {
         state.activeShapeIndex = parsed.activeShapeIndex
@@ -654,6 +766,11 @@ export const applyImport = (parsed, loaded, mode) => {
     }
     resetEphemeralState()
     persistState()
+    // Spec utilisateur : « après chargement du fichier ne pas
+    // afficher l'indicateur de non sauvegarde » — le REPLACE pose
+    // la baseline sur l'etat importe (dirty = false jusqu'à la
+    // prochaine mutation par l'utilisateur).
+    captureSceneBaseline()
     updateGridButtonText()
     updateShapeHud()
     requestDraw()
@@ -670,7 +787,12 @@ export const importMeshFromFile = (file) => {
     }
     const reader = new FileReader()
     reader.onload = (e) => {
-        importMeshFromText(String(e.target.result))
+        // Passez stripFileExtension(file.name) comme sourceName —
+        // le sceneName adopte le basename sans extension du fichier
+        // (cf. importMeshFromText pour la précédence filename vs
+        // wire-format name).
+        const sourceName = stripFileExtension(file.name)
+        importMeshFromText(String(e.target.result), sourceName)
     }
     reader.onerror = () => log('Import fail: read error')
     reader.readAsText(file)
@@ -700,13 +822,18 @@ export const resetAll = () => {
     state.ctx.viewCenter.x = 0
     state.ctx.viewCenter.y = 0
     state.ctx.rotationTracking = 0
+    // Spec utilisateur : « si la scène a été réinitialisée alors
+    // lui donner par défaut le nom de nouvelleScene ».
+    state.sceneName = 'nouvelleScene'
     persistState()
+    // Spec utilisateur : « ne pas afficher l'indicateur de non
+    // sauvegarde » apres reset (= baseline = scene vide indexe).
+    // dirty = false tant que l'utilisateur n'a pas modifie.
+    captureSceneBaseline()
     requestDraw()
     updateZoomDisplay()
     updateShapeHud()
     updateUndoRedoHud()
     updateSelectionHud()
-    state.sceneDirty = true
-    updateSceneStatus()
     log('Reset OK')
 }

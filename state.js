@@ -34,6 +34,44 @@ export const state = {
     selectionMode: 'vertex',
     sceneDirty: false,
 
+    // ===== Scene baseline (dirty reconciliation) =====
+    // Fingerprint JSON de `state.shapes` capture a chaque evenement
+    // qui pose un nouvel etat de reference propre :
+    //   - saveMesh (post-export) : baseline = la scene qui vient
+    //     d'etre serialisee en fichier.
+    //   - applyImport REPLACE/MERGE (post-load) : baseline = la
+    //     scene qui vient d'etre importee (= le fichier source).
+    //   - loadState (post-restore) : baseline = la scene restauree
+    //     depuis localStorage (= dernier save connu).
+    //   - resetAll (post-wipe) : baseline = scene vide.
+    // La valeur est un string (JSON.stringify) pour comparaison O(1)
+    // dans history.undo / history.redo via recomputeSceneDirty
+    // (io.js). Default vide : captureSceneBaseline est invoque au
+    // boot par loadState() ou, en absence de sauvegarde, applique
+    // l'etat vide (forme vide indexe [{ pointList: [], tris: [] }]).
+    // Maintient invariant : sceneDirty = true <=> state.shapes
+    // diverge de la baseline (= une mutation utilisateur non
+    // annulee ni sauvegardee s'est produite depuis le dernier
+    // evenement « clean »).
+    sceneBaselineFingerprint: '',
+
+    // ===== Scene name =====
+    // Nom logique de la scene affiche dans #sceneStatus (hud.js
+    // updateSceneStatus). Trois sources possibles :
+    //   - nom de fichier a l'import (mesh-wail.json -> 'mesh-wail',
+    //     extension strippee via replace(/\.[^.]+$/, ''))
+    //   - default 'nouvelleScene' au boot frais, apres
+    //     resetAll, ou quand un fichier n'a pas de nom exploitable
+    //     (autoImportMeshesFromUrl, fichiers importes sans nom)
+    //   - persiste a travers les reloads via le wire format
+    //     (io.js serializeState inclut 'name', loadState le
+    //     restaure ; anciens fichiers sans 'name' retombent sur le
+    //     default)
+    // En mode MERGE, le nom existant est preserve (les formes
+    // ajoutees ne renommment pas la scene — seul l'import REPLACE
+    // adopte le nom du fichier source).
+    sceneName: 'nouvelleScene',
+
     // ===== Selection / box =====
     selectedPoints: [],
     selectedTriangles: [],

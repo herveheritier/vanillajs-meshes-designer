@@ -16,7 +16,7 @@ import { MAX_HISTORY, ACTION_NONE } from './constants.js'
 import { updateUndoRedoHud, updateSelectionHud, updateShapeHud, updateColorButtonState, updateSceneStatus } from './hud.js'
 import { drawBoard, requestDraw } from './draw.js'
 import { updateMouseHover } from './editor.js'
-import { persistState } from './io.js'
+import { persistState, recomputeSceneDirty } from './io.js'
 
 // ===== Snapshot fallback =====
 
@@ -521,6 +521,17 @@ export const undo = () => {
     updateShapeHud()
     updateUndoRedoHud()
     updateSelectionHud()
+    // Spec utilisateur : « si on fait un undo complet c'est la
+    // même chose [que le chargement : pas d'indicateur de
+    // sauvegarde] ». La baseline est capturee sur load/import/
+    // save/reset. Si l'undo ramène l'etat courant au baseline
+    // (= state.shapes == baselineShapes), dirty = false ; sinon
+    // dirty = true (l'undo n'a pas efface completement la
+    // divergence). Gere aussi le cas partiel save → modify → undo
+    // : la pile contient encore [pre-modify] mais l'etat matche
+    // le baseline, donc dirty = false (la baseline reflete le
+    // dernier save connu, pas forcement le bottom de la pile).
+    recomputeSceneDirty()
     persistState()
 }
 
@@ -536,6 +547,14 @@ export const redo = () => {
     updateShapeHud()
     updateUndoRedoHud()
     updateSelectionHud()
+    // Symetrique du undo : le redo re-applique une mutation
+    // preexistante. Si l'etat post-redo matche encore la baseline
+    // (= l'undo avait ramene au baseline AVANT le redo, et la
+    // mutation annulee puis rejouee est un round-trip neutre),
+    // dirty = false. Cas general : dirty = true (la scene a
+    // diverge du baseline via cette mutation). Le calcul explicite
+    // par comparaison couvre les deux branches.
+    recomputeSceneDirty()
     persistState()
 }
 
