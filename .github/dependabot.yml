@@ -1,0 +1,20 @@
+# Dependabot : mises à jour de version automatiques des GitHub Actions
+# du workflow check (.github/workflows/check.yml : checkout + setup-node).
+#
+# Pourquoi : les versions ≤ v4 de ces actions tournaient sur un runtime
+# Node 20, déprécié par GitHub (warning + force sur Node 24). Plutôt que de
+# surveiller ça à la main, Dependabot ouvre une PR à chaque nouvelle majeure
+# (cooldown par défaut de 3 jours) — on fusionne quand on veut.
+#
+# Rythme hebdomadaire : outillage dev à faible activité, pas besoin de daily.
+# directory "/" = recherche dans .github/workflows + action.yml racine.
+# Repo public : la config commitée sur la branche par défaut suffit, pas
+# besoin de l'activer dans les settings.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci(deps)"
