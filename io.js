@@ -746,7 +746,12 @@ const showImportModal = (opts, callback) => {
         if (e.key === 'Escape') onCancel()
     }
     const onBackdrop = (e) => {
-        if (e.target && (e.target === modal || (target.classList && target.classList.contains('modal-backdrop')))) {
+        // Fix : `target` (undefined) → `e.target`. L'ancien code levait
+        // un ReferenceError non catché à CHAQUE clic dans la modale
+        // (donc aussi au clic de validation), même si onValidate
+        // passait par ailleurs (ordre des listeners). Découvert par le
+        // smoke test scripts/smoke-import.mjs (collecteur d'erreurs JS).
+        if (e.target && (e.target === modal || (e.target.classList && e.target.classList.contains('modal-backdrop')))) {
             onCancel()
         }
     }

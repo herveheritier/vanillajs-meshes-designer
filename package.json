@@ -1,0 +1,16 @@
+{
+  "name": "meshes-designer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Outillage dev uniquement (smoke tests navigateur). L'app elle-meme reste zero-dependency.",
+  "scripts": {
+    "smoke:preview": "node scripts/smoke-preview.mjs",
+    "smoke:edit": "node scripts/smoke-edit.mjs",
+    "smoke:import": "node scripts/smoke-import.mjs",
+    "smoke:gestures": "node scripts/smoke-gestures.mjs",
+    "smoke": "npm run smoke:preview && npm run smoke:edit && npm run smoke:import && npm run smoke:gestures"
+  },
+  "devDependencies": {
+    "playwright-core": "1.49.1"
+  }
+}

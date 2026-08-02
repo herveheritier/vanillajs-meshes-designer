@@ -168,6 +168,16 @@ Un drop direct d'un fichier JSON sur le canvas déclenche aussi l'import.
 
 ## Astuces de développement
 
+- **Smoke tests navigateur** : `playwright-core` est une devDependency (l'app reste zero-dependency ; `node_modules` est gitignoré). Les scripts dans `scripts/` (harnais partagé `smoke_lib.mjs`) pilotent le Chromium système en headless — `smoke-preview.mjs` (entrée/sortie de la preview par bouton, `P`/`Échap`/clic gauche, masquage de la chrome, zoom molette), `smoke-edit.mjs` (dessiner un triangle, undo/redo, export JSON) et `smoke-import.mjs` (import meshes sur scène vide, modale Remplacer/Fusionner, undo conservé par le MERGE) et `smoke-gestures.mjs` (lasso, grab clic droit + drag, déplacement global AltGr) :
+  ```bash
+  python3 test_server.py   # terminal 1
+  npm run smoke            # terminal 2 — les quatre suites, exit 0 si tout passe
+  npm run smoke:preview    # ou une seule suite
+  npm run smoke:edit
+  npm run smoke:import
+  npm run smoke:gestures
+  ```
+  Le binaire Chromium est `CHROMIUM_PATH` (défaut `/usr/bin/chromium`) ; la base URL est le 1er argument des scripts. `playwright-core@1.49.1` est pinné — les versions plus récentes exigent Node ≥ 20.
 - Lancer le serveur en arrière-plan et recharger la page suffit pour itérer sur `main.js` / `draw.js` / `convert.js` (pas de HMR).
 - Pour tester un import meshes sans picker (headless / script) :
   `http://localhost:8000/main.html?autoimport=<texte-base64-URL-safe>`
