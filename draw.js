@@ -383,11 +383,63 @@ export const drawAxis = () => {
     }
 }
 
+// Calcule le centroide (moyenne des coords deduped par index) des
+// points engages dans le grab en cours. Sert d'ancre au reticule
+// mode 2 (projection symetrique) pendant la drag : reflete en
+// temps reel la position de l'entite manipulee (cf. spec
+// « pendant le clic-droit en position down, le reticule se
+// positionne automatiquement sur le point manipule »).
+// Retourne null si grabbedGroup vide (cas idle / post-endGrabbing)
+// ou si tous les indices resolvent vers undefined (defense contre
+// formes corrompues post-rebase).
+const grabbedReticleAnchor = () => {
+    if (!Array.isArray(state.grabbedGroup) || state.grabbedGroup.length === 0) return null
+    if (state.moveAllActive) return null
+    const seen = new Set()
+    let sumX = 0, sumY = 0, count = 0
+    state.grabbedGroup.forEach((item) => {
+        const key = item.shapeIndex + ':' + item.pointIndex
+        if (seen.has(key)) return
+        seen.add(key)
+        const pt = state.shapes[item.shapeIndex] && state.shapes[item.shapeIndex].pointList && state.shapes[item.shapeIndex].pointList[item.pointIndex]
+        if (!pt) return
+        sumX += pt.x
+        sumY += pt.y
+        count++
+    })
+    if (count === 0) return null
+    return { x: sumX / count, y: sumY / count }
+}
+
 export const drawReticle = () => {
     if (typeof state.reticleMode === 'undefined' || state.reticleMode === 0) return
-    if (typeof state.lastMousePos === 'undefined' || !state.lastMousePos) return
-    let m = screenToModel(state.lastMousePos)
-    if (!m) return
+    // Selection de l'ancre : mode 2 (« projection symétrique »)
+    // gagne le comportement spec clic-droit « pendant la drag, le
+    // reticule se positionne sur le point manipule ». Resolution :
+    //   1. Mode 2 + grabbedGroup non-vide + !moveAllActive : ancre =
+    //      centroide deduped des indices grabbedGroup (calcule depuis
+    //      state.shapes[item.shapeIndex].pointList[item.pointIndex] =
+    //      position live, donc reflette la drag en temps reel).
+    //   2. Sinon : ancre = curseur (comportement historique).
+    //
+    // Cas d'usage AltGr : `state.moveAllActive` court-circuite la
+    // branche 1 (la « point manipule » est ambigu : tout les points
+    // bougent, le pivot de rotation suit le curseur cf. §6.2 ;
+    // laisser le reticule sur le curseur preserve la coherence avec
+    // la rotation AltGr).
+    //
+    // Cas release : `endGrabbing` vide grabbedGroup -> branche 2
+    // reprend la main, reticule retourne au curseur (spec « le
+    // reticule ensuite à la position du curseur quand on relache »).
+    let m = null
+    if (state.reticleMode === 2) {
+        m = grabbedReticleAnchor()
+    }
+    if (!m) {
+        if (typeof state.lastMousePos === 'undefined' || !state.lastMousePos) return
+        m = screenToModel(state.lastMousePos)
+        if (!m) return
+    }
     let positions = [{ x: m.x, y: m.y }]
     if (state.reticleMode === 2) {
         positions.push({ x: -m.x, y: m.y })
