@@ -194,6 +194,36 @@ let offCtx = null
 let sceneDirty = true
 let frameScheduled = false
 
+// ===== HiDPI (devicePixelRatio) =====
+//
+// Rationale : voir DESIGN.md §2.7. Le bitmap du canvas est dimensionne
+// en pixels PHYSIQUES (CSS x devicePixelRatio) pour un rendu net sur
+// ecrans HiDPI, mais TOUTES les coordonnees internes (souris,
+// hit-testing, state.ctx.center, modelToScreen, bornes grille/axes)
+// restent en pixels CSS. La conversion se fait aux deux seules
+// frontieres :
+//   1. la taille du bitmap (main.js boot + resize) ;
+//   2. la transform canvas posee ici (drawBoard / renderSceneToOffscreen)
+//      qui projette les coords CSS sur le bitmap physique.
+// getDevicePixelRatio est exporte pour main.js (sizing du bitmap) ;
+// les helpers cssBoardW/H derivent la taille CSS du board depuis le
+// bitmap physique (board.width = round(cssW x dpr)) et remplacent
+// partout les lectures directes de state.board.width/height dans les
+// bornes de dessin (grille, axes, reticle).
+export const getDevicePixelRatio = () => (
+    typeof window !== 'undefined' && window.devicePixelRatio > 0
+        ? window.devicePixelRatio
+        : 1
+)
+
+const applyDprTransform = (ctx) => {
+    const dpr = getDevicePixelRatio()
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+
+const cssBoardW = () => state.board.width / getDevicePixelRatio()
+const cssBoardH = () => state.board.height / getDevicePixelRatio()
+
 // Compteurs de charge de rendu effectif (cf. DESIGN.md §2.4). Pas de
 // condition sur state.fpsVisible : l'incrementation est microscopique
 // (deux entiers) etape partagee par tous les paths d'appel a
@@ -276,8 +306,12 @@ const renderSceneToOffscreen = () => {
     const visibleCtx = state._ctx
     state._ctx = offCtx
     try {
+        // Transform dpr : le rendu offscreen est exprime en pixels CSS
+        // (modelToScreen / bornes cssBoardW-H) ; la transform le projette
+        // sur le bitmap physique (offscreen.width = round(cssW x dpr)).
+        applyDprTransform(offCtx)
         offCtx.fillStyle = CANVAS_BACKGROUND
-        offCtx.fillRect(0, 0, offscreen.width, offscreen.height)
+        offCtx.fillRect(0, 0, cssBoardW(), cssBoardH())
         // Preview (mode visualisation seule) : la scene stable est
         // reduite a la geometrie — pas de grille, pas d'axes, pas de
         // points selectionnes. Les points de controle (vertex dots)
@@ -322,6 +356,12 @@ export const drawBoard = () => {
     // ne pas conditionner sur state.fpsVisible pour eviter une
     // branche dans le chemin chaud de rendu.
     statsRedraws++
+    // Transform dpr sur le visible (invariant) : toutes les coords
+    // internes sont en pixels CSS ; la transform les projette sur le
+    // bitmap physique. Posee ici et JAMAIS retiree — les overlays de
+    // editor.js (hover, drawMouse) dessinent sur state._ctx APRES
+    // drawBoard et s'appuient sur cette transform active.
+    applyDprTransform(state._ctx)
     ensureOffscreen()
     syncOffscreenSize()
     if (sceneDirty) {
@@ -329,9 +369,12 @@ export const drawBoard = () => {
         renderSceneToOffscreen()
         sceneDirty = false
     }
-    // Blit offscreen → visible en une seule operation (rapide meme
-    // pour un grand canvas : 1 memcpy pour le framebuffer).
-    state._ctx.drawImage(offscreen, 0, 0)
+    // Blit offscreen → visible en une seule operation. Le cache
+    // offscreen est en pixels PHYSIQUES (offscreen.width = board.width) ;
+    // on le dessine dans une boite de destination CSS px (cssBoardW-H) :
+    // la transform dpr le retablit en 1:1 physique — aucun upscale ni
+    // downscale du cache.
+    state._ctx.drawImage(offscreen, 0, 0, offscreen.width, offscreen.height, 0, 0, cssBoardW(), cssBoardH())
     renderTransient()
 }
 
@@ -377,8 +420,10 @@ export const drawSelectionBox = (p1, p2) => {
 export const drawAxis = () => {
     let originScreenX = state.ctx.center.x + (0 - state.ctx.viewCenter.x) * state.ctx.zoomLevel
     let originScreenY = state.ctx.center.y - (0 - state.ctx.viewCenter.y) * state.ctx.zoomLevel
-    let w = state.board.width
-    let h = state.board.height
+    // Bornes en pixels CSS (cf. §2.7) : le bitmap est en pixels
+    // physiques, mais le dessin est exprime en CSS px sous transform dpr.
+    let w = cssBoardW()
+    let h = cssBoardH()
     state._ctx.setLineDash(PATTERN_AXIS)
     state._ctx.strokeStyle = COLOR_AXIS
     if (originScreenY >= 0 && originScreenY <= h) {
@@ -462,16 +507,18 @@ export const drawReticle = () => {
     state._ctx.strokeStyle = COLOR_RETICLE
     positions.forEach((pos) => {
         let sp = modelToScreen(pos)
-        if (sp.y >= 0 && sp.y <= state.board.height) {
+        // Bornes en pixels CSS (cf. §2.7) : le bitmap est en pixels
+        // physiques, le dessin en CSS px sous transform dpr.
+        if (sp.y >= 0 && sp.y <= cssBoardH()) {
             state._ctx.beginPath()
             state._ctx.moveTo(0, sp.y)
-            state._ctx.lineTo(state.board.width, sp.y)
+            state._ctx.lineTo(cssBoardW(), sp.y)
             state._ctx.stroke()
         }
-        if (sp.x >= 0 && sp.x <= state.board.width) {
+        if (sp.x >= 0 && sp.x <= cssBoardW()) {
             state._ctx.beginPath()
             state._ctx.moveTo(sp.x, 0)
-            state._ctx.lineTo(sp.x, state.board.height)
+            state._ctx.lineTo(sp.x, cssBoardH())
             state._ctx.stroke()
         }
     })
@@ -731,18 +778,20 @@ export const drawGrid = () => {
     let originScreenX = state.ctx.center.x - state.ctx.viewCenter.x * state.ctx.zoomLevel
     let originScreenY = state.ctx.center.y + state.ctx.viewCenter.y * state.ctx.zoomLevel
     let n_min_x = Math.ceil(-originScreenX / step)
-    let n_max_x = Math.floor((state.board.width - originScreenX) / step)
+    // Bornes en pixels CSS (cf. §2.7) : le bitmap est en pixels
+    // physiques, le dessin en CSS px sous transform dpr.
+    let n_max_x = Math.floor((cssBoardW() - originScreenX) / step)
     for (let n = n_min_x; n <= n_max_x; n++) {
         let x_screen = originScreenX + n * step
         state._ctx.moveTo(x_screen, 0)
-        state._ctx.lineTo(x_screen, state.board.height)
+        state._ctx.lineTo(x_screen, cssBoardH())
     }
-    let n_min_y = Math.ceil((originScreenY - state.board.height) / step)
+    let n_min_y = Math.ceil((originScreenY - cssBoardH()) / step)
     let n_max_y = Math.floor(originScreenY / step)
     for (let n = n_min_y; n <= n_max_y; n++) {
         let y_screen = originScreenY - n * step
         state._ctx.moveTo(0, y_screen)
-        state._ctx.lineTo(state.board.width, y_screen)
+        state._ctx.lineTo(cssBoardW(), y_screen)
     }
     state._ctx.stroke()
 }

@@ -1,7 +1,7 @@
 // Rationale : voir DESIGN.md §4.1
 
 import { state, initDomRefs } from './state.js'
-import { drawBoard, requestDraw } from './draw.js'
+import { drawBoard, requestDraw, getDevicePixelRatio } from './draw.js'
 import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
@@ -42,14 +42,82 @@ state.body.style.overflow = 'hidden'
 state.board.style.border = 'solid 1px black'
 state.board.style.width = '99vw'
 state.board.style.height = '99vh'
-state.board.width = state.board.getBoundingClientRect().width
-state.board.height = state.board.getBoundingClientRect().height
+// Bitmap en pixels PHYSIQUES (CSS x devicePixelRatio) pour un rendu
+// net sur ecrans HiDPI. Toutes les coords internes (souris,
+// hit-testing, center) restent en pixels CSS — la conversion se fait
+// ici (taille du bitmap) et dans draw.js (transform dpr au rendu).
+// Rationale : voir DESIGN.md §2.7
+const bootRect = state.board.getBoundingClientRect()
+const bootDpr = getDevicePixelRatio()
+state.board.width = Math.round(bootRect.width * bootDpr)
+state.board.height = Math.round(bootRect.height * bootDpr)
 state.board.style.cursor = 'none'
-state.ctx.center.x = state.board.width / 2
-state.ctx.center.y = state.board.height / 2
+state.ctx.center.x = bootRect.width / 2
+state.ctx.center.y = bootRect.height / 2
 state._ctx = state.board.getContext('2d')
+// fillRect du boot : sous transform IDENTITE (la transform dpr n'est
+// posee qu'au premier drawBoard, cf. §2.7) — les dimensions physiques
+// remplissent donc exactement le bitmap.
 state._ctx.fillStyle = CANVAS_BACKGROUND
 state._ctx.fillRect(0, 0, state.board.width, state.board.height)
+
+// ===== Resize navigateur : resync du bitmap sans stretch =====
+//
+// Rationale : la taille CSS du canvas suit la fenetre (99vw/99vh,
+// posee au boot ci-dessus) mais le bitmap interne (attributs
+// width/height du canvas) etait fige une fois pour toutes. Apres un
+// resize du navigateur, le navigateur etire le bitmap fixe pour
+// remplir la nouvelle taille CSS => geometrie distordue (cercles
+// ovalises, grille non-carree). Ce handler resynchronise le bitmap
+// sur la taille PHYSIQUE reelle (CSS x devicePixelRatio, cf. §2.7)
+// a chaque resize puis repaint.
+//
+// La garde (taille inchangee => return) evite de resetter le bitmap
+// (operation qui efface la surface canvas) pour un evenement resize
+// sans changement effectif — les navigateurs en emettent pour d'autres
+// raisons (zoom, apparition de scrollbars, etc.). La comparaison se
+// fait sur la valeur arrondie : l'attribut canvas est un entier, le
+// rect est un float. Le dpr est relu a chaque evenement : un passage
+// de fenetre entre deux ecrans de densites differentes change le
+// bitmap sans que la taille CSS bouge (le guard passe alors).
+//
+// `center` (position pixel de l'origine modele) est recentre sur le
+// nouveau milieu du canvas en pixels CSS : ca preserve l'invariant
+// pose au boot « viewCenter = point modele centre a l'ecran », sur
+// lequel les maths de zoom/pan de viewport.js s'appuient (elles
+// travaillent en CSS px, comme toutes les coords internes). Artefact
+// accepte : un geste en cours (grab/lasso) au moment du resize voit
+// les points engages « sauter » par rapport au curseur (les coords
+// d'interaction passent par modelToScreen/screenToModel, qui
+// dependent de center) — rare et transitoire, inherent a tout
+// recentrage. requestDraw suffit pour le repaint : il invalide la
+// scene offscreen et syncOffscreenSize (draw.js) resynchronise la
+// taille du cache sur le nouveau bitmap.
+// Rationale : voir DESIGN.md §2.7
+const resizeCanvasToFitBrowser = () => {
+    const rect = state.board.getBoundingClientRect()
+    const dpr = getDevicePixelRatio()
+    const w = Math.round(rect.width * dpr)
+    const h = Math.round(rect.height * dpr)
+    // Garde double : le bitmap (w/h) ET le centre dérivé du CSS
+    // (rect.width/2). Cas tordu couvert : fenetre dragee entre deux
+    // ecrans de densites differentes avec taille CSS qui change et
+    // taille physique qui coïnciderait (cssW × dpr identique) — le
+    // centre CSS changerait sans que w/h bouge, le recentrage serait
+    // alors indispensable.
+    if (
+        w === state.board.width &&
+        h === state.board.height &&
+        rect.width / 2 === state.ctx.center.x &&
+        rect.height / 2 === state.ctx.center.y
+    ) return
+    state.board.width = w
+    state.board.height = h
+    state.ctx.center.x = rect.width / 2
+    state.ctx.center.y = rect.height / 2
+    requestDraw()
+}
+window.addEventListener('resize', resizeCanvasToFitBrowser)
 
 // ===== Restore localStorage + wire UI controls =====
 

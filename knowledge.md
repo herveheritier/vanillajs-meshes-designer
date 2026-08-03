@@ -35,7 +35,8 @@ Data flow: `main.js` owns app state → calls render primitives in `draw.js` (po
 
 - **No build / no transpile / no bundler.** Edits + browser reload = iteration. No HMR.
 - **Y axis inverted.** `modelToScreen` flips Y so larger `model.y` renders higher on canvas (math-style). Mind this when touching pan or rotation math.
-- **`ctx` shape:** `{ center: {x,y}, viewCenter: {x,y}, zoomLevel: number }`. `center` is pixel position of model origin on canvas; `viewCenter` is which model point is centered; `zoomLevel` is a multiplier (clamp `[0.1, 10]`).
+- **`ctx` shape:** `{ center: {x,y}, viewCenter: {x,y}, zoomLevel: number }`. `center` is pixel position of model origin on canvas (in **CSS pixels**, never bitmap pixels); `viewCenter` is which model point is centered; `zoomLevel` is a multiplier (clamp `[0.1, 10]`).
+- **HiDPI:** the canvas bitmap is sized in **physical pixels** (`board.width = round(cssW × devicePixelRatio)`, boot + resize in main.js) for crisp rendering on retina displays, but ALL internal coordinates (mouse, hit-testing, `center`, `modelToScreen`) stay in **CSS pixels**. The CSS→physical conversion happens at two boundaries only: bitmap sizing in main.js, and a `setTransform(dpr,…)` applied in draw.js (`drawBoard` on the visible ctx, `renderSceneToOffscreen` on the offscreen). Never multiply CSS-px values by dpr in logic; use `getDevicePixelRatio()` (exported from draw.js) only where the bitmap size is set. See DESIGN.md §2.7.1.
 - **SVG icons in the toolbar are inline** (`stroke="currentColor"`, 14×14). Button labels hidden visually — the verb lives in `title=` and in the action modal only.
 - **Comments are detailed French explanations** of *why*, not *what*. Don't strip them — they're the project's design log.
 - **LocalStorage keys** (all share `meshesDesigner.` namespace):

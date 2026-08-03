@@ -581,6 +581,95 @@ frame du cache de signature).
 
 ---
 
+### §2.7 Resize du navigateur : resync du bitmap sans stretch
+
+Le canvas `#board` est dimensionné en CSS à `99vw × 99vh` (boot,
+main.js) mais son **bitmap interne** (attributs `width`/`height`, la
+vraie résolution de dessin) était figé une seule fois au boot. Sans
+handler de resize, le navigateur **étire** le bitmap fixe pour remplir
+la nouvelle boîte CSS après un redimensionnement de fenêtre — géométrie
+distordue (cercles ovalisés, grille non carrée, distances fausses à
+l'écran).
+
+`resizeCanvasToFitBrowser` (main.js, listener
+`window.addEventListener('resize', …)`) resynchronise le bitmap sur la
+taille CSS réelle à chaque resize puis repeint :
+
+1. **Resync bitmap** : `state.board.width/height =
+   Math.round(rect.width × dpr)` — pixels **physiques** (CSS ×
+   `devicePixelRatio`), voir convention HiDPI ci-dessous. La garde
+   `w === state.board.width && h === state.board.height` évite de
+   resetter le bitmap (opération qui **efface la surface canvas**) pour
+   un événement resize sans changement effectif de taille — les
+   navigateurs en émettent pour d'autres raisons (zoom navigateur,
+   apparition de scrollbars, …). Le `dpr` est relu à chaque événement :
+   un passage de fenêtre entre deux écrans de densités différentes
+   change le bitmap sans que la taille CSS bouge (le guard passe
+   alors). La comparaison se fait sur la valeur arrondie : l'attribut
+   canvas est un entier, `getBoundingClientRect()` renvoie un float.
+   **Garde double** : le handler compare aussi le centre dérivé du CSS
+   (`rect.width/2`). Cas tordu couvert : fenêtre draguée entre deux
+   écrans de densités différentes avec taille CSS qui change et taille
+   physique qui coïnciderait (`cssW × dpr` identique) — le centre CSS
+   changerait sans que `w/h` bougent, le recentrage serait alors
+   indispensable.
+2. **Recentrage de `center`** : `state.ctx.center = (rect.width/2,
+   rect.height/2)` — même règle qu'au boot, **en pixels CSS** (jamais
+   en pixels bitmap). Préserve l'invariant **« `viewCenter` = le point
+   modèle affiché au centre de l'écran »**, sur lequel s'appuient les
+   maths de zoom/pan (viewport.js `zoomCenteredOnCursor`, `updatePan`)
+   et la projection `modelToScreen`/`screenToModel` (geometry.js).
+   **Artefact accepté** : un geste en cours (grab/lasso) au moment du
+   resize voit les points engagés « sauter » par rapport au curseur —
+   les coordonnées d'interaction passent par `modelToScreen`/
+   `screenToModel` qui dépendent de `center`. Rare et transitoire,
+   inhérent à tout recentrage (l'alternative — garder `center` fixe —
+   casserait l'invariant et désancrerait la grille/les axes de
+   l'origine modèle, cf. §2.2).
+3. **Repaint** : `requestDraw()` suffit (rAF-coalescé, cf. §2.4) — il
+   invalide la scène offscreen et `syncOffscreenSize` (draw.js)
+   resynchronise la taille du cache sur le nouveau bitmap au prochain
+   `drawBoard`.
+
+**Non-persisté** : `center` est une donnée **dérivée** de la taille du
+canvas (jamais sérialisée, pas de clé `meshesDesigner.*`) — pas de
+`persistState()` dans le handler. La scène (zoom, `viewCenter`) reste
+inchangée par un resize ; seuls le bitmap et l'origine pixel bougent.
+
+### §2.7.1 Convention HiDPI : bitmap physique, coords internes en CSS px
+
+Le bitmap du canvas est dimensionné en **pixels physiques** (`board.width
+= round(cssW × dpr)`) pour un rendu net sur écrans HiDPI, mais **toutes
+les coordonnées internes restent en pixels CSS** : positions souris
+(`e.x - rect.x`), `state.ctx.center`, `modelToScreen`/`screenToModel`,
+rayons de hit-testing (§1.4 — `POINT_HIT_RADIUS_PX` etc. restent des
+CSS px, la tolérance de clic ne dépend pas du dpr), bornes grille/axes/
+rététicule. La conversion CSS → physique se fait aux deux seules
+frontières :
+
+1. **Sizing du bitmap** (main.js boot + `resizeCanvasToFitBrowser`) :
+   `board.width = round(rect.width × dpr)`.
+2. **Transform canvas** (draw.js `applyDprTransform`) :
+   `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)` posée en tête de
+   `drawBoard` sur le visible (invariant : elle n'est **jamais
+   retirée** — les overlays d'editor.js, hover + `drawMouse`,
+   dessinent sur `state._ctx` après `drawBoard` et s'appuient sur cette
+   transform active) et dans `renderSceneToOffscreen` sur l'offscreen.
+   Le blit du cache se fait en 9-args
+   (`drawImage(offscreen, 0, 0, offscreen.width, offscreen.height, 0, 0,
+   cssBoardW(), cssBoardH())`) : le cache est en pixels physiques, la
+   boîte de destination en CSS px — la transform dpr le rétablit en
+   1:1 physique, aucun upscale ni downscale.
+
+Les lectures de `state.board.width/height` dans draw.js (grille,
+axes, rététicule) passent par les helpers `cssBoardW()/cssBoardH()`
+(= bitmap ÷ dpr) : le bitmap est physique, le dessin est en CSS px. Le
+réticule / la sélectionBox / les labels restent donc géométriquement
+identiques en CSS px quel que soit l'écran, avec un trait net (1 CSS px =
+`dpr` pixels physiques).
+
+---
+
 ## §3. Modes de sélection (vertex / segment / triangle)
 
 Cycle via le bouton toolbar `#selectionMode` (cf. `SELECTION_MODES = ['vertex',
