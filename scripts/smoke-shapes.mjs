@@ -155,6 +155,53 @@ try {
     await page.keyboard.press('Escape')
     await page.waitForTimeout(100)
 
+    // --- 10. Clamp aux bords de la fenetre : le panneau doit rester
+    // entierement visible meme quand le bouton #shapes est colle au
+    // bord droit ou bas du viewport (regression : le positionnement
+    // brut a rect.left / rect.bottom le faisait deborder).
+    // On decale le bouton en position fixed pres du bord, on ouvre le
+    // panneau, on verifie ses bounds, puis on restaure le style.
+    await page.evaluate(() => {
+        window.__shapesBtnStyle = document.querySelector('#shapes').getAttribute('style') || ''
+        const btn = document.querySelector('#shapes')
+        btn.style.position = 'fixed'
+        btn.style.top = '120px'
+        btn.style.left = (window.innerWidth - 70) + 'px'
+    })
+    await page.click('#shapes')
+    await page.waitForTimeout(100)
+    const rightClamp = await page.evaluate(() => {
+        const p = document.querySelector('#shapesPanel').getBoundingClientRect()
+        return { left: p.left, right: p.right, vw: window.innerWidth }
+    })
+    check('bord droit : panneau entierement dans la fenetre',
+        rightClamp.left >= 0 && rightClamp.right <= rightClamp.vw)
+    check('bord droit : panneau redecale (clamp effectif)',
+        rightClamp.right <= rightClamp.vw - 4)
+    await page.click('#shapes')
+    await page.waitForTimeout(100)
+
+    await page.evaluate(() => {
+        const btn = document.querySelector('#shapes')
+        btn.style.position = 'fixed'
+        btn.style.top = (window.innerHeight - 60) + 'px'
+        btn.style.left = '120px'
+    })
+    await page.click('#shapes')
+    await page.waitForTimeout(100)
+    const bottomClamp = await page.evaluate(() => {
+        const p = document.querySelector('#shapesPanel').getBoundingClientRect()
+        return { top: p.top, bottom: p.bottom, vh: window.innerHeight }
+    })
+    check('bord bas : panneau entierement dans la fenetre',
+        bottomClamp.top >= 0 && bottomClamp.bottom <= bottomClamp.vh)
+    await page.click('#shapes')
+    await page.waitForTimeout(100)
+    await page.evaluate(() => {
+        document.querySelector('#shapes').setAttribute('style', window.__shapesBtnStyle || '')
+        delete window.__shapesBtnStyle
+    })
+
     check('aucune erreur JS sur tout le parcours', errors.length === 0)
 } catch (err) {
     check('parcours sans exception', false)

@@ -623,14 +623,39 @@ export const createCircle = (center, radius, segments) => {
 // desarme l'outil sans creer ; clic droit / Backspace annulent le
 // trace en cours sans desarmer.
 
-export const openShapesPanel = () => {
-    const btn = document.querySelector('#shapes')
-    const panel = document.querySelector('#shapesPanel')
-    if (!btn || !panel) return
+// Positionne un panneau flottant juste sous le bouton declencheur en
+// le gardant ENTIEREMENT dans la fenetre : si le bouton est proche du
+// bord droit ou bas, un positionnement brut a rect.left / rect.bottom
+// ferait deborder le panneau du viewport (partiellement masque, voire
+// scroll horizontal). On mesure les dimensions reelles du panneau
+// (apres display — d'ou le hidden = false ici) et on redecale top/left
+// tant que necessaire, avec une petite marge. Partage par #shapesPanel
+// et #triangleColorPanel : les deux panneaux ont la meme contrainte de
+// positionnement (bouton declencheur dans la toolbar).
+const positionPanelUnderButton = (btn, panel) => {
+    const MARGIN = 8
     const rect = btn.getBoundingClientRect()
     panel.style.top = (rect.bottom + 4) + 'px'
     panel.style.left = rect.left + 'px'
     panel.hidden = false
+    const panelRect = panel.getBoundingClientRect()
+    let left = panelRect.left
+    let top = panelRect.top
+    if (left + panelRect.width > window.innerWidth - MARGIN) {
+        left = Math.max(MARGIN, window.innerWidth - panelRect.width - MARGIN)
+    }
+    if (top + panelRect.height > window.innerHeight - MARGIN) {
+        top = Math.max(MARGIN, window.innerHeight - panelRect.height - MARGIN)
+    }
+    if (left !== panelRect.left) panel.style.left = left + 'px'
+    if (top !== panelRect.top) panel.style.top = top + 'px'
+}
+
+export const openShapesPanel = () => {
+    const btn = document.querySelector('#shapes')
+    const panel = document.querySelector('#shapesPanel')
+    if (!btn || !panel) return
+    positionPanelUnderButton(btn, panel)
     state.shapesPanelOpen = true
     updateShapesButton()
 }
@@ -1944,10 +1969,7 @@ export const showTriangleColorPanel = () => {
     const btn = document.querySelector('#triangleColor')
     const panel = document.querySelector('#triangleColorPanel')
     if (!btn || !panel) return
-    const rect = btn.getBoundingClientRect()
-    panel.style.top = (rect.bottom + 4) + 'px'
-    panel.style.left = rect.left + 'px'
-    panel.hidden = false
+    positionPanelUnderButton(btn, panel)
     state.isTriangleColorPanelOpen = true
     btn.classList.add('color-panel-open')
 }

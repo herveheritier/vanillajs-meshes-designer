@@ -3,6 +3,7 @@
 - différents boutons pour force l'alignement des points sélectionnés
 - création d'un cercle percé d'un trou
 ## évolutions effectuées sur l'application (date, id de commit)
+- 04/08/2026 (9641f24) : les panneaux (formes prédéfinies, couleurs des triangles) restent entièrement visibles même lorsque le bouton qui les ouvre est près du bord de la fenêtre
 - 03/08/2026 (10836b3) : création de formes prédéfinies (rectangle, carré, triangle, pentagone, hexagone, étoile) via un panneau de boutons complémentaire
 - 03/08/2026 (34b53ff) : le nombre de côtés du cercle est mémorisé d'une session à l'autre, et le raccourci C active le mode cercle
 - 03/08/2026 (b62aeec) : améliorations de l'outil cercle : le mode se désactive après chaque création, et la molette sur le bouton actif règle le nombre de côtés
