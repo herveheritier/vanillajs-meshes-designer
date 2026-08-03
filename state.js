@@ -1,6 +1,6 @@
 // Rationale : voir DESIGN.md §1.1
 
-import { DEFAULT_GRID_STEP } from './constants.js'
+import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS } from './constants.js'
 
 export const state = {
     // ===== Scene / viewport =====
@@ -33,6 +33,21 @@ export const state = {
     editingMode: 'edition',
     selectionMode: 'vertex',
     sceneDirty: false,
+
+    // ===== Outil cercle (creation par eventail de triangles) =====
+    // Mode transitoire (non persiste, comme la preview) : tant qu'il
+    // est actif, le clic gauche + glisser sur le canvas trace un
+    // cercle (1er clic = centre, glisser = rayon, relacher = creer).
+    // circleCenterModel : centre du cercle en cours, en coords model
+    // (snapToGrid applique). circleRadiusModel : rayon courant en
+    // coords model, mis a jour pendant le geste (pilote la
+    // previsualisation). circleSegments : nombre de cotes du polygone
+    // genere, reglable a la molette en mode cercle (clamp
+    // CIRCLE_MIN_SEGMENTS..CIRCLE_MAX_SEGMENTS).
+    circleMode: false,
+    circleCenterModel: undefined,
+    circleRadiusModel: 0,
+    circleSegments: CIRCLE_DEFAULT_SEGMENTS,
 
     // ===== Scene baseline (dirty reconciliation) =====
     // Fingerprint JSON de `state.shapes` capture a chaque evenement

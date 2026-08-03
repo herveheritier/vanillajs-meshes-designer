@@ -6,6 +6,7 @@ import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
     updateSelectionModeButton, updateColorButtonState, updateAccessibilityLabels, updateSceneStatus,
+    updateCircleButton,
 } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import {
@@ -13,6 +14,7 @@ import {
     endGrabbing, grabbed, resolveMouseMoveOnBoard, beginGrabbing,
     processMouseUpSelection, processRightClickSelection, wireBoardDrop,
     wireTriangleColorPanel, hideTriangleColorPanel,
+    toggleCircleMode, beginCircleGesture, commitCircleGesture, cancelCircleGesture, exitCircleMode,
 } from './editor.js'
 import { undo, redo } from './history.js'
 import {
@@ -168,6 +170,7 @@ wireButton('deleteShape', () => deleteShape())
 wireButton('mergePoints', () => mergeSelectedPoints())
 wireButton('undo', () => undo())
 wireButton('redo', () => redo())
+wireButton('circle', () => toggleCircleMode())
 
 const importMeshesBtn = document.querySelector('#importMeshes')
 if (importMeshesBtn) {
@@ -230,6 +233,19 @@ document.addEventListener('mousedown', (e) => {
         if (e.button === 0) togglePreview()
         if (e.button !== 1) return
     }
+    // Mode cercle : le clic gauche commence un trace (centre), le clic
+    // droit annule le trace en cours sans quitter le mode ; le clic
+    // milieu garde son role de pan (branche e.button === 1 plus bas).
+    if (state.circleMode && !state.previewMode) {
+        if (e.button === 0) {
+            beginCircleGesture(e)
+            return
+        }
+        if (e.button === 2) {
+            cancelCircleGesture()
+            return
+        }
+    }
     const mousePos = {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
@@ -261,6 +277,13 @@ document.addEventListener('mouseup', (e) => {
     const wasGrabbing = grabbed()
     if (wasGrabbing) endGrabbing(e)
     if (state.isPanning && e.button === 1) endPan()
+    // Mode cercle : le relachement du clic gauche commite le cercle
+    // (rayon = distance centre -> curseur au release). Retour avant la
+    // logique de selection-box (jamais armee en mode cercle).
+    if (state.circleMode && !state.previewMode && e.button === 0) {
+        commitCircleGesture(e)
+        return
+    }
     const boardTarget = e.target && e.target.id === 'board'
     if (state.isSelectingBox) {
         if (boardTarget && state.selectionBoxStart && state.selectionBoxCurrent) {
@@ -284,9 +307,11 @@ document.addEventListener('mouseup', (e) => {
         state.selectionBoxStart = undefined
         state.selectionBoxCurrent = undefined
     }
-    if (!wasGrabbing && e.button === 2 && boardTarget && !state.previewMode && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+    if (!wasGrabbing && e.button === 2 && boardTarget && !state.previewMode && !state.circleMode && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         // If no grab target was armed, a plain right click still has
         // selection semantics (including empty-space deselection).
+        // En mode cercle, le clic droit a deja ete consomme par
+        // cancelCircleGesture (mousedown) : on ne re-selectionne pas.
         processRightClickSelection(e)
     }
 })
@@ -297,6 +322,13 @@ document.addEventListener('keydown', (e) => {
     // qu'on visualise. Les raccourcis P / Echap sortent de la preview
     // (le clic gauche sur le canvas aussi, cf. mousedown §2.6.2).
     // Rationale : voir DESIGN.md §2.6.2
+    // Mode cercle : Backspace annule le trace en cours (comme le clic
+    // droit) au lieu de supprimer un point — la construction prime.
+    if (e.code === 'Backspace' && state.circleMode && !state.previewMode) {
+        e.preventDefault()
+        cancelCircleGesture()
+        return
+    }
     if (e.code === 'Backspace' && !state.previewMode) {
         if (e.shiftKey) {
             showResetModal()
@@ -340,6 +372,15 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Escape' && !e.repeat && state.previewMode) {
         e.preventDefault()
         togglePreview()
+        return
+    }
+    // Mode cercle : Echap quitte le mode (et efface le trace en
+    // cours). Placer apres la branche preview (priorite absolue en
+    // preview) et avant les modales (le mode cercle n'est pas un
+    // modal).
+    if (e.code === 'Escape' && !e.repeat && state.circleMode) {
+        e.preventDefault()
+        exitCircleMode()
         return
     }
     if (e.code === 'Escape' && !e.repeat && (isHelpOpen || isResetOpen || isDeleteShapeOpen || isMergeErrorOpen)) {
@@ -410,6 +451,7 @@ const doit = () => {
     updateAccessibilityLabels()
     updateSceneStatus()
     updateColorButtonState()
+    updateCircleButton()
     log('App ready')
 }
 

@@ -1,7 +1,7 @@
 // Rationale : voir DESIGN.md §3.2
 
 import { state } from './state.js'
-import { TAU } from './constants.js'
+import { TAU, CIRCLE_DEFAULT_SEGMENTS } from './constants.js'
 
 // ===== Snap =====
 export const snapToGrid = (point) => {
@@ -178,6 +178,33 @@ export const isInsideSegmentByDot = (dot, p1, p2) => {
         dot.x <= Math.max(p1.x, p2.x) + 0.01 &&
         dot.y >= Math.min(p1.y, p2.y) - 0.01 &&
         dot.y <= Math.max(p1.y, p2.y) + 0.01
+}
+
+// ===== Generation d'un cercle (eventail de triangles) =====
+//
+// Fabrique la geometrie canonique { pointList, tris } d'un disque
+// approxime par `segments` triangles en eventail : un sommet central
+// + `segments` sommets sur la circonference, chaque triangle
+// referencant (centre, rim[i], rim[i+1]). Les indices sont 0-based
+// dans le pointList retourne — l'appelant (editor.js createCircle)
+// les decale du nombre de points deja presents dans la forme active.
+//
+// Fonction pure (aucun acces a state) : testable de maniere
+// isolee. `segments` est arrondi et borne a >= 3 (le defaut 24 rend
+// un disque visuellement lisse ; 3 donnerait un triangle).
+export const circleGeometry = (center, radius, segments) => {
+    const n = Math.max(3, Math.round(segments) || CIRCLE_DEFAULT_SEGMENTS)
+    const pointList = [{ x: center.x, y: center.y }]
+    const tris = []
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU
+        pointList.push({
+            x: center.x + radius * Math.cos(a),
+            y: center.y + radius * Math.sin(a),
+        })
+        tris.push({ p1: 0, p2: i + 1, p3: ((i + 1) % n) + 1 })
+    }
+    return { pointList, tris }
 }
 
 export { TAU }

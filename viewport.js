@@ -2,6 +2,7 @@ import { state } from './state.js'
 import {
     MIN_ZOOM, MAX_ZOOM, ZOOM_STEP_FACTOR, ROTATE_STEP,
     DEFAULT_GRID_STEP, MIN_GRID_STEP, MAX_GRID_STEP,
+    CIRCLE_MIN_SEGMENTS, CIRCLE_MAX_SEGMENTS,
     RETICLE_MODE_STORAGE_KEY, SELECTION_MODE_STORAGE_KEY, SELECTION_MODES,
     EDITING_MODE_STORAGE_KEY, EDITING_MODES,
     CONSOLE_VISIBLE_STORAGE_KEY,
@@ -9,7 +10,7 @@ import {
 } from './constants.js'
 import { drawBoard, requestDraw, consumeDrawStats } from './draw.js'
 import { screenToModel } from './geometry.js'
-import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState } from './hud.js'
+import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateCircleButton } from './hud.js'
 import { persistState, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
@@ -344,6 +345,12 @@ export const applyPreviewMode = () => {
         state.nearestPoint = undefined
         state.nearestLine = undefined
         state.nearestTriangle = undefined
+        // Un trace de cercle en cours ne doit pas survivre a l'entree
+        // en preview : a la sortie, on retomberait sur un centre
+        // fantome. Le mode lui-meme reste actif (toggle de vue), seul
+        // le geste est abandonne.
+        state.circleCenterModel = undefined
+        state.circleRadiusModel = 0
     }
     // force le re-render offscreen : la scene stable (grille / axes /
     // points de controle) change avec previewMode, il faut donc
@@ -391,6 +398,21 @@ export const onBoardWheel = (e) => {
     if (!state.board) return
     const boardRect = state.board.getBoundingClientRect()
     const cursorScreen = { x: e.x - boardRect.x, y: e.y - boardRect.y }
+    // Mode cercle : la molette regle le nombre de cotes du polygone
+    // genere (au lieu de zoomer/pivoter). Meme langage que le reglage
+    // du pas de grille a la molette : retour immediat via la preview
+    // (draw.js renderTransient) + le compteur du bouton #circle.
+    // Desactive en preview (la molette y zoome toujours, cf. §2.6).
+    if (state.circleMode && !state.previewMode) {
+        const delta = e.deltaY < 0 ? 1 : -1
+        state.circleSegments = Math.min(
+            CIRCLE_MAX_SEGMENTS,
+            Math.max(CIRCLE_MIN_SEGMENTS, state.circleSegments + delta),
+        )
+        updateCircleButton()
+        requestDraw()
+        return
+    }
     const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))
     // Preview = visualisation seule : la molette NE PEUT PAS muter la
     // scene. On bloque les deux chemins de rotation (AltGr = tourner

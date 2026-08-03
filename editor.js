@@ -8,9 +8,10 @@ import {
     COLOR_HOVER_NEAREST_TRIANGLE_STROKE, COLOR_HOVER_NEAREST_TRIANGLE_FILL,
     TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU,
     POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
+    CIRCLE_MIN_RADIUS_PX,
 } from './constants.js'
 import { drawBoard, drawPoint, drawMouse, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
-import { updateSelectionHud, updateColorButtonState } from './hud.js'
+import { updateSelectionHud, updateColorButtonState, updateCircleButton } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
 import {
@@ -18,6 +19,7 @@ import {
     activeTriangles, getAllVertices, getPointsAtSamePosition, getVertexIndex, getStackTriangleRefs, isPointSelected,
     getIndicesAtSamePosition,
     adjacentPoints, computeOrthogonalProjection, isInsideSegmentByDot,
+    circleGeometry,
 } from './geometry.js'
 import { saveState, movePointsPatch, insertPointPatch, replaceShapePatch, setFillsPatch, cloneShape } from './history.js'
 import { persistState, importMeshFromFile } from './io.js'
@@ -194,6 +196,17 @@ export const updateMouseHover = (cursorScreen) => {
     if (state.previewMode) return
     updateCoordsDisplay(cursorScreen)
     if (!cursorScreen) return
+    // Mode cercle : les overlays de survol (cercle vert du point le
+    // plus proche, labels §7.8/§7.9, ligne/triangle highlights) ne
+    // sont que du bruit pendant la construction d'un cercle. On se
+    // limite au HUD coordonnees + au repaint : la previsualisation
+    // du cercle est dessinee dans le calque transitoire (draw.js
+    // renderTransient), drawMouse repeint le curseur.
+    if (state.circleMode) {
+        drawBoard()
+        drawMouse(cursorScreen)
+        return
+    }
     const actionModel = screenToModel(cursorScreen)
     const target = state.activeGrid ? snapToGrid(actionModel) : actionModel
     state.nearestPoint = findNearestPoint(target)
@@ -457,6 +470,130 @@ export const selectAllPoints = () => {
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     updateColorButtonState()
+}
+
+// ===== Creation d'un cercle (outil cercle) =====
+//
+// Mode transitoire (bouton #circle, non persiste — meme statut que la
+// preview) : le clic gauche + glisser sur le canvas trace un cercle
+// par generation d'un eventail de triangles (centre + N sommets sur
+// la circonference, N triangles). Le 1er clic pose le centre
+// (snapToGrid comme addPoint), le glisser regle le rayon (preview en
+// temps reel via draw.js renderTransient), le relachement commite si
+// le rayon est significatif (>= CIRCLE_MIN_RADIUS_PX en pixels
+// ecran). La molette regle N (viewport.js onBoardWheel), Echap ou le
+// bouton quittent le mode, clic droit / Backspace annulent le tracé
+// en cours sans quitter le mode. Apres un commit on reste en mode
+// cercle pour enchainer plusieurs cercles.
+export const toggleCircleMode = () => {
+    if (state.circleMode) exitCircleMode()
+    else enterCircleMode()
+}
+
+const enterCircleMode = () => {
+    state.circleMode = true
+    state.currentAction = ACTION_NONE
+    updateCircleButton()
+    log('Mode cercle : clic + glisser pour tracer un cercle (molette = nombre de cotes, Echap = quitter)')
+    requestDraw()
+}
+
+export const exitCircleMode = () => {
+    if (!state.circleMode) return
+    state.circleMode = false
+    state.circleCenterModel = undefined
+    state.circleRadiusModel = 0
+    updateCircleButton()
+    log('Mode cercle desactive')
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+}
+
+export const beginCircleGesture = (e) => {
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    const rawCenter = screenToModel(mouseScreen)
+    const center = state.activeGrid ? snapToGrid(rawCenter) : rawCenter
+    state.circleCenterModel = { x: center.x, y: center.y }
+    state.circleRadiusModel = 0
+    requestDraw()
+}
+
+const updateCircleGesture = (mouseScreen) => {
+    if (!state.circleCenterModel) return
+    const rawEdge = screenToModel(mouseScreen)
+    const edge = state.activeGrid ? snapToGrid(rawEdge) : rawEdge
+    state.circleRadiusModel = Math.hypot(
+        edge.x - state.circleCenterModel.x,
+        edge.y - state.circleCenterModel.y,
+    )
+    requestDraw()
+}
+
+export const commitCircleGesture = (e) => {
+    if (!state.circleCenterModel) return
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    updateCircleGesture(mouseScreen)
+    const center = state.circleCenterModel
+    const radius = state.circleRadiusModel
+    state.circleCenterModel = undefined
+    state.circleRadiusModel = 0
+    if (radius * state.ctx.zoomLevel < CIRCLE_MIN_RADIUS_PX) {
+        log('Cercle ignore : rayon trop petit')
+        requestDraw()
+        return
+    }
+    createCircle(center, radius, state.circleSegments)
+}
+
+export const cancelCircleGesture = () => {
+    state.circleCenterModel = undefined
+    state.circleRadiusModel = 0
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+}
+
+// Commite un cercle dans la forme active : append du pointList et des
+// tris de circleGeometry (indices decales du nombre de points deja
+// presents) + entry d'historique replaceShape (before/after clone du
+// shape actif — meme pattern que deleteSelectedPoint). Le pointList
+// canonique (invariant I3) reste valide : le centre et les sommets
+// du rim sont des coords uniques.
+export const createCircle = (center, radius, segments) => {
+    const shapeIdx = state.activeShapeIndex
+    const shape = activeShape()
+    const clonedBefore = cloneShape(shape)
+    const { pointList, tris } = circleGeometry(center, radius, segments)
+    const base = shape.pointList.length
+    for (let i = 0; i < pointList.length; i++) {
+        shape.pointList.push({ x: pointList[i].x, y: pointList[i].y })
+    }
+    for (let i = 0; i < tris.length; i++) {
+        shape.tris.push({
+            p1: tris[i].p1 + base,
+            p2: tris[i].p2 + base,
+            p3: tris[i].p3 + base,
+        })
+    }
+    const clonedAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            clonedBefore.pointList, clonedBefore.tris,
+            clonedAfter.pointList, clonedAfter.tris,
+        )],
+    })
+    state.nearestPoint = undefined
+    state.nearestLine = undefined
+    log(`Cercle cree : ${Math.round(segments)} cotes, rayon ${radius.toFixed(1)}`)
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+    persistState()
 }
 
 // ===== Mouseup (selection par click sur point) =====
@@ -1244,6 +1381,19 @@ export const resolveMouseMoveOnBoard = (e) => {
     const mouseScreen = {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
+    }
+
+    // Mode cercle : le glisser regle le rayon du cercle en cours de
+    // tracé (geste de construction, pas un lasso ni un grab).
+    // updateMouseHover repaint (la preview est dans renderTransient)
+    // et met a jour le HUD coordonnees. La garde !previewMode laisse
+    // la molette zoomer normalement si un P a été pressé en mode
+    // cercle.
+    if (state.circleMode && !state.previewMode) {
+        updateCircleGesture(mouseScreen)
+        state.lastMousePos = mouseScreen
+        updateMouseHover(mouseScreen)
+        return
     }
 
     if (state.isSelectingBox) {

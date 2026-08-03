@@ -18,6 +18,7 @@ import {
     COLOR_SELECTED_POINT_DIMMED,
     COLOR_SELECTION_BOX_FILL,
     COLOR_SELECTION_BOX_STROKE,
+    COLOR_CIRCLE_PREVIEW,
     PATTERN_AXIS,
     PATTERN_LINES,
     PATTERN_LINES_INACTIVE,
@@ -348,6 +349,63 @@ const renderTransient = () => {
     ) {
         drawSelectionBox(state.selectionBoxStart, state.selectionBoxCurrent)
     }
+    // Mode cercle : previsualisation du cercle en cours de tracé. Le
+    // geste est transitoire (ne depend que du curseur + de l'etat
+    // circleCenterModel/circleRadiusModel), pas du modele — il vit ici
+    // et non dans l'offscreen de la scene stable.
+    if (state.circleMode && state.circleCenterModel) drawCirclePreview()
+}
+
+// Previsualisation du cercle en cours de tracé (mode cercle) :
+// dessinee dans le calque transitoire pour suivre le curseur a chaque
+// repaint sans invalider le cache offscreen. Montre ce qui SERA
+// genere : le cercle vrai (arc en pointilles) + le polygone des N
+// cotes (la frontiere de l'eventail de triangles) + la ligne de rayon
+// + le marqueur de centre. Les sommets du polygone sont calculés en
+// model coords avec la MÊME formule que circleGeometry (geometry.js)
+// puis projetés — WYSIWYG strict entre la preview et la creation.
+const drawCirclePreview = () => {
+    const center = state.circleCenterModel
+    const r = state.circleRadiusModel
+    if (!center || r <= 0) return
+    const sp = modelToScreen(center)
+    const zoom = state.ctx.zoomLevel
+    const n = Math.max(3, Math.round(state.circleSegments) || 24)
+
+    // Cercle vrai (frontiere du disque approxime), en pointilles.
+    state._ctx.setLineDash([4, 4])
+    state._ctx.strokeStyle = COLOR_CIRCLE_PREVIEW
+    state._ctx.beginPath()
+    state._ctx.arc(sp.x, sp.y, r * zoom, 0, TAU)
+    state._ctx.stroke()
+
+    // Polygone des N cotes — la frontiere de l'eventail.
+    const rim = []
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU
+        rim.push(modelToScreen({ x: center.x + r * Math.cos(a), y: center.y + r * Math.sin(a) }))
+    }
+    state._ctx.setLineDash([])
+    state._ctx.strokeStyle = COLOR_CIRCLE_PREVIEW
+    state._ctx.beginPath()
+    for (let i = 0; i <= n; i++) {
+        const s = rim[i % n]
+        if (i === 0) state._ctx.moveTo(s.x, s.y)
+        else state._ctx.lineTo(s.x, s.y)
+    }
+    state._ctx.closePath()
+    state._ctx.stroke()
+
+    // Ligne de rayon (du centre au bord, vers +x).
+    state._ctx.beginPath()
+    state._ctx.moveTo(sp.x, sp.y)
+    state._ctx.lineTo(sp.x + r * zoom, sp.y)
+    state._ctx.stroke()
+
+    // Marqueur de centre.
+    state._ctx.beginPath()
+    state._ctx.arc(sp.x, sp.y, 3, 0, TAU)
+    state._ctx.stroke()
 }
 
 export const drawBoard = () => {

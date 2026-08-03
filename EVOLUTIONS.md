@@ -1,9 +1,9 @@
 # evolutions
 ## évolutions à réaliser sur l'application
 - nouveau bouton ouvrant un liste compémentaire de boutons dont le rôle est de créer des formes prédéfinies
-- création de cercle par génération d'un ensemble de triangle
 - alignement des points sélectionnés
 ## évolutions effectuées sur l'application (date, id de commit)
+- 03/08/2026 (59f5fec) : création d'un cercle par génération de triangles (clic + glisser pour le rayon, molette pour le nombre de côtés)
 - 03/08/2026 (d7c6ef9) : initialisation du journal des évolutions avec l'historique complet du projet
 - 03/08/2026 (9006f62) : contrôle automatique de la version portable telle que publiée
 - 03/08/2026 (ceb75fa) : version portable de l'application, un fichier unique utilisable hors ligne sans serveur

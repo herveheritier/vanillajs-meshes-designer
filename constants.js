@@ -41,6 +41,25 @@ export const MAX_GRID_STEP = 128
 export const ACTION_NONE = undefined
 export const ACTION_GRABBING = 1
 
+// ===== Outil cercle (creation par eventail de triangles) =====
+// Couleur de la previsualisation en mode cercle (cercle en pointilles,
+// polygone des N cotes, ligne de rayon, marqueur centre). Meme famille
+// que COLOR_HOVER_NEAREST_LINE (vert) mais plus opaque pour ressortir
+// sur le canvas noir pendant le geste.
+export const COLOR_CIRCLE_PREVIEW = 'rgba(0, 255, 0, 0.8)'
+// Nombre de cotes du polygone genere : borne basse 3 (triangle),
+// borne haute 128 (visuellement un disque lisse). Reglable a la
+// molette en mode cercle, meme langage que le pas de grille.
+export const CIRCLE_MIN_SEGMENTS = 3
+export const CIRCLE_MAX_SEGMENTS = 128
+export const CIRCLE_DEFAULT_SEGMENTS = 24
+// Rayon minimum (en pixels ecran) pour qu'un geste cercle soit
+// commite : en dessous, un clic sans glissement est traite comme un
+// abandon plutot que de creer un cercle degeneré. Exprime en px
+// ecran (converti en model via le zoom) comme les tolerances de
+// hit-testing, pour une sensation constante a tous les zooms.
+export const CIRCLE_MIN_RADIUS_PX = 5
+
 export const MAX_HISTORY = 50
 
 export const MIN_ZOOM = 0.1

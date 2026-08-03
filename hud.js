@@ -38,6 +38,19 @@ export const updateReticleButton = () => {
     if (text) text.textContent = state.reticleMode === 0 ? '' : String(state.reticleMode)
 }
 
+export const updateCircleButton = () => {
+    const btn = document.querySelector('#circle')
+    const text = document.querySelector('#circleText')
+    if (btn) {
+        btn.classList.toggle('circle-active', !!state.circleMode)
+        btn.setAttribute('aria-pressed', state.circleMode ? 'true' : 'false')
+    }
+    // Compteur de cotes affiche seulement quand le mode est actif
+    // (meme langage que #gridText pour le pas de grille) : vide
+    // sinon. textContent (pas innerHTML) car on injecte un entier.
+    if (text) text.textContent = state.circleMode ? String(state.circleSegments) : ''
+}
+
 export const updateSelectionModeButton = () => {
     const btn = document.querySelector('#selectionMode')
     const text = document.querySelector('#selectionModeText')
