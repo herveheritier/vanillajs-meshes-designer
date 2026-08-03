@@ -1315,7 +1315,7 @@
                      nombre de cotes (compteur affiche a cote de l'icone,
                      meme langage que #gridText), Echap ou re-clic = quitter,
                      clic droit / Backspace = annuler le trace en cours. -->
-                <button id="circle" title="Créer un cercle (mode : clic + glisser pour le rayon, molette = nombre de côtés, Échap pour quitter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="8" x2="12.5" y2="8"/><circle cx="8" cy="8" r="0.8" fill="currentColor" stroke="none"/></svg><span id="circleText"></span></button>
+                <button id="circle" title="Créer un cercle (clic + glisser : centre puis rayon ; molette sur le bouton ou le canvas = nombre de côtés ; Échap = quitter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="8" x2="12.5" y2="8"/><circle cx="8" cy="8" r="0.8" fill="currentColor" stroke="none"/></svg><span id="circleText"></span></button>
             </div>
             <span class="toolbar-sep"></span>
             <!-- Groupe "Undo/redo" : miroite les raccourcis clavier
@@ -1469,7 +1469,7 @@
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd">R</kbd><span>réticule : off / simple / projection symétrique (cycle)</span></div>
                     <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; Échap, P ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>
-                    <div class="help-row"><kbd class="kbd wide">Cercle (bouton)</kbd><span>mode de création d'un cercle par génération de triangles : clic + glisser (1er clic = centre, relâcher = rayon) ; molette = nombre de côtés, Échap = quitter le mode, clic droit = annuler le tracé</span></div>
+                    <div class="help-row"><kbd class="kbd wide">Cercle (bouton)</kbd><span>mode de création d'un cercle par génération de triangles : clic + glisser (1er clic = centre, relâcher = rayon) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd wide">Molette</kbd><span>zoomer (centre sur le curseur) ; pivoter si 2+ points sont selectionnes</span></div>
                     <!-- Modificateurs souris pour la selection point-par-point.

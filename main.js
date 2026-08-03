@@ -27,7 +27,7 @@ import {
     startPan, updatePan, endPan,
     restoreEditingMode, restoreSelectionMode, wireSelectionModeControl,
     restoreFpsVisible, wireFpsControl, toggleFps, updateFpsButton,
-    wireGridControl, togglePreview, wirePreviewControl,
+    wireGridControl, togglePreview, wirePreviewControl, wireCircleWheelControl,
 } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
 import { showHelp, hideHelp, wireHelpModal, showResetModal, hideResetModal, wireResetModal } from './modals.js'
@@ -132,6 +132,7 @@ restoreReticleMode()
 // ===== Branchement des listeners "locaux" =====
 
 wireGridControl()
+    wireCircleWheelControl()
     wireReticleControl()
     wireSelectionModeControl()
     wireConsoleToggle()

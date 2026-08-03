@@ -591,8 +591,13 @@ export const createCircle = (center, radius, segments) => {
     state.nearestPoint = undefined
     state.nearestLine = undefined
     log(`Cercle cree : ${Math.round(segments)} cotes, rayon ${radius.toFixed(1)}`)
-    requestDraw()
-    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+    // Spec utilisateur : le mode cercle se desactive apres la creation
+    // (le bouton est desélectionne) — un cercle = un geste, pas un
+    // mode persistant. Le prochain cercle necessite un nouveau clic
+    // sur le bouton. exitCircleMode re-log, met a jour le bouton et
+    // repaint (requestDraw + updateMouseHover) — il couvre donc le
+    // rafraichissement final.
+    exitCircleMode()
     persistState()
 }
 

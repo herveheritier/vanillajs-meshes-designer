@@ -393,6 +393,35 @@ export const wirePreviewControl = () => {
 
 // ===== Wheel handler (sur board) =====
 
+// Reglage du nombre de cotes du cercle. Partage par la molette sur le
+// canvas en mode cercle (onBoardWheel) ET par la molette sur le
+// bouton #circle actif (wireCircleWheelControl) — un seul chemin de
+// verite pour le clamp et le refresh (compteur du bouton + preview
+// renderTransient).
+const adjustCircleSegments = (delta) => {
+    state.circleSegments = Math.min(
+        CIRCLE_MAX_SEGMENTS,
+        Math.max(CIRCLE_MIN_SEGMENTS, state.circleSegments + delta),
+    )
+    updateCircleButton()
+    requestDraw()
+}
+
+// Molette sur le bouton #circle : reglage du nombre de cotes quand le
+// mode est actif — meme langage que la molette sur le bouton grille
+// pour le pas (sans effet hors mode). `{ passive: false }` pour
+// pouvoir preventDefault (sinon le scroll vertical de la toolbar
+// avalerait l'evenement).
+export const wireCircleWheelControl = () => {
+    const btn = document.querySelector('#circle')
+    if (!btn) return
+    btn.addEventListener('wheel', (e) => {
+        if (!state.circleMode) return
+        e.preventDefault()
+        adjustCircleSegments(e.deltaY < 0 ? 1 : -1)
+    }, { passive: false })
+}
+
 export const onBoardWheel = (e) => {
     e.preventDefault()
     if (!state.board) return
@@ -404,13 +433,7 @@ export const onBoardWheel = (e) => {
     // (draw.js renderTransient) + le compteur du bouton #circle.
     // Desactive en preview (la molette y zoome toujours, cf. §2.6).
     if (state.circleMode && !state.previewMode) {
-        const delta = e.deltaY < 0 ? 1 : -1
-        state.circleSegments = Math.min(
-            CIRCLE_MAX_SEGMENTS,
-            Math.max(CIRCLE_MIN_SEGMENTS, state.circleSegments + delta),
-        )
-        updateCircleButton()
-        requestDraw()
+        adjustCircleSegments(e.deltaY < 0 ? 1 : -1)
         return
     }
     const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))

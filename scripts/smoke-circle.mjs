@@ -64,6 +64,9 @@ try {
     let info = await sceneInfo()
     check('cercle genere : 25 points (1 centre + 24 cotes)', info.points === 25)
     check('cercle genere : 24 triangles (eventail)', info.tris === 24)
+    // Spec utilisateur : le bouton se desélectionne apres la creation.
+    check('mode cercle quitte apres la creation', !(await circleActive()))
+    check('compteur de cotes efface apres la creation', (await circleText()) === '')
 
     // --- 3. Annuler / retablir ---
     await page.keyboard.press('Control+z')
@@ -75,11 +78,13 @@ try {
     info = await sceneInfo()
     check('redo : cercle reconstruit', info.points === 25 && info.tris === 24)
 
-    // --- 4. Molette = nombre de cotes (25) puis nouveau cercle ---
-    await page.mouse.move(500, 400)
+    // --- 4. Re-activation + molette SUR LE BOUTON = nombre de cotes ---
+    await page.click('#circle')
+    await page.waitForTimeout(120)
+    await page.locator('#circle').hover()
     await page.mouse.wheel(0, -100)  // deltaY < 0 -> +1 cote
     await page.waitForTimeout(120)
-    check('molette : compteur passe a 25', (await circleText()) === '25')
+    check('molette sur le bouton : compteur passe a 25', (await circleText()) === '25')
     // Scene vide d'abord (Ctrl+Z sur le cercle precedent), puis trace.
     await page.keyboard.press('Control+z')
     await page.waitForTimeout(120)
@@ -87,9 +92,12 @@ try {
     info = await sceneInfo()
     check('cercle a 25 cotes : 26 points', info.points === 26)
     check('cercle a 25 cotes : 25 triangles', info.tris === 25)
+    check('mode cercle quitte apres la 2e creation', !(await circleActive()))
 
-    // --- 5. Trace trop petit (clic sans glisser) : ignore ---
+    // --- 5. Trace trop petit (clic sans glisser) : ignore, mode reste ---
     await page.keyboard.press('Control+z')
+    await page.waitForTimeout(120)
+    await page.click('#circle')
     await page.waitForTimeout(120)
     await page.mouse.move(500, 400)
     await page.mouse.down()
@@ -97,6 +105,7 @@ try {
     await page.waitForTimeout(120)
     info = await sceneInfo()
     check('clic sans glisser : aucun cercle cree', info.points === 0 && info.tris === 0)
+    check('mode toujours actif apres clic ignore', await circleActive())
 
     // --- 6. Echap quitte le mode ---
     await page.keyboard.press('Escape')
