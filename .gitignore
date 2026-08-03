@@ -2,6 +2,13 @@
 temp.json
 *.tmp
 
+# Artefacts de build regenerables (scripts/build-portable.mjs — Option A de
+# PORTABILITE.md) : produit par `node scripts/build-portable.mjs` (défaut) ou
+# `node scripts/build-portable.mjs --out dist/` — toujours reconstruisibles
+# depuis les sources.
+meshes-portable.html
+dist/
+
 # Cache Python (le projet a test_server.py et autres .py)
 __pycache__/
 *.pyc

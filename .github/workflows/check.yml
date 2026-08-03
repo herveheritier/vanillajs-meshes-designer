@@ -1,8 +1,20 @@
 name: check
 
-# Validation complète à chaque push : syntaxe JS (node --check) + les
-# 6 suites smoke navigateur, via `npm run check` (scripts/check.sh
-# démarre/arrête le serveur dev python lui-même).
+# Validation complète à chaque push :
+#   1. `npm run check` — syntaxe JS (node --check) + les 6 suites smoke
+#      navigateur (scripts/check.sh démarre/arrête le serveur dev python
+#      lui-même) ;
+#   2. `npm run check:portable` — rebuild de l'artefact portable
+#      (scripts/build-portable.mjs) + validation statique + test
+#      navigateur en file:// (scripts/check-portable.mjs). Le test
+#      file:// n'a pas besoin du serveur dev : il ouvre le fichier
+#      généré directement.
+#   3. upload-artifact — l'artefact portable validé + son dossier
+#      assets/ (favicon.svg, barre_boutons.png…) sont publiés en
+#      artefact téléchargeable (onglet Summary du run). Réservé à la
+#      branche master : un push sur une branche de travail ne produit
+#      pas d'artefact (le check reste complet, seul l'upload est
+#      conditionné).
 #
 # Chrome : les runners ubuntu ont Google Chrome pré-installé
 # (/usr/bin/google-chrome) — les suites le pilotent via CHROMIUM_PATH
@@ -12,8 +24,9 @@ name: check
 # la fournit) : la détection de module est activée par défaut dans --check.
 # playwright-core reste pinnée 1.49.1 (engines ≥ 18) tant que les suites
 # passent dessus.
-# Actions checkout/setup-node en v7 : les versions ≤ v4 tournent sur un
-# runtime Node 20, déprécié par GitHub (warning + force sur Node 24).
+# Actions en v7 (checkout, setup-node, upload-artifact) : les versions ≤
+# v4 tournaient sur un runtime Node 20, déprécié par GitHub (warning +
+# force sur Node 24) ; v7 = runtime Node 24.
 
 on:
   push:
@@ -27,7 +40,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       CHROMIUM_PATH: /usr/bin/google-chrome
     steps:
@@ -40,3 +53,26 @@ jobs:
         run: npm ci
       - name: npm run check (syntaxe + 6 suites smoke)
         run: npm run check
+      # L'artefact portable (meshes-portable.html) est un livrable
+      # régénéré à chaque push : on valide qu'il se construit et qu'il
+      # fonctionne en file:// (mêmes binaires Chromium que les suites).
+      - name: npm run check:portable (rebuild + validation portable)
+        run: npm run check:portable
+      # Livraison : l'artefact portable validé est publié en artefact
+      # téléchargeable — uniquement sur master (la condition if évite un
+      # artefact par push de branche ; les validations ci-dessus, elles,
+      # restent exécutées partout). Le fichier référence
+      # assets/favicon.svg (<link rel="icon"> — le seul asset utilisé
+      # par l'app) ; le reste du dossier (logo.svg, barre_boutons.png,
+      # meshes d'exemple) sert au README et aux imports. On embarque
+      # tout le dossier (84 Ko) pour un portable complet, à la racine
+      # de l'artefact.
+      - name: Upload artefact portable (meshes-portable.html + assets)
+        if: github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v7
+        with:
+          name: meshes-portable
+          path: |
+            meshes-portable.html
+            assets/
+          if-no-files-found: error
