@@ -1,0 +1,68 @@
+# evolutions
+## évolutions à réaliser sur l'application
+- nouveau bouton ouvrant un liste compémentaire de boutons dont le rôle est de créer des formes prédéfinies
+- création de cercle par génération d'un ensemble de triangle
+- alignement des points sélectionnés
+## évolutions effectuées sur l'application (date, id de commit)
+- 03/08/2026 (d7c6ef9) : initialisation du journal des évolutions avec l'historique complet du projet
+- 03/08/2026 (9006f62) : contrôle automatique de la version portable telle que publiée
+- 03/08/2026 (ceb75fa) : version portable de l'application, un fichier unique utilisable hors ligne sans serveur
+- 03/08/2026 (5c17409) : rendu plus net sur les écrans haute résolution et affichage correct lors du redimensionnement de la fenêtre
+- 02/08/2026 (2b903ff) : sortie du mode prévisualisation par un simple clic gauche
+- 02/08/2026 (6c4266f) : mode prévisualisation pour voir le dessin sans les outils d'édition (touche P)
+- 02/08/2026 (5dcc4b6) : mise à jour automatique des outils de vérification du projet
+- 02/08/2026 (a77b03c) : vérification automatique du projet à chaque enregistrement
+- 02/08/2026 (f5b8d03) : ajout de tests automatiques simulant l'utilisation dans un navigateur
+- 02/08/2026 (ef5b910) : l'historique annuler/rétablir est conservé après rechargement de la page
+- 02/08/2026 (0117b23) : la croix de visée reste accrochée au point manipulé
+- 02/08/2026 (d51c0b5) : affichage du nom de la scène et signalement des modifications non enregistrées
+- 02/08/2026 (83dc51d) : annuler/rétablir plus fluide, même sur les scènes complexes
+- 01/08/2026 (6de4dba) : accélération de l'affichage des points, de la grille et des triangles
+- 01/08/2026 (6aa4628) : compteur d'images par seconde optionnel pour mesurer la fluidité
+- 01/08/2026 (b11a953) : application plus réactive sur les grandes scènes
+- 01/08/2026 (9f21210) : le bouton de cible (sommet / segment / triangle) affiche le mode actif
+- 01/08/2026 (b4412f1) : restructuration technique du modèle des formes (sans changement visible)
+- 01/08/2026 (b9962b2) : un seul mode d'édition combine création, sélection et déplacement
+- 01/08/2026 (2c586fa) : sélection et remplacement des points harmonisés au clic et au glisser
+- 01/08/2026 (68fe4d1) : suppression d'un sommet inutilisé par Ctrl+clic droit
+- 30/07/2026 (4a39254) : Ctrl+clic pour ajouter ou retirer un sommet de la sélection
+- 30/07/2026 (ff0ebe4) : choix de la couleur de remplissage des triangles sélectionnés
+- 29/07/2026 (b4db705) : barre d'outils réorganisée en groupes, entièrement visible même sur petit écran
+- 29/07/2026 (45e2a71) : organisation du code en plusieurs fichiers pour faciliter la maintenance
+- 28/07/2026 (9deccff) : croix de visée au curseur avec trois modes (désactivée, simple, symétrique)
+- 28/07/2026 (78389b8) : confirmation de suppression d'une forme par une fenêtre intégrée
+- 28/07/2026 (7839d07) : compteur d'éléments sélectionnés dans l'interface
+- 28/07/2026 (4ab6bcd) : ajout du logo de l'application et de l'icône d'onglet du navigateur
+- 27/07/2026 (a4b767b) : bouton pour afficher ou masquer la console des messages
+- 27/07/2026 (b2048da) : rotation des formes autour du curseur (AltGr + molette) avec indicateur d'angle
+- 27/07/2026 (40a9a93) : déplacement de toutes les formes ensemble (AltGr + clic droit + glisser)
+- 27/07/2026 (730abd6) : documentation du projet (démarrage, raccourcis, formats de fichiers)
+- 27/07/2026 (e3d53ec) : déplacement de la vue par clic milieu + glisser, le dessin suit la souris
+- 27/07/2026 (f6932b3) : zoom à la molette centré sur le curseur, indicateur de niveau et réinitialisation (Ctrl+0)
+- 27/07/2026 (6c77895) : icône du bouton de chargement des meshes redessinée
+- 27/07/2026 (db99230) : le format « alphabet2 » devient « meshes », boutons de sauvegarde et de chargement clarifiés
+- 26/07/2026 (62d3950) : bouton d'aide dans la barre d'outils et fenêtres de dialogue harmonisées
+- 26/07/2026 (78030eb) : bouton grille amélioré (icône, pas affiché, raccourci G, aide)
+- 26/07/2026 (352dad2) : icônes de la barre d'outils redessinées pour plus de clarté
+- 26/07/2026 (a9e3be3) : fenêtre d'import toujours affichée, dernier mode choisi mémorisé
+- 26/07/2026 (6f4746b) : nouvelle barre d'outils flottante avec effets de survol et infobulles
+- 26/07/2026 (7aa1333) : import de fichiers JSON avec choix entre remplacer et fusionner la scène
+- 26/07/2026 (be7149f) : plusieurs formes par scène (suivante, précédente, nouvelle, suppression)
+- 26/07/2026 (25ce77d) : axe X centré et coordonnées du curseur affichées en direct
+- 26/07/2026 (9b6aead) : import du format alphabet2 (l'axe Y est inversé)
+- 26/07/2026 (c61fdb9) : bouton tout sélectionner
+- 26/07/2026 (2a82898) : sélection automatique des points superposés
+- 26/07/2026 (fe935fb) : bouton de réinitialisation de la scène avec confirmation
+- 26/07/2026 (1e8267a) : sauvegarde et chargement de la scène en JSON
+- 26/07/2026 (9d7dbd0) : le dessin est conservé d'une session à l'autre
+- 26/07/2026 (fcf07ee) : marqueurs de sélection atténués lorsque le point survolé n'est pas sélectionné
+- 25/07/2026 (9d8b9e6) : rotation des points sélectionnés à la molette, centrée sur la position de la souris
+- 25/07/2026 (f990c00) : réglage du pas de la grille à la molette (clic milieu sur le bouton = réinitialisation)
+- 25/07/2026 (9185594) : déplacement en direct des points sélectionnés lors du glisser
+- 25/07/2026 (5d794df) : sélection multiple (rectangle de sélection, Maj+clic, déplacement et suppression groupés)
+- 25/07/2026 (5d2d795) : aimantation des points sur les intersections de la grille
+- 25/07/2026 (c0b2947) : grille affichée avec des lignes horizontales et verticales
+- 25/07/2026 (bcbcf63) : rétablir une action (Ctrl+Maj+Z ou Ctrl+Y)
+- 25/07/2026 (2dc2b57) : annuler la dernière action (Ctrl+Z)
+- 25/07/2026 (0952785) : suppression du point sélectionné avec la touche Retour arrière
+- 25/07/2026 (5f49874) : création de l'application
