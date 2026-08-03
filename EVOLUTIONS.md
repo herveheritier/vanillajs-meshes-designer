@@ -3,6 +3,7 @@
 - différents boutons pour force l'alignement des points sélectionnés
 - création d'un cercle percé d'un trou
 ## évolutions effectuées sur l'application (date, id de commit)
+- 04/08/2026 (bd80ee9) : la couleur des triangles n'est plus effacée lorsqu'on supprime un sommet, un segment ou un triangle, et l'annulation (Ctrl+Z) fonctionne de nouveau après une suppression
 - 04/08/2026 (ade9066) : le bouton cercle est déplacé dans le panneau des formes prédéfinies (le compteur de côtés s'affiche alors sur le bouton Formes)
 - 04/08/2026 (9641f24) : les panneaux (formes prédéfinies, couleurs des triangles) restent entièrement visibles même lorsque le bouton qui les ouvre est près du bord de la fenêtre
 - 03/08/2026 (10836b3) : création de formes prédéfinies (rectangle, carré, triangle, pentagone, hexagone, étoile) via un panneau de boutons complémentaire

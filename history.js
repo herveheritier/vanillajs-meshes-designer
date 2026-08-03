@@ -416,6 +416,37 @@ const applyEntry = (entry, direction) => {
 
 const serializeSnapshot = (shapes) => cloneScene(shapes)
 
+// (delta §8.5) Reconstruit l'état PRE-mutation de la scène à partir
+// des patches, pour l'entry snapshot du fallback shouldUseSnapshot.
+// Les call sites patche-courants (delete*/create*/merge/rotate)
+// appellent saveState APRÈS la mutation : la scène courante est
+// l'état post-mutation, et la cible d'undo s'obtient en rejouant
+// l'inverse des patches sur un clone (les applicateurs ne touchent
+// que state.shapes + state.activeShapeIndex, qu'on restaure).
+// Exception : addPoint appelle saveState AVANT la mutation
+// (insertPoint) — la scène courante EST déjà l'état pré-mutation ;
+// rejouer l'inverse dessus détruirait un point/tri pré-existant, on
+// laisse donc les patches insertPoint de côté (cas avant-mutation).
+const snapshotBeforeState = (patches) => {
+    const liveShapes = state.shapes
+    const liveActiveIndex = state.activeShapeIndex
+    const rebuilt = cloneScene(liveShapes)
+    state.shapes = rebuilt
+    try {
+        for (const p of patches) {
+            if (p.kind === 'insertPoint') continue
+            applyPatch(p, 'inverse')
+        }
+    } finally {
+        // Garantit la restauration de l'état live même si un patch
+        // lève (patch malformé, garde défensive) : sans cela, la
+        // scène de travail resterait pointée sur le clone de travail.
+        state.shapes = liveShapes
+        state.activeShapeIndex = liveActiveIndex
+    }
+    return rebuilt
+}
+
 // Helper : décide si un batch de patches doit être promu en snapshot
 // complet. Heuristique pragmatique : si la taille cumulée estimée
 // dépasse la taille d'un snapshot, on bascule en snapshot simple.
@@ -468,7 +499,14 @@ export const saveState = (opts) => {
         resolveDeferredAfter(opts.patches)
         if (shouldUseSnapshot(opts.patches, state.shapes)) {
             entry = {
-                snapshotShapes: serializeSnapshot(state.shapes),
+                // (delta §8.5) Le snapshot stocke l'état PRE-mutation
+                // (cible de l'undo), pas l'état courant : les call
+                // sites patche-courants appellent saveState APRÈS la
+                // mutation, et applyEntry('inverse') d'une entry
+                // snapshot restaure `snapshotShapes` tel quel — un
+                // snapshot post-mutation rendrait l'undo no-op
+                // (régression fixée ici).
+                snapshotShapes: snapshotBeforeState(opts.patches),
                 activeShapeIndex: state.activeShapeIndex,
             }
         } else {

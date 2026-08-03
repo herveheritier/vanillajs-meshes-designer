@@ -1428,6 +1428,23 @@ Cas concret où le seuil déclenche :
 - `movePoints` couvrant > 50 % des points du scene total :
   bascule en snapshot (rare : AltGr globale sur petites scènes).
 
+**L'entry snapshot stocke l'état PRÉ-mutation (fix undo)** : les
+call sites patche-courants appellent `saveState` APRÈS la mutation,
+et `applyEntry('inverse')` d'une entry snapshot restaure
+`snapshotShapes` tel quel. Un fallback naïf (clone de la scène
+courante, c.-à-d. post-mutation) rendait donc l'undo no-op pour
+TOUTES les suppressions / fusions / rotations sur petites scènes
+mono-shape (le cas le plus courant). `saveState` reconstruit désormais
+la scène pré-mutation via `snapshotBeforeState` (history.js) : un
+clone de la scène courante sur lequel on rejoue l'inverse des patches
+(les applicateurs ne touchent que `state.shapes` + `activeShapeIndex`,
+restaurés). Exception : les patches `insertPoint` (addPoint) sont
+laissés de côté — addPoint appelle `saveState` AVANT la mutation, la
+scène courante EST déjà l'état pré-mutation, et rejouer l'inverse
+dessus détruirait un point/tri pré-existant. Le redo reste correct
+sans changement : `transferEntry` re-capture la scène courante au
+moment de l'undo (= état post-mutation) comme cible du redo.
+
 ### §8.6 Pattern deferred fill (geste long)
 
 Les gestes longs (grab, rotations wheel) ne connaissent pas l'**état

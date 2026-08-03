@@ -1073,6 +1073,12 @@ const compactPointList = (shape) => {
         p1: Number.isInteger(t.p1) ? idxMap.get(t.p1) : undefined,
         p2: Number.isInteger(t.p2) ? idxMap.get(t.p2) : undefined,
         p3: Number.isInteger(t.p3) ? idxMap.get(t.p3) : undefined,
+        // Le fill est une propriete du TRIANGLE, pas du sommet : il doit
+        // survivre au re-indexage. Regression fixee : sa perte effaçait la
+        // couleur de TOUS les triangles survivants a chaque suppression
+        // (sommet, segment ou triangle). Même convention que cloneShape
+        // (fill: string seulement).
+        fill: typeof t.fill === 'string' ? t.fill : undefined,
     }))
     return idxMap
 }
@@ -1122,6 +1128,9 @@ export const deleteSelectedPoint = () => {
             p1: surviving[0],
             p2: surviving[1],
             p3: surviving[2] !== undefined ? surviving[2] : undefined,
+            // Le fill du tri survive (regression : sa perte effaçait la
+            // couleur des triangles survivants apres suppression).
+            fill: typeof t.fill === 'string' ? t.fill : undefined,
         })
     }
     shape.tris = filteredTris

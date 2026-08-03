@@ -222,18 +222,21 @@ Un drop direct d'un fichier JSON sur le canvas déclenche aussi l'import.
 
 ## Astuces de développement
 
-- **Smoke tests navigateur** : `playwright-core` est une devDependency (l'app reste zero-dependency ; `node_modules` est gitignoré). Les scripts dans `scripts/` (harnais partagé `smoke_lib.mjs`) pilotent le Chromium système en headless — `smoke-preview.mjs` (entrée/sortie de la preview par bouton, `P`/`Échap`/clic gauche, masquage de la chrome, zoom molette), `smoke-edit.mjs` (dessiner un triangle, undo/redo, export JSON) et `smoke-import.mjs` (import meshes sur scène vide, modale Remplacer/Fusionner, undo conservé par le MERGE), `smoke-gestures.mjs` (lasso, grab clic droit + drag, déplacement global AltGr) et `smoke-modals.mjs` (modales reset / erreur de fusion / aide / suppression de forme + raccourcis Shift+Backspace, `?`, Escape, clic backdrop) et `smoke-rotate.mjs` (rotation molette sur sélection autour du curseur-pivot, fallback zoom < 2 sélectionnés, rotation globale AltGr), `smoke-circle.mjs` (outil cercle : activation mode, tracé clic + glisser, compteur de côtés à la molette, annulation trace) et `smoke-shapes.mjs` (panneau de formes prédéfinies : ouverture/fermeture, armement, géométrie générée, Echap / clic extérieur) :
+- **Smoke tests navigateur** : `playwright-core` est une devDependency (l'app reste zero-dependency ; `node_modules` est gitignoré). Les scripts dans `scripts/` (harnais partagé `smoke_lib.mjs`) pilotent le Chromium système en headless — `smoke-preview.mjs` (entrée/sortie de la preview par bouton, `P`/`Échap`/clic gauche, masquage de la chrome, zoom molette), `smoke-edit.mjs` (dessiner un triangle, undo/redo, export JSON) et `smoke-import.mjs` (import meshes sur scène vide, modale Remplacer/Fusionner, undo conservé par le MERGE), `smoke-gestures.mjs` (lasso, grab clic droit + drag, déplacement global AltGr) et `smoke-modals.mjs` (modales reset / erreur de fusion / aide / suppression de forme + raccourcis Shift+Backspace, `?`, Escape, clic backdrop) et `smoke-rotate.mjs` (rotation molette sur sélection autour du curseur-pivot, fallback zoom < 2 sélectionnés, rotation globale AltGr), `smoke-circle.mjs` (outil cercle : activation mode, tracé clic + glisser, compteur de côtés à la molette, annulation trace), `smoke-shapes.mjs` (panneau de formes prédéfinies : ouverture/fermeture, armement, géométrie générée, Echap / clic extérieur) et `smoke-color.mjs` (suppression sommet / segment / triangle sans perte de la couleur des triangles survivants) :
   ```bash
   python3 test_server.py   # terminal 1
-  npm run smoke            # terminal 2 — les huit suites, exit 0 si tout passe
+  npm run smoke            # terminal 2 — les neuf suites, exit 0 si tout passe
   npm run smoke:preview    # ou une seule suite
   npm run smoke:edit
   npm run smoke:import
   npm run smoke:gestures
   npm run smoke:modals
   npm run smoke:rotate
+  npm run smoke:circle
+  npm run smoke:shapes
+  npm run smoke:color
   ```
-  **Tout-en-un** : `npm run check` enchaîne `node --check` (syntaxe de tous les `.js`/`.mjs`) puis les six suites — le serveur dev est démarré (si le port 8000 est libre) puis arrêté automatiquement.
+  **Tout-en-un** : `npm run check` enchaîne `node --check` (syntaxe de tous les `.js`/`.mjs`) puis les neuf suites — le serveur dev est démarré (si le port 8000 est libre) puis arrêté automatiquement.
   **CI** : `.github/workflows/check.yml` lance `npm run check` **et** `npm run check:portable` (rebuild + validation de l'artefact portable en `file://`) à chaque push, puis publie l'artefact portable validé (`meshes-portable.html` + `assets/`) en **artefact téléchargeable** — réservé à la branche `master` (les validations, elles, s'exécutent sur toutes les branches). Chrome du runner via `CHROMIUM_PATH`. [![check](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml/badge.svg)](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml)
   Le binaire Chromium est `CHROMIUM_PATH` (défaut `/usr/bin/chromium`) ; la base URL est le 1er argument des scripts. `playwright-core@1.49.1` est pinné (engines ≥ 18) et passe sur le Node 24 LTS du poste.
 - Lancer le serveur en arrière-plan et recharger la page suffit pour itérer sur `main.js` / `draw.js` / `convert.js` (pas de HMR).
