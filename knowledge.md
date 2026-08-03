@@ -10,30 +10,44 @@ The whole UI is one HTML page driving a `<canvas>`; HTML/CSS/JS are not transpil
 
 ## Quickstart
 
-- **Setup:** none (no `npm install`, no `package.json`).
+- **Setup:** none for the app itself (zero deps, no transpile). Dev tooling only: `npm ci` once (devDependency `playwright-core` for the smoke tests; `node_modules` is gitignored).
 - **Dev:** `python3 test_server.py` from the project root → serves on `http://localhost:8000/`, then open `main.html`. The script does a real bind-check (port + connect-back probe) and exits with an error if the port is taken.
-- **Test:** none. Syntax check only: `node --check main.js && node --check draw.js && node --check convert.js`.
-- **Lint / build:** none.
+- **Test:** `npm run check` — `node --check` on all `.js`/`.mjs` + the 6 browser smoke suites (auto-starts/stops the dev server). See « Dev tooling & CI » below.
+- **Lint:** none.
+- **Build (optional):** `npm run build:portable` → single-file offline `meshes-portable.html` (Option A of `PORTABILITE.md`); `npm run check:portable` validates it (rebuild + static checks + `file://` browser test). See « Dev tooling & CI » below.
 - **Headless import test:** `http://localhost:8000/main.html?autoimport=<base64-urlsafe-text>` triggers an auto-import of a meshes-formatted string (no file picker needed).
 
 ## Architecture
 
-Four source files + one Python dev server, plus assets:
+App: one HTML page driving **16 ES modules** (see the `main.html` script tags, topological order) + one Python dev server, plus assets. Dev tooling lives in `scripts/` (never shipped). Key files:
 
 | File | Rôle |
 |---|---|
-| `main.html` | Layout, CSS (toolbar, HUD, modales), declares the toolbar buttons + help modal + log overlay (`#messageBoard` with drag handle + SE resize grip). Mounts the JS. |
+| `main.html` | Layout, CSS (toolbar, HUD, modales), declares the toolbar buttons + help modal + log overlay (`#messageBoard` with drag handle + SE resize grip). Mounts the 16 JS modules. |
 | `main.js` | App logic: state (`ctx`, `shapes`, selection, zoom, pan, undo/redo), mouse/keyboard events, drawing, persistence, import/export. |
 | `draw.js` | Pure render primitives (points, lines, triangles, axes, grid). All coords go through `modelToScreen()`. |
 | `convert.js` | Parser: meshes-format text ↔ multi-shape JSON scene. Reads files via `FileReader` (this is why HTTP serving is mandatory). |
 | `test_server.py` | Threaded `http.server` on port 8000 with EADDRINUSE-diagnostics. |
-| `assets/` | `barre_boutons.png` (toolbar screenshot), `meshes-sample`, `mesh-1785093938339.json`, `alphabet2` (legacy example). |
+| `assets/` | `barre_boutons.png` (toolbar screenshot), `meshes-sample`, `mesh-1785093938339.json`, `alphabet2` (legacy example). `assets/favicon.svg` is the only asset referenced by the app (`<link rel="icon">`). |
+| `scripts/` | Dev tooling only (never shipped): `check.sh` (orchestrates `npm run check`), the 6 `smoke-*.mjs` suites + `smoke_lib.mjs` harness, and the portable toolchain `build-portable.mjs` + `check-portable.mjs`. See « Dev tooling & CI » below. |
 
 Data flow: `main.js` owns app state → calls render primitives in `draw.js` (post-transformation via `modelToScreen`) → user input updates state → main persists via `localStorage`.
 
+## Dev tooling & CI (npm scripts)
+
+| Script | What it does |
+|---|---|
+| `npm run check` | `bash scripts/check.sh` : `node --check` on all `.js`/`.mjs` (incl. `scripts/`) then the 6 smoke suites (`npm run smoke`) — starts/stops the dev server itself if port 8000 is free. |
+| `npm run smoke[:suite]` | 6 headless browser suites (preview, edit, import, gestures, modals, rotate) via `playwright-core` + harness `scripts/smoke_lib.mjs` (`CHROMIUM_PATH`, default `/usr/bin/chromium`). |
+| `npm run build:portable` | `node scripts/build-portable.mjs` : merges the 16 modules into a standalone `meshes-portable.html` (Option A of `PORTABILITE.md`) — inline module escapes the `file://` CORS, localStorage shim for Firefox, comments/blank lines stripped, `node --check` self-validated. Gitignored artifact, always regenerable; sources untouched. |
+| `npm run check:portable` | `node scripts/check-portable.mjs` : rebuild + static validation of the generated file (node --check of the merged script, zero residual import/export, zero blank line, shim, collision renames, source regexes verbatim) + `file://` browser test (load, click→point persisted, wheel zoom, reload restore, autoimport exercising convert.js regexes). |
+
+- **CI** (`.github/workflows/check.yml`, on every push) : `npm run check` then `npm run check:portable`, then **uploads the artifact** (`meshes-portable.html` + `assets/`) via `actions/upload-artifact@v7`. The upload is **restricted to branch `master`** (`if: github.ref == 'refs/heads/master'`) — validations run on every branch, but branches don't produce artifacts.
+- **CI policy** : actions pinned to v7 (checkout, setup-node, upload-artifact = Node 24 runtime; ≤ v4 ran on deprecated Node 20). Dependabot watches the `github-actions` ecosystem weekly (`.github/dependabot.yml`).
+
 ## Conventions
 
-- **No build / no transpile / no bundler.** Edits + browser reload = iteration. No HMR.
+- **No build / no transpile / no bundler.** Edits + browser reload = iteration. No HMR. Exception: the optional portable build (`npm run build:portable`) concatenates the modules into one HTML — it never modifies the sources.
 - **Y axis inverted.** `modelToScreen` flips Y so larger `model.y` renders higher on canvas (math-style). Mind this when touching pan or rotation math.
 - **`ctx` shape:** `{ center: {x,y}, viewCenter: {x,y}, zoomLevel: number }`. `center` is pixel position of model origin on canvas (in **CSS pixels**, never bitmap pixels); `viewCenter` is which model point is centered; `zoomLevel` is a multiplier (clamp `[0.1, 10]`).
 - **HiDPI:** the canvas bitmap is sized in **physical pixels** (`board.width = round(cssW × devicePixelRatio)`, boot + resize in main.js) for crisp rendering on retina displays, but ALL internal coordinates (mouse, hit-testing, `center`, `modelToScreen`) stay in **CSS pixels**. The CSS→physical conversion happens at two boundaries only: bitmap sizing in main.js, and a `setTransform(dpr,…)` applied in draw.js (`drawBoard` on the visible ctx, `renderSceneToOffscreen` on the offscreen). Never multiply CSS-px values by dpr in logic; use `getDevicePixelRatio()` (exported from draw.js) only where the bitmap size is set. See DESIGN.md §2.7.1.
@@ -55,7 +69,7 @@ Data flow: `main.js` owns app state → calls render primitives in `draw.js` (po
 - **localStorage is sticky across reloads.** Scene, grid step, zoom, *and* console visibility + frame position persist. Clear it from devtools between tests for a clean slate.
 - **`temp.json` is gitignored** — it's the browser's auto-download dump from `downloadMesh`; not part of the repo.
 - **`main.js` mutates `messageBoard.innerText`** heavily (one of the slowest DOM APIs). Acceptable here because the log is small, but avoid the pattern elsewhere.
-- **No tests / no lint.** The only automated guard is `node --check`. Treat visual verification in a browser as the test loop.
+- **No unit tests / no lint.** The automated guards are `npm run check` (syntax + 6 smoke suites) and `npm run check:portable` (portable build + `file://` test), wired into CI. Treat visual verification in a browser as the primary test loop for new interactions.
 - **Encoding:** meshes format uses `;` between vertices and `,` between coords; no locale, no units — raw floats.
 - **AltGr rotation pivot tracks cursor** in model space; still anchored to the cursor at the first tick of the gesture, but recomputed if the cursor moves mid-gesture (search `pivotScreen` in `main.js`).
 - **Undo/redo history** in `historyStack` / `redoStack` (capped at `MAX_HISTORY = 50`, oldest evicted). Call `updateUndoRedoHud()` after any mutation you make on those stacks — it syncs the `#undoCount` pill and the `disabled` attribute on the toolbar buttons. Keyboard shortcuts `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` and the toolbar `#undo` / `#redo` buttons share the same `undo()` / `redo()` functions (single source of truth). Both stacks persist to `meshesDesigner.undo` and are restored at boot by `loadState()` → `restoreUndoHistory()` (fingerprint `scene` must match the restored scene, else entries are discarded). Reinit points (memory + persisted): `resetAll()` and import REPLACE in `applyImport`; import MERGE KEEPS the stacks (`markUndoPersistDirty()` refreshes the fingerprint after the append). Whenever you mutate the stacks in a new code path, call `markUndoPersistDirty()` so the next `persistState()` rewrites the undo key.

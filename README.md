@@ -35,6 +35,49 @@ python3 test_server.py
 
 Le script `test_server.py` lance un serveur HTTP trivial sur le port 8000 (en thread daemon). Il vérifie que le port a bien été bindé et qu'il répond avant d'imprimer `Server is running`, et sort en erreur avec un message explicite si le port est déjà occupé.
 
+## Version portable (zéro serveur, zéro toolchain)
+
+En complément du mode serveur, un script de build — **Option A** de `PORTABILITE.md` — fabrique une **version portable** : un fichier `meshes-portable.html` unique et autonome, ouvrable en double-clic même en `file://`, sans serveur ni dépendance (transportable sur clé USB).
+
+### Générer
+
+```bash
+npm run build:portable          # équivalent à : node scripts/build-portable.mjs
+```
+
+Le fichier `meshes-portable.html` est écrit à la racine du projet. C'est un **artefact de build gitignoré, toujours régénérable** : les sources multi-fichiers restent canoniques, le script ne les modifie jamais.
+
+Pour **valider** la version portable (re-build + vérifications statiques + test navigateur en `file://`, sans serveur) :
+
+```bash
+npm run check:portable          # équivalent à : node scripts/check-portable.mjs
+```
+
+Le check relance d'abord le build (l'artefact validé est toujours frais), puis : `node --check` sur le script fusionné, zéro import/export résiduel, zéro ligne vide, shim `localStorage` et renommages présents, regex des sources présents byte-à-byte ; enfin un parcours navigateur en `file://` (chargement, création de point + persistance, zoom molette, rechargement, autoimport — qui exerce en direct les regex de `convert.js`). Même harnais que les smoke tests (`scripts/smoke_lib.mjs`, Chromium système via `CHROMIUM_PATH`).
+
+### Ce que fait le script
+
+1. **Fusion** : extrait les `<script type="module" src="…">` de `main.html` dans l'ordre topologique des tags, concatène les modules en un unique `<script type="module">` **inline** (un module inline n'est pas soumis au CORS `file://` — rien n'est fetché, c'est le blocage décrit en §1.1 de `PORTABILITE.md`), et supprime les imports/exports (renommages `import { state as _stateForShape }` et ré-exports `export { … }` gérés).
+2. **Shim `localStorage`** : Firefox lève `SecurityError` à l'accès sur `file://` ; un shim en tête du script bascule vers un stockage mémoire si l'accès lève (Chrome/Edge/Safari inchangés).
+3. **Allègement** : tous les commentaires (JS, CSS, HTML) sont retirés et les lignes vides comprimées — sans jamais toucher aux chaînes, template literals ni regex literals (heuristique regex-vs-division calibrée sur les sources). Le portable pèse ~210 Ko au lieu de ~347 Ko brut.
+4. **Assets** : le dossier `assets/` est copié à côté du fichier quand la sortie diffère de la racine (ex. `--out dist/`).
+5. **Auto-validation** : `node --check` sur chaque module strippé puis sur le script fusionné, détection des collisions de bindings top-level, et garde « aucun import/export résiduel » — le build échoue fort (fichier + ligne) plutôt que de livrer un portable cassé.
+
+### Options
+
+| Option | Effet |
+|---|---|
+| `--out <chemin>` | Fichier de sortie (défaut : `meshes-portable.html` à la racine). Avec un slash final (`--out dist/`), écrit `<dossier>/meshes-portable.html`. |
+| `--no-assets` | Ne copie pas le dossier `assets/`. |
+| `--keep-markers` | Conserve les marqueurs de débogage (banner + noms de modules + en-tête du shim). Par défaut, tous les commentaires sont retirés. |
+| `-h, --help` | Affiche l'aide du script. |
+
+### Utiliser / distribuer
+
+1. **Lancer** : double-clic sur `meshes-portable.html` → l'app démarre hors-ligne, sans serveur. Toutes les fonctions marchent : édition, zoom/pan, grille, persistance `localStorage`, import/export (le `FileReader` et les downloads fonctionnent sous `file://`, cf. `PORTABILITE.md` §1.3-1.4).
+2. **Garder le dossier `assets/` à côté du fichier** : le portable référence `assets/favicon.svg` (le favicon du `<link rel="icon">` — le seul asset utilisé par l'app) ; le reste du dossier (logo.svg, barre_boutons.png, meshes d'exemple) ne sert qu'au README du repo et aux imports. Le build copie `assets/` automatiquement quand la sortie est dans un autre dossier (`--out dist/`) ; à la racine du projet il est déjà présent. `--no-assets` ne doit être utilisé que si les assets sont inutiles pour l'usage visé.
+3. **Régénérer** après chaque modification des sources : `npm run build:portable` — l'artefact est gitignoré et toujours reconstruisible, les sources multi-fichiers restent la référence.
+
 ## Workflow type (exemple : un triangle)
 
 1. Lancer le serveur (`python3 test_server.py`) et ouvrir `http://localhost:8000/main.html`.
@@ -180,7 +223,7 @@ Un drop direct d'un fichier JSON sur le canvas déclenche aussi l'import.
   npm run smoke:rotate
   ```
   **Tout-en-un** : `npm run check` enchaîne `node --check` (syntaxe de tous les `.js`/`.mjs`) puis les six suites — le serveur dev est démarré (si le port 8000 est libre) puis arrêté automatiquement.
-  **CI** : `.github/workflows/check.yml` lance `npm run check` à chaque push (Chrome du runner via `CHROMIUM_PATH`). [![check](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml/badge.svg)](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml)
+  **CI** : `.github/workflows/check.yml` lance `npm run check` **et** `npm run check:portable` (rebuild + validation de l'artefact portable en `file://`) à chaque push, puis publie l'artefact portable validé (`meshes-portable.html` + `assets/`) en **artefact téléchargeable** — réservé à la branche `master` (les validations, elles, s'exécutent sur toutes les branches). Chrome du runner via `CHROMIUM_PATH`. [![check](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml/badge.svg)](https://github.com/herveheritier/vanillajs-meshes-designer/actions/workflows/check.yml)
   Le binaire Chromium est `CHROMIUM_PATH` (défaut `/usr/bin/chromium`) ; la base URL est le 1er argument des scripts. `playwright-core@1.49.1` est pinné (engines ≥ 18) et passe sur le Node 24 LTS du poste.
 - Lancer le serveur en arrière-plan et recharger la page suffit pour itérer sur `main.js` / `draw.js` / `convert.js` (pas de HMR).
 - Pour tester un import meshes sans picker (headless / script) :
