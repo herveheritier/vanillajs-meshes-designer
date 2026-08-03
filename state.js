@@ -49,6 +49,23 @@ export const state = {
     circleRadiusModel: 0,
     circleSegments: CIRCLE_DEFAULT_SEGMENTS,
 
+    // ===== Formes prédéfinies (panneau #shapes) =====
+    // Panneau flottant du bouton #shapes (liste des formes
+    // prédéfinies), ouvert/ferme par le bouton ou clic exterieur.
+    shapesPanelOpen: false,
+    // Outil de forme armé : shapeKind = 'rect' | 'square' | 'tri' |
+    // 'penta' | 'hexa' | 'star' (clé du catalogue SHAPE_DEFS). Une
+    // forme armée attend un geste clic + glisser sur le canvas :
+    //   - rect / square : shapeAnchorModel = 1er coin, courant = 2e coin
+    //   - polygones / étoile : shapeAnchorModel = centre,
+    //     shapeRadiusModel = rayon
+    // L'outil se désarme automatiquement après la création (comme le
+    // cercle) ou via Echap / re-clic sur le bouton.
+    shapeKind: undefined,
+    shapeAnchorModel: undefined,
+    shapeCurrentModel: undefined,
+    shapeRadiusModel: 0,
+
     // ===== Scene baseline (dirty reconciliation) =====
     // Fingerprint JSON de `state.shapes` capture a chaque evenement
     // qui pose un nouvel etat de reference propre :

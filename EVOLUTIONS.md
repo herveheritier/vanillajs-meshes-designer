@@ -1,8 +1,9 @@
 # evolutions
 ## évolutions à réaliser sur l'application
-- nouveau bouton ouvrant un liste compémentaire de boutons dont le rôle est de créer des formes prédéfinies
-- alignement des points sélectionnés
+- différents boutons pour force l'alignement des points sélectionnés
+- création d'un cercle percé d'un trou
 ## évolutions effectuées sur l'application (date, id de commit)
+- 03/08/2026 (10836b3) : création de formes prédéfinies (rectangle, carré, triangle, pentagone, hexagone, étoile) via un panneau de boutons complémentaire
 - 03/08/2026 (34b53ff) : le nombre de côtés du cercle est mémorisé d'une session à l'autre, et le raccourci C active le mode cercle
 - 03/08/2026 (b62aeec) : améliorations de l'outil cercle : le mode se désactive après chaque création, et la molette sur le bouton actif règle le nombre de côtés
 - 03/08/2026 (59f5fec) : création d'un cercle par génération de triangles (clic + glisser pour le rayon, molette pour le nombre de côtés)

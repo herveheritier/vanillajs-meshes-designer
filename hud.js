@@ -1,6 +1,7 @@
 // Rationale : voir DESIGN.md §1.2
 
 import { state } from './state.js'
+import { SHAPE_DEFS } from './constants.js'
 
 export const updateShapeHud = () => {
     const label = document.querySelector('#shapeLabel')
@@ -107,6 +108,26 @@ export const updateSceneStatus = () => {
     // survol souris : « nouvelleScene non sauvegardée » /
     // « mesh-wail sauvegardée ».
     status.setAttribute('title', ariaLabel)
+}
+
+export const updateShapesButton = () => {
+    const btn = document.querySelector('#shapes')
+    const text = document.querySelector('#shapesText')
+    if (btn) {
+        // Deux etats distincts : panneau ouvert (bordure inset, comme
+        // #triangleColor.color-panel-open) et outil arme (accent vert
+        // + libellé, comme #circle.circle-active).
+        btn.classList.toggle('shapes-panel-open', !!state.shapesPanelOpen)
+        btn.classList.toggle('shapes-armed', state.shapeKind !== undefined)
+        btn.setAttribute('aria-pressed', state.shapesPanelOpen ? 'true' : 'false')
+    }
+    // Libellé de la forme armee a cote de l'icone (meme langage que
+    // #circleText pour le nombre de cotes) ; vide quand rien n'est
+    // arme. textContent (pas innerHTML) : chaine statique.
+    if (text) {
+        const def = state.shapeKind !== undefined ? SHAPE_DEFS[state.shapeKind] : undefined
+        text.textContent = def ? def.label : ''
+    }
 }
 
 export const updateColorButtonState = () => {

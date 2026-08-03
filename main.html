@@ -904,6 +904,98 @@
                 color: rgb(55, 194, 0);
             }
 
+            /* Bouton Formes : ouvre le panneau des formes prédéfinies.
+               Deux etats distincts (cf. updateShapesButton) : panneau
+               ouvert (bordure inset verte, comme
+               #triangleColor.color-panel-open) et outil arme (accent
+               vert + libellé, comme #circle.circle-active). Structure
+               inline-flex identique a #grid / #reticle / #circle. */
+            #shapes {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+            }
+            #shapes #shapesText {
+                font-family: monospace;
+                font-size: 11px;
+                line-height: 1;
+                font-style: normal;
+                color: rgba(220, 220, 220, 0.55);
+                pointer-events: none;
+                white-space: nowrap;
+                transition: color 0.12s;
+            }
+            #toolbar #shapes.shapes-armed {
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border-color: rgba(55, 194, 0, 0.45);
+            }
+            #shapes.shapes-armed #shapesText {
+                color: rgb(55, 194, 0);
+            }
+            #toolbar #shapes.shapes-panel-open:not(:disabled) {
+                box-shadow: 0 0 0 2px rgba(55, 194, 0, 0.55) inset;
+            }
+
+            /* Panneau des formes prédéfinies : meme structure que
+               #triangleColorPanel (fond sombre, border subtile, position
+               absolue reglee en JS sous le bouton #shapes). Liste
+               verticale de boutons icone + libellé avec etats hover /
+               active heritant du theme de la toolbar. */
+            #shapesPanel {
+                position: absolute;
+                z-index: 60;
+                background-color: rgba(15, 15, 15, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 4px;
+                padding: 8px 10px;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                min-width: 170px;
+                backdrop-filter: blur(6px);
+                user-select: none;
+                font-family: monospace;
+                color: rgb(220, 220, 220);
+                box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+            }
+            #shapesPanel[hidden] {
+                display: none;
+            }
+            #shapesPanel .shapes-title {
+                font-size: 11px;
+                color: rgb(55, 194, 0);
+                margin-bottom: 2px;
+            }
+            #shapesPanel button {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                font-family: monospace;
+                font-size: 12px;
+                padding: 5px 8px;
+                background-color: rgba(255, 255, 255, 0.05);
+                color: rgb(220, 220, 220);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 3px;
+                cursor: pointer;
+                transition: background-color 0.10s, border-color 0.10s, color 0.10s;
+            }
+            #shapesPanel button:hover {
+                background-color: rgba(255, 255, 255, 0.12);
+                border-color: rgba(255, 255, 255, 0.40);
+                color: rgb(255, 255, 255);
+            }
+            #shapesPanel button:active {
+                color: rgb(55, 194, 0);
+                border-color: rgb(55, 194, 0);
+            }
+            #shapesPanel button svg {
+                width: 14px;
+                height: 14px;
+                display: block;
+            }
+
             /* body.preview-mode : masque TOUTE la chrome de l'editeur
                pour ne laisser que le canvas propre (geometrie seule).
                Cibles : toolbar (boutons), messageBoard (console),
@@ -924,6 +1016,7 @@
             body.preview-mode #fpsDisplay,
             body.preview-mode #sceneStatus,
             body.preview-mode #triangleColorPanel,
+            body.preview-mode #shapesPanel,
             body.preview-mode .modal {
                 display: none !important;
             }
@@ -1316,6 +1409,16 @@
                      meme langage que #gridText), Echap ou re-clic = quitter,
                      clic droit / Backspace = annuler le trace en cours. -->
                 <button id="circle" title="Créer un cercle (raccourci C ; clic + glisser : centre puis rayon ; molette sur le bouton ou le canvas = nombre de côtés ; Échap = quitter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="8" x2="12.5" y2="8"/><circle cx="8" cy="8" r="0.8" fill="currentColor" stroke="none"/></svg><span id="circleText"></span></button>
+                <!-- Formes prédéfinies : ouvre un panneau (meme pattern
+                     que #triangleColorPanel) listant des formes a creer :
+                     rectangle, carre, polygones reguliers (triangle,
+                     pentagone, hexagone), etoile. Choisir une forme arme
+                     l'outil (bouton vert + libelle) : clic + glisser sur
+                     le canvas = ancre (coin pour rect/carre, centre sinon)
+                     puis taille ; le relâchement cree la forme et desarme
+                     l'outil. Echap ferme le panneau ou desarme ; clic
+                     droit / Backspace annulent le trace en cours. -->
+                <button id="shapes" title="Créer des formes prédéfinies (rectangle, carré, polygones, étoile) : ouvrir la liste puis clic + glisser sur le canvas"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.7 3.4 3.8.6-2.7 2.7.6 3.8-3.4-1.8-3.4 1.8.6-3.8L2.5 6l3.8-.6z"/></svg><span id="shapesText"></span></button>
             </div>
             <span class="toolbar-sep"></span>
             <!-- Groupe "Undo/redo" : miroite les raccourcis clavier
@@ -1407,6 +1510,20 @@
             </div>
             <button id="triangleColorReset" type="button" title="Effacer la couleur personnalisée">Reset</button>
         </div>
+        <!-- Panneau des formes prédéfinies : liste verticale de boutons
+             icone + libellé, chacun armant l'outil correspondant
+             (wireShapesPanel dans editor.js). Structure calquee sur
+             #triangleColorPanel (position absolue sous le bouton
+             #shapes, fermeture au clic exterieur / Echap). -->
+        <div id="shapesPanel" hidden>
+            <div class="shapes-title">Formes prédéfinies</div>
+            <button type="button" data-shape="rect" title="Créer un rectangle (clic + glisser : deux coins)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="10" height="8"/></svg><span>Rectangle</span></button>
+            <button type="button" data-shape="square" title="Créer un carré (clic + glisser : deux coins)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg><span>Carré</span></button>
+            <button type="button" data-shape="tri" title="Créer un triangle équilatéral (clic + glisser : centre puis rayon)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3l5 9H3z"/></svg><span>Triangle</span></button>
+            <button type="button" data-shape="penta" title="Créer un pentagone régulier (clic + glisser : centre puis rayon)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5l4.9 3.6-1.9 5.8H5l-1.9-5.8z"/></svg><span>Pentagone</span></button>
+            <button type="button" data-shape="hexa" title="Créer un hexagone régulier (clic + glisser : centre puis rayon)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l5.2 3v6L8 14l-5.2-3V5z"/></svg><span>Hexagone</span></button>
+            <button type="button" data-shape="star" title="Créer une étoile à 5 branches (clic + glisser : centre puis rayon)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.7 3.4 3.8.6-2.7 2.7.6 3.8-3.4-1.8-3.4 1.8.6-3.8L2.5 6l3.8-.6z"/></svg><span>Étoile</span></button>
+        </div>
         <div id="messageBoard">
             <!-- Bandeau de titre : un mousedown declenche un drag
                  (mouvement du cadre via mousemove document-level).
@@ -1471,6 +1588,7 @@
                     <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; Échap, P ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>
                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle</span></div>
                     <div class="help-row"><kbd class="kbd wide">Cercle (bouton)</kbd><span>mode de création d'un cercle par génération de triangles : clic + glisser (1er clic = centre, relâcher = rayon) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
+                    <div class="help-row"><kbd class="kbd wide">Formes (bouton)</kbd><span>ouvre la liste des formes prédéfinies (rectangle, carré, triangle, pentagone, hexagone, étoile) : choisir une forme puis clic + glisser sur le canvas (coin ou centre puis taille) ; Échap = fermer le panneau ou annuler l'outil, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd wide">Molette</kbd><span>zoomer (centre sur le curseur) ; pivoter si 2+ points sont selectionnes</span></div>
                     <!-- Modificateurs souris pour la selection point-par-point.

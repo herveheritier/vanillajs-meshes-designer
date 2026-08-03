@@ -9,9 +9,10 @@ import {
     TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU,
     POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
     CIRCLE_MIN_RADIUS_PX,
+    SHAPE_DEFS, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO,
 } from './constants.js'
 import { drawBoard, drawPoint, drawMouse, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
-import { updateSelectionHud, updateColorButtonState, updateCircleButton } from './hud.js'
+import { updateSelectionHud, updateColorButtonState, updateCircleButton, updateShapesButton } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
 import {
@@ -19,7 +20,7 @@ import {
     activeTriangles, getAllVertices, getPointsAtSamePosition, getVertexIndex, getStackTriangleRefs, isPointSelected,
     getIndicesAtSamePosition,
     adjacentPoints, computeOrthogonalProjection, isInsideSegmentByDot,
-    circleGeometry,
+    circleGeometry, rectGeometry, starGeometry,
 } from './geometry.js'
 import { saveState, movePointsPatch, insertPointPatch, replaceShapePatch, setFillsPatch, cloneShape } from './history.js'
 import { persistState, importMeshFromFile } from './io.js'
@@ -202,7 +203,11 @@ export const updateMouseHover = (cursorScreen) => {
     // limite au HUD coordonnees + au repaint : la previsualisation
     // du cercle est dessinee dans le calque transitoire (draw.js
     // renderTransient), drawMouse repeint le curseur.
-    if (state.circleMode) {
+    // Mode cercle OU forme predéfinie armee : meme traitement — les
+    // overlays de survol (point le plus proche, labels, highlights)
+    // sont du bruit pendant la construction ; seule la preview
+    // (renderTransient) + le curseur sont dessines.
+    if (state.circleMode || state.shapeKind !== undefined) {
         drawBoard()
         drawMouse(cursorScreen)
         return
@@ -491,6 +496,9 @@ export const toggleCircleMode = () => {
 }
 
 const enterCircleMode = () => {
+    // Exclusion mutuelle avec l'outil forme predéfinie : un seul geste
+    // de creation actif a la fois.
+    if (state.shapeKind !== undefined) disarmShapeTool()
     state.circleMode = true
     state.currentAction = ACTION_NONE
     updateCircleButton()
@@ -599,6 +607,226 @@ export const createCircle = (center, radius, segments) => {
     // rafraichissement final.
     exitCircleMode()
     persistState()
+}
+
+// ===== Formes prédéfinies (panneau #shapes) =====
+//
+// Le bouton #shapes ouvre un panneau flottant (meme pattern que
+// #triangleColorPanel : positionne sous le bouton, ferme au clic
+// exterieur / Echap) listant des formes prédéfinies : rectangle,
+// carre, polygones reguliers (triangle, pentagone, hexagone) et
+// etoile. Choisir une forme arme l'outil (bouton en accent vert +
+// libellé, panneau ferme) : le geste clic + glisser sur le canvas
+// pose l'ancre (1er coin pour rect/carre, centre pour les autres)
+// puis la taille ; le relâchement genere la forme (points + triangles)
+// et desarme l'outil (comme le cercle). Echap ferme le panneau ou
+// desarme l'outil sans creer ; clic droit / Backspace annulent le
+// trace en cours sans desarmer.
+
+export const openShapesPanel = () => {
+    const btn = document.querySelector('#shapes')
+    const panel = document.querySelector('#shapesPanel')
+    if (!btn || !panel) return
+    const rect = btn.getBoundingClientRect()
+    panel.style.top = (rect.bottom + 4) + 'px'
+    panel.style.left = rect.left + 'px'
+    panel.hidden = false
+    state.shapesPanelOpen = true
+    updateShapesButton()
+}
+
+export const closeShapesPanel = () => {
+    const panel = document.querySelector('#shapesPanel')
+    if (panel) panel.hidden = true
+    state.shapesPanelOpen = false
+    updateShapesButton()
+}
+
+export const toggleShapesPanel = () => {
+    if (state.shapesPanelOpen) closeShapesPanel()
+    else openShapesPanel()
+}
+
+// Arme l'outil pour une forme du panneau : ferme le panneau et attend
+// le geste clic + glisser. Reste arme jusqu'a la creation (desarme
+// automatique) ou Echap (annulation).
+export const armShapeTool = (kind) => {
+    if (!SHAPE_DEFS[kind]) return
+    // Exclusion mutuelle avec le mode cercle (un seul geste de
+    // creation actif a la fois).
+    if (state.circleMode) exitCircleMode()
+    state.shapesPanelOpen = false
+    const panel = document.querySelector('#shapesPanel')
+    if (panel) panel.hidden = true
+    state.shapeKind = kind
+    state.shapeAnchorModel = undefined
+    state.shapeCurrentModel = undefined
+    state.shapeRadiusModel = 0
+    state.currentAction = ACTION_NONE
+    updateShapesButton()
+    log(`Forme armee : ${SHAPE_DEFS[kind].label} (clic + glisser pour la taille)`)
+    requestDraw()
+}
+
+export const disarmShapeTool = () => {
+    if (state.shapeKind === undefined) return
+    state.shapeKind = undefined
+    state.shapeAnchorModel = undefined
+    state.shapeCurrentModel = undefined
+    state.shapeRadiusModel = 0
+    updateShapesButton()
+    log('Outil forme desarme')
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+}
+
+export const beginShapeGesture = (e) => {
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    const rawAnchor = screenToModel(mouseScreen)
+    const anchor = state.activeGrid ? snapToGrid(rawAnchor) : rawAnchor
+    state.shapeAnchorModel = { x: anchor.x, y: anchor.y }
+    state.shapeCurrentModel = { x: anchor.x, y: anchor.y }
+    state.shapeRadiusModel = 0
+    requestDraw()
+}
+
+const updateShapeGesture = (mouseScreen) => {
+    if (state.shapeKind === undefined || !state.shapeAnchorModel) return
+    const rawCurrent = screenToModel(mouseScreen)
+    const current = state.activeGrid ? snapToGrid(rawCurrent) : rawCurrent
+    state.shapeCurrentModel = { x: current.x, y: current.y }
+    state.shapeRadiusModel = Math.hypot(
+        current.x - state.shapeAnchorModel.x,
+        current.y - state.shapeAnchorModel.y,
+    )
+    requestDraw()
+}
+
+export const cancelShapeGesture = () => {
+    state.shapeAnchorModel = undefined
+    state.shapeCurrentModel = undefined
+    state.shapeRadiusModel = 0
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+}
+
+export const commitShapeGesture = (e) => {
+    if (state.shapeKind === undefined || !state.shapeAnchorModel) return
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    updateShapeGesture(mouseScreen)
+    const kind = state.shapeKind
+    const anchor = state.shapeAnchorModel
+    const current = state.shapeCurrentModel
+    const radius = state.shapeRadiusModel
+    state.shapeAnchorModel = undefined
+    state.shapeCurrentModel = undefined
+    state.shapeRadiusModel = 0
+    const minSizePx = CIRCLE_MIN_RADIUS_PX
+    if (kind === 'rect' || kind === 'square') {
+        const dx = current.x - anchor.x
+        const dy = current.y - anchor.y
+        if (Math.abs(dx) * state.ctx.zoomLevel < minSizePx && Math.abs(dy) * state.ctx.zoomLevel < minSizePx) {
+            log('Forme ignoree : taille trop petite')
+            requestDraw()
+            return
+        }
+        let corner2 = current
+        if (kind === 'square') {
+            const side = Math.max(Math.abs(dx), Math.abs(dy))
+            corner2 = { x: anchor.x + (dx < 0 ? -side : side), y: anchor.y + (dy < 0 ? -side : side) }
+        }
+        createShape(kind, anchor, corner2, 0)
+    } else {
+        if (radius * state.ctx.zoomLevel < minSizePx) {
+            log('Forme ignoree : taille trop petite')
+            requestDraw()
+            return
+        }
+        createShape(kind, anchor, undefined, radius)
+    }
+}
+
+// Commite une forme dans la forme active : append du pointList et des
+// tris de la geometrie du kind (indices decales du nombre de points
+// existants) + entry d'historique replaceShape (meme pattern que
+// createCircle / deleteSelectedPoint), puis desarme automatiquement
+// (un geste = une forme, comme le cercle).
+export const createShape = (kind, anchor, current, radius) => {
+    const shapeIdx = state.activeShapeIndex
+    const shape = activeShape()
+    const clonedBefore = cloneShape(shape)
+    let geometry
+    if (kind === 'rect' || kind === 'square') {
+        geometry = rectGeometry(anchor, current)
+    } else if (kind === 'star') {
+        geometry = starGeometry(anchor, radius, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO)
+    } else {
+        const n = { tri: 3, penta: 5, hexa: 6 }[kind]
+        geometry = circleGeometry(anchor, radius, n)
+    }
+    const base = shape.pointList.length
+    for (let i = 0; i < geometry.pointList.length; i++) {
+        shape.pointList.push({ x: geometry.pointList[i].x, y: geometry.pointList[i].y })
+    }
+    for (let i = 0; i < geometry.tris.length; i++) {
+        shape.tris.push({
+            p1: geometry.tris[i].p1 + base,
+            p2: geometry.tris[i].p2 + base,
+            p3: geometry.tris[i].p3 + base,
+        })
+    }
+    const clonedAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            clonedBefore.pointList, clonedBefore.tris,
+            clonedAfter.pointList, clonedAfter.tris,
+        )],
+    })
+    state.nearestPoint = undefined
+    state.nearestLine = undefined
+    log(`${SHAPE_DEFS[kind].label} cree : ${geometry.pointList.length} points, ${geometry.tris.length} triangles`)
+    disarmShapeTool()
+    persistState()
+}
+
+// Cablage du panneau #shapes : bouton (ouvrir/fermer/desarmer) +
+// boutons de formes (armer) + fermeture au clic exterieur (meme
+// pattern que wireTriangleColorPanel).
+export const wireShapesPanel = () => {
+    const btn = document.querySelector('#shapes')
+    const panel = document.querySelector('#shapesPanel')
+    if (!btn || !panel) return
+    btn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        if (state.shapesPanelOpen) {
+            closeShapesPanel()
+        } else if (state.shapeKind !== undefined) {
+            disarmShapeTool()
+        } else {
+            openShapesPanel()
+        }
+    })
+    panel.querySelectorAll('button[data-shape]').forEach((shapeBtn) => {
+        shapeBtn.addEventListener('click', (e) => {
+            if (e.button !== 0) return
+            armShapeTool(shapeBtn.dataset.shape)
+        })
+    })
+    document.addEventListener('mousedown', (e) => {
+        if (!state.shapesPanelOpen) return
+        const target = e.target
+        if (!target) return
+        if (panel.contains(target)) return
+        if (btn.contains(target)) return
+        closeShapesPanel()
+    })
 }
 
 // ===== Mouseup (selection par click sur point) =====
@@ -1396,6 +1624,15 @@ export const resolveMouseMoveOnBoard = (e) => {
     // cercle.
     if (state.circleMode && !state.previewMode) {
         updateCircleGesture(mouseScreen)
+        state.lastMousePos = mouseScreen
+        updateMouseHover(mouseScreen)
+        return
+    }
+    // Forme predéfinie armee : le glisser regle la taille (coin oppose
+    // pour rect/carre, rayon pour les polygones/etoile). Meme pattern
+    // que le cercle : preview via renderTransient + HUD coordonnees.
+    if (state.shapeKind !== undefined && !state.previewMode) {
+        updateShapeGesture(mouseScreen)
         state.lastMousePos = mouseScreen
         updateMouseHover(mouseScreen)
         return

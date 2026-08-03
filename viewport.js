@@ -345,12 +345,15 @@ export const applyPreviewMode = () => {
         state.nearestPoint = undefined
         state.nearestLine = undefined
         state.nearestTriangle = undefined
-        // Un trace de cercle en cours ne doit pas survivre a l'entree
-        // en preview : a la sortie, on retomberait sur un centre
-        // fantome. Le mode lui-meme reste actif (toggle de vue), seul
-        // le geste est abandonne.
+        // Un trace de cercle ou de forme en cours ne doit pas survivre
+        // a l'entree en preview : a la sortie, on retomberait sur une
+        // ancre fantome. L'outil lui-meme reste arme (toggle de vue),
+        // seul le geste est abandonne.
         state.circleCenterModel = undefined
         state.circleRadiusModel = 0
+        state.shapeAnchorModel = undefined
+        state.shapeCurrentModel = undefined
+        state.shapeRadiusModel = 0
     }
     // force le re-render offscreen : la scene stable (grille / axes /
     // points de controle) change avec previewMode, il faut donc

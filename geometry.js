@@ -1,7 +1,7 @@
 // Rationale : voir DESIGN.md §3.2
 
 import { state } from './state.js'
-import { TAU, CIRCLE_DEFAULT_SEGMENTS } from './constants.js'
+import { TAU, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO } from './constants.js'
 
 // ===== Snap =====
 export const snapToGrid = (point) => {
@@ -203,6 +203,61 @@ export const circleGeometry = (center, radius, segments) => {
             y: center.y + radius * Math.sin(a),
         })
         tris.push({ p1: 0, p2: i + 1, p3: ((i + 1) % n) + 1 })
+    }
+    return { pointList, tris }
+}
+
+// ===== Rectangle (2 coins) =====
+//
+// Fabrique la geometrie canonique d'un rectangle axis-aligned a partir
+// de deux coins opposes (ordre quelconque). 4 points (coins, ordre
+// horaire depuis le coin haut-gauche) + 2 triangles le long de la
+// diagonale p0-p2. Fonction pure (aucun acces a state).
+export const rectGeometry = (corner1, corner2) => {
+    const x1 = Math.min(corner1.x, corner2.x)
+    const y1 = Math.min(corner1.y, corner2.y)
+    const x2 = Math.max(corner1.x, corner2.x)
+    const y2 = Math.max(corner1.y, corner2.y)
+    return {
+        pointList: [
+            { x: x1, y: y1 },
+            { x: x2, y: y1 },
+            { x: x2, y: y2 },
+            { x: x1, y: y2 },
+        ],
+        tris: [
+            { p1: 0, p2: 1, p3: 2 },
+            { p1: 0, p2: 2, p3: 3 },
+        ],
+    }
+}
+
+// ===== Etoile (eventail depuis le centre) =====
+//
+// Fabrique la geometrie canonique d'une etoile a `points` branches :
+// 1 sommet central + 2×points sommets alternant exterieur (rayon
+// externe) et interieur (rayon interne = innerRatio × rayon externe),
+// puis 2×points triangles en eventail (centre, exterieur_i, interieur_i)
+// et (centre, interieur_i, exterieur_{i+1}). Le premier pic pointe
+// vers le haut (decalage -PI/2, convention Y inverse de l'app : un
+// model.y plus grand rend en haut). Fonction pure.
+export const starGeometry = (center, radius, points = SHAPE_STAR_POINTS, innerRatio = SHAPE_STAR_INNER_RATIO) => {
+    const n = Math.max(3, Math.round(points) || SHAPE_STAR_POINTS)
+    const rInner = Math.max(0.05, Math.min(0.95, innerRatio)) * radius
+    const pointList = [{ x: center.x, y: center.y }]
+    const tris = []
+    for (let i = 0; i < n; i++) {
+        const aOuter = (i / n) * TAU - Math.PI / 2
+        const aInner = ((i + 0.5) / n) * TAU - Math.PI / 2
+        pointList.push({ x: center.x + radius * Math.cos(aOuter), y: center.y + radius * Math.sin(aOuter) })
+        pointList.push({ x: center.x + rInner * Math.cos(aInner), y: center.y + rInner * Math.sin(aInner) })
+    }
+    for (let i = 0; i < n; i++) {
+        const outer = 1 + 2 * i
+        const inner = 1 + 2 * i + 1
+        const nextOuter = 1 + (2 * (i + 1)) % (2 * n)
+        tris.push({ p1: 0, p2: outer, p3: inner })
+        tris.push({ p1: 0, p2: inner, p3: nextOuter })
     }
     return { pointList, tris }
 }

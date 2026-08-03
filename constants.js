@@ -60,6 +60,26 @@ export const CIRCLE_DEFAULT_SEGMENTS = 24
 // hit-testing, pour une sensation constante a tous les zooms.
 export const CIRCLE_MIN_RADIUS_PX = 5
 
+// ===== Formes predéfinies (panneau #shapes) =====
+// Catalogue des formes proposees par le panneau (bouton #shapes).
+// kind -> label francais court affiche sur le bouton quand l'outil
+// est arme. La generation geometrique est deleguee par kind :
+//   - rect   : rectangle par 2 coins (rectGeometry)
+//   - square : carre (cote = max(|dx|,|dy|), signe preserve)
+//   - tri / penta / hexa : polygones reguliers = circleGeometry(n)
+//   - star   : etoile (starGeometry, 5 branches)
+export const SHAPE_DEFS = {
+    rect:   { label: 'rectangle' },
+    square: { label: 'carré' },
+    tri:    { label: 'triangle' },
+    penta:  { label: 'pentagone' },
+    hexa:   { label: 'hexagone' },
+    star:   { label: 'étoile' },
+}
+// Etoile : nombre de branches + ratio rayon interne / rayon externe.
+export const SHAPE_STAR_POINTS = 5
+export const SHAPE_STAR_INNER_RATIO = 0.4
+
 export const MAX_HISTORY = 50
 
 export const MIN_ZOOM = 0.1

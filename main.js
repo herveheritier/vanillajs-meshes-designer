@@ -6,7 +6,7 @@ import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
     updateSelectionModeButton, updateColorButtonState, updateAccessibilityLabels, updateSceneStatus,
-    updateCircleButton,
+    updateCircleButton, updateShapesButton,
 } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import {
@@ -15,6 +15,8 @@ import {
     processMouseUpSelection, processRightClickSelection, wireBoardDrop,
     wireTriangleColorPanel, hideTriangleColorPanel,
     toggleCircleMode, beginCircleGesture, commitCircleGesture, cancelCircleGesture, exitCircleMode,
+    wireShapesPanel, beginShapeGesture, commitShapeGesture, cancelShapeGesture,
+    disarmShapeTool, closeShapesPanel,
 } from './editor.js'
 import { undo, redo } from './history.js'
 import {
@@ -150,6 +152,7 @@ wireBoardDrop()
 wireBoardWheel()
 wireBeforeUnload()
 wireTriangleColorPanel()
+wireShapesPanel()
 
 // ===== Toolbar buttons =====
 
@@ -249,6 +252,20 @@ document.addEventListener('mousedown', (e) => {
             return
         }
     }
+    // Forme predéfinie armee : le clic gauche commence le trace (ancre
+    // = coin pour rect/carre, centre sinon), le clic droit annule le
+    // trace en cours sans desarmer ; le clic milieu garde son role de
+    // pan (branche e.button === 1 plus bas).
+    if (state.shapeKind !== undefined && !state.previewMode) {
+        if (e.button === 0) {
+            beginShapeGesture(e)
+            return
+        }
+        if (e.button === 2) {
+            cancelShapeGesture()
+            return
+        }
+    }
     const mousePos = {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
@@ -287,6 +304,13 @@ document.addEventListener('mouseup', (e) => {
         commitCircleGesture(e)
         return
     }
+    // Forme predéfinie armee : le relachement du clic gauche commite la
+    // forme (taille = coin oppose ou rayon au release). Retour avant la
+    // logique de selection-box (jamais armee en mode forme).
+    if (state.shapeKind !== undefined && !state.previewMode && e.button === 0) {
+        commitShapeGesture(e)
+        return
+    }
     const boardTarget = e.target && e.target.id === 'board'
     if (state.isSelectingBox) {
         if (boardTarget && state.selectionBoxStart && state.selectionBoxCurrent) {
@@ -310,11 +334,12 @@ document.addEventListener('mouseup', (e) => {
         state.selectionBoxStart = undefined
         state.selectionBoxCurrent = undefined
     }
-    if (!wasGrabbing && e.button === 2 && boardTarget && !state.previewMode && !state.circleMode && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+    if (!wasGrabbing && e.button === 2 && boardTarget && !state.previewMode && !state.circleMode && state.shapeKind === undefined && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         // If no grab target was armed, a plain right click still has
         // selection semantics (including empty-space deselection).
-        // En mode cercle, le clic droit a deja ete consomme par
-        // cancelCircleGesture (mousedown) : on ne re-selectionne pas.
+        // En mode cercle / forme armee, le clic droit a deja ete
+        // consomme par cancelCircleGesture / cancelShapeGesture
+        // (mousedown) : on ne re-selectionne pas.
         processRightClickSelection(e)
     }
 })
@@ -330,6 +355,13 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Backspace' && state.circleMode && !state.previewMode) {
         e.preventDefault()
         cancelCircleGesture()
+        return
+    }
+    // Forme armee : Backspace annule le trace en cours (comme le clic
+    // droit) au lieu de supprimer un point — la construction prime.
+    if (e.code === 'Backspace' && state.shapeKind !== undefined && !state.previewMode) {
+        e.preventDefault()
+        cancelShapeGesture()
         return
     }
     if (e.code === 'Backspace' && !state.previewMode) {
@@ -384,6 +416,14 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Escape' && !e.repeat && state.circleMode) {
         e.preventDefault()
         exitCircleMode()
+        return
+    }
+    // Panneau #shapes : Echap ferme le panneau ouvert, sinon désarme
+    // l'outil forme (annule le geste sans creer).
+    if (e.code === 'Escape' && !e.repeat && (state.shapesPanelOpen || state.shapeKind !== undefined)) {
+        e.preventDefault()
+        if (state.shapesPanelOpen) closeShapesPanel()
+        else disarmShapeTool()
         return
     }
     if (e.code === 'Escape' && !e.repeat && (isHelpOpen || isResetOpen || isDeleteShapeOpen || isMergeErrorOpen)) {
@@ -464,6 +504,7 @@ const doit = () => {
     updateSceneStatus()
     updateColorButtonState()
     updateCircleButton()
+    updateShapesButton()
     log('App ready')
 }
 

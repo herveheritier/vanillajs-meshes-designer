@@ -19,6 +19,7 @@ import {
     COLOR_SELECTION_BOX_FILL,
     COLOR_SELECTION_BOX_STROKE,
     COLOR_CIRCLE_PREVIEW,
+    SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO,
     PATTERN_AXIS,
     PATTERN_LINES,
     PATTERN_LINES_INACTIVE,
@@ -354,6 +355,49 @@ const renderTransient = () => {
     // circleCenterModel/circleRadiusModel), pas du modele — il vit ici
     // et non dans l'offscreen de la scene stable.
     if (state.circleMode && state.circleCenterModel) drawCirclePreview()
+    // Forme predéfinie armee (panneau #shapes) : meme principe —
+    // previsualisation transitoire du geste en cours.
+    if (state.shapeKind !== undefined && state.shapeAnchorModel) drawShapeToolPreview()
+}
+
+// ===== Previews transitoires de creation (cercle + formes) =====
+
+// Socle radial partage (cercle + formes radiales) : cercle vrai en
+// pointilles (frontiere du disque approxime) + ligne de rayon +
+// marqueur de centre, en pixels ecran.
+const drawRadialBase = (center, radius) => {
+    const sp = modelToScreen(center)
+    const zoom = state.ctx.zoomLevel
+    state._ctx.setLineDash([4, 4])
+    state._ctx.strokeStyle = COLOR_CIRCLE_PREVIEW
+    state._ctx.beginPath()
+    state._ctx.arc(sp.x, sp.y, radius * zoom, 0, TAU)
+    state._ctx.stroke()
+    state._ctx.setLineDash([])
+    state._ctx.beginPath()
+    state._ctx.moveTo(sp.x, sp.y)
+    state._ctx.lineTo(sp.x + radius * zoom, sp.y)
+    state._ctx.stroke()
+    state._ctx.beginPath()
+    state._ctx.arc(sp.x, sp.y, 3, 0, TAU)
+    state._ctx.stroke()
+}
+
+// Polyline fermee a travers des points SCREEN (outline du polygone
+// genere) — les sommets sont calcules en model coords avec la MEME
+// formule que la creation puis projetés (Y inverse gere par
+// modelToScreen) : WYSIWYG strict entre la preview et le commit.
+const strokeScreenPolyline = (pts) => {
+    if (!pts || pts.length === 0) return
+    state._ctx.setLineDash([])
+    state._ctx.strokeStyle = COLOR_CIRCLE_PREVIEW
+    state._ctx.beginPath()
+    for (let i = 0; i < pts.length; i++) {
+        if (i === 0) state._ctx.moveTo(pts[i].x, pts[i].y)
+        else state._ctx.lineTo(pts[i].x, pts[i].y)
+    }
+    state._ctx.closePath()
+    state._ctx.stroke()
 }
 
 // Previsualisation du cercle en cours de tracé (mode cercle) :
@@ -361,51 +405,78 @@ const renderTransient = () => {
 // repaint sans invalider le cache offscreen. Montre ce qui SERA
 // genere : le cercle vrai (arc en pointilles) + le polygone des N
 // cotes (la frontiere de l'eventail de triangles) + la ligne de rayon
-// + le marqueur de centre. Les sommets du polygone sont calculés en
-// model coords avec la MÊME formule que circleGeometry (geometry.js)
-// puis projetés — WYSIWYG strict entre la preview et la creation.
+// + le marqueur de centre.
 const drawCirclePreview = () => {
     const center = state.circleCenterModel
     const r = state.circleRadiusModel
     if (!center || r <= 0) return
-    const sp = modelToScreen(center)
-    const zoom = state.ctx.zoomLevel
     const n = Math.max(3, Math.round(state.circleSegments) || 24)
-
-    // Cercle vrai (frontiere du disque approxime), en pointilles.
-    state._ctx.setLineDash([4, 4])
-    state._ctx.strokeStyle = COLOR_CIRCLE_PREVIEW
-    state._ctx.beginPath()
-    state._ctx.arc(sp.x, sp.y, r * zoom, 0, TAU)
-    state._ctx.stroke()
-
-    // Polygone des N cotes — la frontiere de l'eventail.
     const rim = []
     for (let i = 0; i < n; i++) {
         const a = (i / n) * TAU
         rim.push(modelToScreen({ x: center.x + r * Math.cos(a), y: center.y + r * Math.sin(a) }))
     }
-    state._ctx.setLineDash([])
-    state._ctx.strokeStyle = COLOR_CIRCLE_PREVIEW
-    state._ctx.beginPath()
-    for (let i = 0; i <= n; i++) {
-        const s = rim[i % n]
-        if (i === 0) state._ctx.moveTo(s.x, s.y)
-        else state._ctx.lineTo(s.x, s.y)
+    drawRadialBase(center, r)
+    strokeScreenPolyline(rim)
+}
+
+// Previsualisation de la forme predéfinie armee (panneau #shapes) :
+// WYSIWYG strict avec la creation — rectangle/carre = contour des 2
+// coins (le carre applique la meme regle max(|dx|,|dy|) que la
+// creation), polygones reguliers = socle radial du n-cote, etoile =
+// contour des sommets alternes exterieur/interieur.
+const drawShapeToolPreview = () => {
+    const kind = state.shapeKind
+    const anchor = state.shapeAnchorModel
+    const current = state.shapeCurrentModel
+    const radius = state.shapeRadiusModel
+    if (!kind || !anchor || !current || radius <= 0) return
+    if (kind === 'rect' || kind === 'square') {
+        let c2 = current
+        if (kind === 'square') {
+            const dx = current.x - anchor.x
+            const dy = current.y - anchor.y
+            const side = Math.max(Math.abs(dx), Math.abs(dy))
+            c2 = { x: anchor.x + (dx < 0 ? -side : side), y: anchor.y + (dy < 0 ? -side : side) }
+        }
+        const s1 = modelToScreen(anchor)
+        const s2 = modelToScreen(c2)
+        state._ctx.setLineDash([4, 4])
+        state._ctx.strokeStyle = COLOR_CIRCLE_PREVIEW
+        state._ctx.beginPath()
+        state._ctx.rect(
+            Math.min(s1.x, s2.x),
+            Math.min(s1.y, s2.y),
+            Math.abs(s2.x - s1.x),
+            Math.abs(s2.y - s1.y),
+        )
+        state._ctx.stroke()
+        return
     }
-    state._ctx.closePath()
-    state._ctx.stroke()
-
-    // Ligne de rayon (du centre au bord, vers +x).
-    state._ctx.beginPath()
-    state._ctx.moveTo(sp.x, sp.y)
-    state._ctx.lineTo(sp.x + r * zoom, sp.y)
-    state._ctx.stroke()
-
-    // Marqueur de centre.
-    state._ctx.beginPath()
-    state._ctx.arc(sp.x, sp.y, 3, 0, TAU)
-    state._ctx.stroke()
+    if (kind === 'star') {
+        const n = SHAPE_STAR_POINTS
+        const rInner = SHAPE_STAR_INNER_RATIO * radius
+        const pts = []
+        for (let i = 0; i < n; i++) {
+            const aOuter = (i / n) * TAU - Math.PI / 2
+            const aInner = ((i + 0.5) / n) * TAU - Math.PI / 2
+            pts.push(modelToScreen({ x: anchor.x + radius * Math.cos(aOuter), y: anchor.y + radius * Math.sin(aOuter) }))
+            pts.push(modelToScreen({ x: anchor.x + rInner * Math.cos(aInner), y: anchor.y + rInner * Math.sin(aInner) }))
+        }
+        drawRadialBase(anchor, radius)
+        strokeScreenPolyline(pts)
+        return
+    }
+    // Polygones reguliers (triangle, pentagone, hexagone) : meme
+    // preview que le cercle avec N fixe.
+    const n = { tri: 3, penta: 5, hexa: 6 }[kind]
+    const rim = []
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU
+        rim.push(modelToScreen({ x: anchor.x + radius * Math.cos(a), y: anchor.y + radius * Math.sin(a) }))
+    }
+    drawRadialBase(anchor, radius)
+    strokeScreenPolyline(rim)
 }
 
 export const drawBoard = () => {
