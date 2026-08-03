@@ -70,6 +70,21 @@ try {
     await page.waitForTimeout(100)
     check('panneau ferme au 2e clic', !(await panelVisible()))
 
+    // --- 1b. Le panneau contient aussi le cercle (deplace depuis la
+    // toolbar) : choisir « Cercle » arme le mode cercle sur #shapes ---
+    await page.click('#shapes')
+    await page.waitForTimeout(100)
+    check('panneau : bouton Cercle present',
+        await page.locator('#shapesPanel button[data-shape="circle"]').isVisible())
+    await page.click('#shapesPanel button[data-shape="circle"]')
+    await page.waitForTimeout(120)
+    check('choix Cercle : bouton #shapes arme + libellé',
+        await shapesArmed() && (await shapesText()) === 'cercle 24')
+    check('choix Cercle : panneau ferme', !(await panelVisible()))
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(100)
+    check('Echap : mode cercle desarme', !(await shapesArmed()))
+
     // --- 2. Rectangle : 4 points, 2 triangles, outil desarme ---
     await armShape('rect')
     check('outil arme : classe shapes-armed', await shapesArmed())

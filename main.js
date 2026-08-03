@@ -6,7 +6,7 @@ import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
     updateSelectionModeButton, updateColorButtonState, updateAccessibilityLabels, updateSceneStatus,
-    updateCircleButton, updateShapesButton,
+    updateShapesButton,
 } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import {
@@ -176,7 +176,6 @@ wireButton('deleteShape', () => deleteShape())
 wireButton('mergePoints', () => mergeSelectedPoints())
 wireButton('undo', () => undo())
 wireButton('redo', () => redo())
-wireButton('circle', () => toggleCircleMode())
 
 const importMeshesBtn = document.querySelector('#importMeshes')
 if (importMeshesBtn) {
@@ -451,12 +450,11 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault()
         togglePreview()
     }
-    const inCircleBtn = t && typeof t.closest === 'function' && t.closest('#circle')
-    // C = toggle du mode cercle. !e.repeat : maintenir C enfonce ne
-    // doit pas clignoter le mode on/off (impact visuel du bouton + du
-    // compteur), meme pattern que P. Le focus sur le bouton lui-meme
-    // est exclu (la touche Espace/Entrée y suffit).
-    if (!typing && !inCircleBtn && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyC' && !e.repeat) {
+    // C = toggle du mode cercle (le cercle se choisit aussi dans le
+    // panneau Formes). !e.repeat : maintenir C enfonce ne doit pas
+    // clignoter le mode on/off (impact visuel du bouton + du compteur),
+    // meme pattern que P.
+    if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyC' && !e.repeat) {
         e.preventDefault()
         toggleCircleMode()
     }
@@ -503,7 +501,6 @@ const doit = () => {
     updateAccessibilityLabels()
     updateSceneStatus()
     updateColorButtonState()
-    updateCircleButton()
     updateShapesButton()
     log('App ready')
 }

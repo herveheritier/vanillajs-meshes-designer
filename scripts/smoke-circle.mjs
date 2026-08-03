@@ -1,11 +1,13 @@
 // Smoke test de l'outil cercle (creation par eventail de triangles) —
 // playwright-core.
 //
-// Parcours : activer le mode cercle via le bouton #circle (verif de
-// l'etat actif + compteur de cotes), tracer un cercle par
+// Parcours : activer le mode cercle via le panneau #shapes (choix
+// « Cercle ») et via le raccourci C (verif de l'etat actif sur le
+// bouton #shapes + libellé « cercle N »), tracer un cercle par
 // clic + glisser, verifier la scene generee (N+1 points, N triangles),
-// annuler / retablir, regler le nombre de cotes a la molette, annuler
-// un trace trop petit, quitter le mode par Echap.
+// annuler / retablir, regler le nombre de cotes a la molette (canvas
+// et bouton #shapes), annuler un trace trop petit, quitter le mode par
+// Echap.
 //
 // Usage :
 //   1. Lancer le serveur dev :  python3 test_server.py   (port 8000)
@@ -36,8 +38,11 @@ const sceneInfo = () => page.evaluate((key) => {
     }
 }, SCENE_STORAGE_KEY)
 
-const circleActive = () => page.locator('#circle').evaluate((btn) => btn.classList.contains('circle-active'))
-const circleText = () => page.locator('#circleText').textContent()
+// Depuis le deplacement du bouton cercle dans le panneau #shapes,
+// l'indicateur du mode cercle vit sur le bouton #shapes : classe
+// shapes-armed + libellé « cercle N » (N = nombre de cotes).
+const shapesArmed = () => page.locator('#shapes').evaluate((btn) => btn.classList.contains('shapes-armed'))
+const shapesText = () => page.locator('#shapesText').textContent()
 
 // Trace un cercle : mousedown (centre) -> move (rayon) -> up.
 const drawCircle = async (cx, cy, rx, ry) => {
@@ -53,20 +58,23 @@ try {
     await page.waitForSelector('#board')
     await page.waitForTimeout(400)
 
-    // --- 1. Activer le mode cercle par le raccourci C ---
-    await page.keyboard.press('c')
+    // --- 1. Activer le mode cercle via le panneau #shapes ---
+    await page.click('#shapes')
+    await page.waitForTimeout(100)
+    await page.click('#shapesPanel button[data-shape="circle"]')
     await page.waitForTimeout(120)
-    check('raccourci C : mode cercle actif (classe circle-active)', await circleActive())
-    check('compteur de cotes = 24 par defaut', (await circleText()) === '24')
+    check('panneau : mode cercle actif (bouton #shapes arme)', await shapesArmed())
+    check('compteur de cotes = 24 par defaut', (await shapesText()) === 'cercle 24')
+    check('panneau ferme apres le choix Cercle', !(await page.locator('#shapesPanel').isVisible()))
 
     // --- 2. Tracer un cercle (centre 500,400 / rayon ~100 px) ---
     await drawCircle(500, 400, 600, 400)
     let info = await sceneInfo()
     check('cercle genere : 25 points (1 centre + 24 cotes)', info.points === 25)
     check('cercle genere : 24 triangles (eventail)', info.tris === 24)
-    // Spec utilisateur : le bouton se desélectionne apres la creation.
-    check('mode cercle quitte apres la creation', !(await circleActive()))
-    check('compteur de cotes efface apres la creation', (await circleText()) === '')
+    // Spec utilisateur : le mode se desélectionne apres la creation.
+    check('mode cercle quitte apres la creation', !(await shapesArmed()))
+    check('compteur de cotes efface apres la creation', (await shapesText()) === '')
 
     // --- 3. Annuler / retablir ---
     await page.keyboard.press('Control+z')
@@ -81,10 +89,10 @@ try {
     // --- 4. Re-activation (C) + molette SUR LE BOUTON = nombre de cotes ---
     await page.keyboard.press('c')
     await page.waitForTimeout(120)
-    await page.locator('#circle').hover()
+    await page.locator('#shapes').hover()
     await page.mouse.wheel(0, -100)  // deltaY < 0 -> +1 cote
     await page.waitForTimeout(120)
-    check('molette sur le bouton : compteur passe a 25', (await circleText()) === '25')
+    check('molette sur le bouton : compteur passe a 25', (await shapesText()) === 'cercle 25')
     // Scene vide d'abord (Ctrl+Z sur le cercle precedent), puis trace.
     await page.keyboard.press('Control+z')
     await page.waitForTimeout(120)
@@ -92,7 +100,7 @@ try {
     info = await sceneInfo()
     check('cercle a 25 cotes : 26 points', info.points === 26)
     check('cercle a 25 cotes : 25 triangles', info.tris === 25)
-    check('mode cercle quitte apres la 2e creation', !(await circleActive()))
+    check('mode cercle quitte apres la 2e creation', !(await shapesArmed()))
 
     // --- 5. Nombre de cotes mémorisé : rechargement puis re-activation ---
     await page.reload({ waitUntil: 'networkidle' })
@@ -100,7 +108,7 @@ try {
     await page.waitForTimeout(400)
     await page.keyboard.press('c')
     await page.waitForTimeout(120)
-    check('persistance : compteur de cotes = 25 apres rechargement', (await circleText()) === '25')
+    check('persistance : compteur de cotes = 25 apres rechargement', (await shapesText()) === 'cercle 25')
     await page.keyboard.press('Escape')
     await page.waitForTimeout(120)
 
@@ -115,13 +123,13 @@ try {
     await page.waitForTimeout(120)
     info = await sceneInfo()
     check('clic sans glisser : aucun cercle cree', info.points === 0 && info.tris === 0)
-    check('mode toujours actif apres clic ignore', await circleActive())
+    check('mode toujours actif apres clic ignore', await shapesArmed())
 
     // --- 7. Echap quitte le mode ---
     await page.keyboard.press('Escape')
     await page.waitForTimeout(120)
-    check('Echap : mode cercle desactive', !(await circleActive()))
-    check('Echap : compteur de cotes efface', (await circleText()) === '')
+    check('Echap : mode cercle desactive', !(await shapesArmed()))
+    check('Echap : compteur de cotes efface', (await shapesText()) === '')
 
     // --- 8. Re-activation (C) : clic droit = annule le trace (le
     // mode reste actif), Echap = quitte le mode ---
@@ -133,7 +141,7 @@ try {
     await page.waitForTimeout(120)
     await page.mouse.click(700, 400, { button: 'right' })
     await page.waitForTimeout(120)
-    check('clic droit : mode cercle toujours actif', await circleActive())
+    check('clic droit : mode cercle toujours actif', await shapesArmed())
     // Le relachement gauche qui suit ne doit pas commiter de cercle
     // (le centre a ete annule).
     await page.mouse.up()
@@ -141,8 +149,8 @@ try {
     check('clic droit : aucun cercle commite au relachement', (await sceneInfo()).points === 0)
     await page.keyboard.press('Escape')
     await page.waitForTimeout(120)
-    check('Echap : mode cercle desactive', !(await circleActive()))
-    check('Echap : compteur de cotes efface', (await circleText()) === '')
+    check('Echap : mode cercle desactive', !(await shapesArmed()))
+    check('Echap : compteur de cotes efface', (await shapesText()) === '')
 
     check('aucune erreur JS sur tout le parcours', errors.length === 0)
 } catch (err) {

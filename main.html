@@ -873,43 +873,16 @@
                 border-color: rgba(55, 194, 0, 0.45);
             }
 
-            /* Bouton Cercle : toggle du mode de creation de cercle par
-               eventail de triangles. Meme langage d'etat actif que
-               #preview.preview-active (vert accent quand le mode est
-               actif) + compteur de cotes a cote de l'icone quand le
-               mode est actif (meme pattern que #gridText pour le pas de
-               grille) ; texte vide sinon. La structure inline-flex est
-               identique a #grid / #reticle (icone + texte alignes). */
-            #circle {
-                display: inline-flex;
-                align-items: center;
-                gap: 5px;
-            }
-            #circle #circleText {
-                font-family: monospace;
-                font-size: 11px;
-                line-height: 1;
-                font-style: normal;
-                color: rgba(220, 220, 220, 0.55);
-                pointer-events: none;
-                white-space: nowrap;
-                transition: color 0.12s;
-            }
-            #toolbar #circle.circle-active {
-                color: rgb(55, 194, 0);
-                background-color: rgba(55, 194, 0, 0.10);
-                border-color: rgba(55, 194, 0, 0.45);
-            }
-            #circle.circle-active #circleText {
-                color: rgb(55, 194, 0);
-            }
-
             /* Bouton Formes : ouvre le panneau des formes prédéfinies.
                Deux etats distincts (cf. updateShapesButton) : panneau
                ouvert (bordure inset verte, comme
                #triangleColor.color-panel-open) et outil arme (accent
-               vert + libellé, comme #circle.circle-active). Structure
-               inline-flex identique a #grid / #reticle / #circle. */
+               vert + libellé). Le cercle se choisit dans ce panneau ;
+               quand le mode cercle est actif, le bouton affiche
+               « cercle N » (N = nombre de côtés, meme langage que
+               #gridText pour le pas de grille) et la molette sur le
+               bouton regle N. Structure inline-flex identique a
+               #grid / #reticle. */
             #shapes {
                 display: inline-flex;
                 align-items: center;
@@ -1400,25 +1373,19 @@
                      rester dans la meme thematique 'outils de
                      selection'. -->
                 <button id="triangleColor" title="Colorier les triangles sélectionnés (mode triangle uniquement)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 12.2a1.7 1.7 0 01-2.4 0L9 10.1l-3.6-3.6a1.7 1.7 0 010-2.4l.4-.4a1.7 1.7 0 012.4 0L11.8 7l1.7 1.8a1.7 1.7 0 010 2.4z"/><path d="M2 14L7 9"/><circle cx="3.7" cy="12.3" r="1.1" fill="currentColor" stroke="none"/></svg></button>
-                <!-- Cercle : mode de creation d'un cercle par generation
-                     d'un eventail de triangles (centre + N sommets sur la
-                     circonference, N triangles). Clic + glisser : le 1er
-                     clic pose le centre, le glisser regle le rayon, le
-                     relachement cree le cercle. En mode cercle : molette =
-                     nombre de cotes (compteur affiche a cote de l'icone,
-                     meme langage que #gridText), Echap ou re-clic = quitter,
-                     clic droit / Backspace = annuler le trace en cours. -->
-                <button id="circle" title="Créer un cercle (raccourci C ; clic + glisser : centre puis rayon ; molette sur le bouton ou le canvas = nombre de côtés ; Échap = quitter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="8" x2="12.5" y2="8"/><circle cx="8" cy="8" r="0.8" fill="currentColor" stroke="none"/></svg><span id="circleText"></span></button>
-                <!-- Formes prédéfinies : ouvre un panneau (meme pattern
-                     que #triangleColorPanel) listant des formes a creer :
-                     rectangle, carre, polygones reguliers (triangle,
-                     pentagone, hexagone), etoile. Choisir une forme arme
-                     l'outil (bouton vert + libelle) : clic + glisser sur
-                     le canvas = ancre (coin pour rect/carre, centre sinon)
-                     puis taille ; le relâchement cree la forme et desarme
-                     l'outil. Echap ferme le panneau ou desarme ; clic
-                     droit / Backspace annulent le trace en cours. -->
-                <button id="shapes" title="Créer des formes prédéfinies (rectangle, carré, polygones, étoile) : ouvrir la liste puis clic + glisser sur le canvas"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.7 3.4 3.8.6-2.7 2.7.6 3.8-3.4-1.8-3.4 1.8.6-3.8L2.5 6l3.8-.6z"/></svg><span id="shapesText"></span></button>
+                <!-- Formes prédéfinies (dont le cercle) : ouvre un panneau
+                     (meme pattern que #triangleColorPanel) listant les
+                     formes a creer : cercle, rectangle, carre, polygones
+                     reguliers (triangle, pentagone, hexagone), etoile.
+                     Choisir une forme arme l'outil (bouton vert + libelle)
+                     : clic + glisser sur le canvas = ancre (centre pour
+                     cercle et polygones, coin pour rect/carre) puis taille ;
+                     le relâchement cree la forme et desarme l'outil. En
+                     mode cercle : molette (canvas ou bouton) = nombre de
+                     cotes, raccourci C = activer / desactiver. Echap ferme
+                     le panneau ou desarme ; clic droit / Backspace
+                     annulent le trace en cours. -->
+                <button id="shapes" title="Créer des formes prédéfinies (cercle, rectangle, carré, polygones, étoile) : ouvrir la liste puis clic + glisser sur le canvas ; raccourci C = mode cercle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.7 3.4 3.8.6-2.7 2.7.6 3.8-3.4-1.8-3.4 1.8.6-3.8L2.5 6l3.8-.6z"/></svg><span id="shapesText"></span></button>
             </div>
             <span class="toolbar-sep"></span>
             <!-- Groupe "Undo/redo" : miroite les raccourcis clavier
@@ -1512,11 +1479,13 @@
         </div>
         <!-- Panneau des formes prédéfinies : liste verticale de boutons
              icone + libellé, chacun armant l'outil correspondant
-             (wireShapesPanel dans editor.js). Structure calquee sur
+             (wireShapesPanel dans editor.js). Le cercle ouvre le mode
+             cercle (raccourci C equivalent). Structure calquee sur
              #triangleColorPanel (position absolue sous le bouton
              #shapes, fermeture au clic exterieur / Echap). -->
         <div id="shapesPanel" hidden>
             <div class="shapes-title">Formes prédéfinies</div>
+            <button type="button" data-shape="circle" title="Créer un cercle (clic + glisser : centre puis rayon ; molette = nombre de côtés ; raccourci C)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="8" x2="12.5" y2="8"/><circle cx="8" cy="8" r="0.8" fill="currentColor" stroke="none"/></svg><span>Cercle</span></button>
             <button type="button" data-shape="rect" title="Créer un rectangle (clic + glisser : deux coins)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="10" height="8"/></svg><span>Rectangle</span></button>
             <button type="button" data-shape="square" title="Créer un carré (clic + glisser : deux coins)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg><span>Carré</span></button>
             <button type="button" data-shape="tri" title="Créer un triangle équilatéral (clic + glisser : centre puis rayon)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3l5 9H3z"/></svg><span>Triangle</span></button>
@@ -1586,9 +1555,8 @@
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd">R</kbd><span>réticule : off / simple / projection symétrique (cycle)</span></div>
                     <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; Échap, P ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>
-                    <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle</span></div>
-                    <div class="help-row"><kbd class="kbd wide">Cercle (bouton)</kbd><span>mode de création d'un cercle par génération de triangles : clic + glisser (1er clic = centre, relâcher = rayon) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
-                    <div class="help-row"><kbd class="kbd wide">Formes (bouton)</kbd><span>ouvre la liste des formes prédéfinies (rectangle, carré, triangle, pentagone, hexagone, étoile) : choisir une forme puis clic + glisser sur le canvas (coin ou centre puis taille) ; Échap = fermer le panneau ou annuler l'outil, clic droit = annuler le tracé</span></div>
+                    <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : clic + glisser (1er clic = centre, relâcher = rayon) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
+                    <div class="help-row"><kbd class="kbd wide">Formes (bouton)</kbd><span>ouvre la liste des formes prédéfinies (cercle, rectangle, carré, triangle, pentagone, hexagone, étoile) : choisir une forme puis clic + glisser sur le canvas (coin ou centre puis taille) ; Échap = fermer le panneau ou annuler l'outil, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd wide">Molette</kbd><span>zoomer (centre sur le curseur) ; pivoter si 2+ points sont selectionnes</span></div>
                     <!-- Modificateurs souris pour la selection point-par-point.

@@ -39,19 +39,6 @@ export const updateReticleButton = () => {
     if (text) text.textContent = state.reticleMode === 0 ? '' : String(state.reticleMode)
 }
 
-export const updateCircleButton = () => {
-    const btn = document.querySelector('#circle')
-    const text = document.querySelector('#circleText')
-    if (btn) {
-        btn.classList.toggle('circle-active', !!state.circleMode)
-        btn.setAttribute('aria-pressed', state.circleMode ? 'true' : 'false')
-    }
-    // Compteur de cotes affiche seulement quand le mode est actif
-    // (meme langage que #gridText pour le pas de grille) : vide
-    // sinon. textContent (pas innerHTML) car on injecte un entier.
-    if (text) text.textContent = state.circleMode ? String(state.circleSegments) : ''
-}
-
 export const updateSelectionModeButton = () => {
     const btn = document.querySelector('#selectionMode')
     const text = document.querySelector('#selectionModeText')
@@ -114,19 +101,25 @@ export const updateShapesButton = () => {
     const btn = document.querySelector('#shapes')
     const text = document.querySelector('#shapesText')
     if (btn) {
-        // Deux etats distincts : panneau ouvert (bordure inset, comme
-        // #triangleColor.color-panel-open) et outil arme (accent vert
-        // + libellé, comme #circle.circle-active).
+        // Trois etats : panneau ouvert (bordure inset, comme
+        // #triangleColor.color-panel-open), outil forme arme ou mode
+        // cercle actif (accent vert + libellé).
         btn.classList.toggle('shapes-panel-open', !!state.shapesPanelOpen)
-        btn.classList.toggle('shapes-armed', state.shapeKind !== undefined)
+        btn.classList.toggle('shapes-armed', state.shapeKind !== undefined || !!state.circleMode)
         btn.setAttribute('aria-pressed', state.shapesPanelOpen ? 'true' : 'false')
     }
-    // Libellé de la forme armee a cote de l'icone (meme langage que
-    // #circleText pour le nombre de cotes) ; vide quand rien n'est
-    // arme. textContent (pas innerHTML) : chaine statique.
+    // Libellé a cote de l'icone : nom de la forme armee, ou
+    // « cercle N » quand le mode cercle est actif (N = nombre de
+    // cotes — meme langage que #gridText pour le pas de grille) ;
+    // vide quand rien n'est arme. textContent (pas innerHTML) :
+    // chaine statique / entier.
     if (text) {
-        const def = state.shapeKind !== undefined ? SHAPE_DEFS[state.shapeKind] : undefined
-        text.textContent = def ? def.label : ''
+        if (state.circleMode) {
+            text.textContent = 'cercle ' + state.circleSegments
+        } else {
+            const def = state.shapeKind !== undefined ? SHAPE_DEFS[state.shapeKind] : undefined
+            text.textContent = def ? def.label : ''
+        }
     }
 }
 

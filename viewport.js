@@ -10,7 +10,7 @@ import {
 } from './constants.js'
 import { drawBoard, requestDraw, consumeDrawStats } from './draw.js'
 import { screenToModel } from './geometry.js'
-import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateCircleButton } from './hud.js'
+import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateShapesButton } from './hud.js'
 import { persistState, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
@@ -398,15 +398,15 @@ export const wirePreviewControl = () => {
 
 // Reglage du nombre de cotes du cercle. Partage par la molette sur le
 // canvas en mode cercle (onBoardWheel) ET par la molette sur le
-// bouton #circle actif (wireCircleWheelControl) — un seul chemin de
-// verite pour le clamp et le refresh (compteur du bouton + preview
-// renderTransient).
+// bouton #shapes actif (wireCircleWheelControl — le bouton affiche
+// « cercle N ») — un seul chemin de verite pour le clamp et le
+// refresh (compteur du bouton + preview renderTransient).
 const adjustCircleSegments = (delta) => {
     state.circleSegments = Math.min(
         CIRCLE_MAX_SEGMENTS,
         Math.max(CIRCLE_MIN_SEGMENTS, state.circleSegments + delta),
     )
-    updateCircleButton()
+    updateShapesButton()
     requestDraw()
     // Preference persistée (comme le pas de grille) : le choix de
     // l'utilisateur survit au rechargement. Ecriture directe (meme
@@ -435,13 +435,13 @@ export const restoreCircleSegments = () => {
     } catch (e) { /* ignore */ }
 }
 
-// Molette sur le bouton #circle : reglage du nombre de cotes quand le
-// mode est actif — meme langage que la molette sur le bouton grille
-// pour le pas (sans effet hors mode). `{ passive: false }` pour
-// pouvoir preventDefault (sinon le scroll vertical de la toolbar
-// avalerait l'evenement).
+// Molette sur le bouton #shapes (qui affiche « cercle N » quand le
+// mode cercle est actif) : reglage du nombre de cotes — meme langage
+// que la molette sur le bouton grille pour le pas (sans effet hors
+// mode). `{ passive: false }` pour pouvoir preventDefault (sinon le
+// scroll vertical de la toolbar avalerait l'evenement).
 export const wireCircleWheelControl = () => {
-    const btn = document.querySelector('#circle')
+    const btn = document.querySelector('#shapes')
     if (!btn) return
     btn.addEventListener('wheel', (e) => {
         if (!state.circleMode) return
@@ -458,8 +458,9 @@ export const onBoardWheel = (e) => {
     // Mode cercle : la molette regle le nombre de cotes du polygone
     // genere (au lieu de zoomer/pivoter). Meme langage que le reglage
     // du pas de grille a la molette : retour immediat via la preview
-    // (draw.js renderTransient) + le compteur du bouton #circle.
-    // Desactive en preview (la molette y zoome toujours, cf. §2.6).
+    // (draw.js renderTransient) + le libellé « cercle N » du bouton
+    // #shapes. Desactive en preview (la molette y zoome toujours,
+    // cf. §2.6).
     if (state.circleMode && !state.previewMode) {
         adjustCircleSegments(e.deltaY < 0 ? 1 : -1)
         return

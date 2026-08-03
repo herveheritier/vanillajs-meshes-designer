@@ -12,7 +12,7 @@ import {
     SHAPE_DEFS, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO,
 } from './constants.js'
 import { drawBoard, drawPoint, drawMouse, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
-import { updateSelectionHud, updateColorButtonState, updateCircleButton, updateShapesButton } from './hud.js'
+import { updateSelectionHud, updateColorButtonState, updateShapesButton } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
 import {
@@ -479,17 +479,18 @@ export const selectAllPoints = () => {
 
 // ===== Creation d'un cercle (outil cercle) =====
 //
-// Mode transitoire (bouton #circle, non persiste — meme statut que la
-// preview) : le clic gauche + glisser sur le canvas trace un cercle
-// par generation d'un eventail de triangles (centre + N sommets sur
-// la circonference, N triangles). Le 1er clic pose le centre
-// (snapToGrid comme addPoint), le glisser regle le rayon (preview en
-// temps reel via draw.js renderTransient), le relachement commite si
-// le rayon est significatif (>= CIRCLE_MIN_RADIUS_PX en pixels
-// ecran). La molette regle N (viewport.js onBoardWheel), Echap ou le
+// Mode transitoire (choisi dans le panneau #shapes ou via le raccourci
+// C, non persiste — meme statut que la preview) : le clic gauche +
+// glisser sur le canvas trace un cercle par generation d'un eventail
+// de triangles (centre + N sommets sur la circonference, N triangles).
+// Le 1er clic pose le centre (snapToGrid comme addPoint), le glisser
+// regle le rayon (preview en temps reel via draw.js renderTransient),
+// le relachement commite si le rayon est significatif
+// (>= CIRCLE_MIN_RADIUS_PX en pixels ecran). La molette regle N
+// (viewport.js onBoardWheel ou bouton #shapes actif), Echap ou le
 // bouton quittent le mode, clic droit / Backspace annulent le tracé
-// en cours sans quitter le mode. Apres un commit on reste en mode
-// cercle pour enchainer plusieurs cercles.
+// en cours sans quitter le mode. Apres un commit le mode se desactive
+// (un cercle = un geste, cf. createCircle).
 export const toggleCircleMode = () => {
     if (state.circleMode) exitCircleMode()
     else enterCircleMode()
@@ -499,9 +500,16 @@ const enterCircleMode = () => {
     // Exclusion mutuelle avec l'outil forme predéfinie : un seul geste
     // de creation actif a la fois.
     if (state.shapeKind !== undefined) disarmShapeTool()
+    // Ferme le panneau #shapes s'il est ouvert (meme comportement
+    // qu'armShapeTool) : entrer en mode cercle depuis le panneau ouvert
+    // (raccourci C) ne laisse pas un mode actif sous le panneau — un
+    // seul Echap suffit alors a tout annuler.
+    state.shapesPanelOpen = false
+    const panel = document.querySelector('#shapesPanel')
+    if (panel) panel.hidden = true
     state.circleMode = true
     state.currentAction = ACTION_NONE
-    updateCircleButton()
+    updateShapesButton()
     log('Mode cercle : clic + glisser pour tracer un cercle (molette = nombre de cotes, Echap = quitter)')
     requestDraw()
 }
@@ -511,7 +519,7 @@ export const exitCircleMode = () => {
     state.circleMode = false
     state.circleCenterModel = undefined
     state.circleRadiusModel = 0
-    updateCircleButton()
+    updateShapesButton()
     log('Mode cercle desactive')
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
@@ -834,6 +842,8 @@ export const wireShapesPanel = () => {
             closeShapesPanel()
         } else if (state.shapeKind !== undefined) {
             disarmShapeTool()
+        } else if (state.circleMode) {
+            exitCircleMode()
         } else {
             openShapesPanel()
         }
@@ -841,6 +851,14 @@ export const wireShapesPanel = () => {
     panel.querySelectorAll('button[data-shape]').forEach((shapeBtn) => {
         shapeBtn.addEventListener('click', (e) => {
             if (e.button !== 0) return
+            // Le cercle vit dans le panneau depuis le deplacement du
+            // bouton : choisir « Cercle » entre dans le mode cercle
+            // (raccourci C equivalent) au lieu d'armer un shapeKind.
+            // enterCircleMode ferme le panneau lui-meme.
+            if (shapeBtn.dataset.shape === 'circle') {
+                enterCircleMode()
+                return
+            }
             armShapeTool(shapeBtn.dataset.shape)
         })
     })
