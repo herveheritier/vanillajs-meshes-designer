@@ -28,6 +28,7 @@ import {
     restoreEditingMode, restoreSelectionMode, wireSelectionModeControl,
     restoreFpsVisible, wireFpsControl, toggleFps, updateFpsButton,
     wireGridControl, togglePreview, wirePreviewControl, wireCircleWheelControl,
+    restoreCircleSegments,
 } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
 import { showHelp, hideHelp, wireHelpModal, showResetModal, hideResetModal, wireResetModal } from './modals.js'
@@ -128,6 +129,7 @@ restoreReticleMode()
     restoreSelectionMode()
     restoreConsoleVisible()
     restoreFpsVisible()
+    restoreCircleSegments()
 
 // ===== Branchement des listeners "locaux" =====
 
@@ -408,6 +410,15 @@ document.addEventListener('keydown', (e) => {
     if (!typing && !inPreviewBtn && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyP' && !e.repeat) {
         e.preventDefault()
         togglePreview()
+    }
+    const inCircleBtn = t && typeof t.closest === 'function' && t.closest('#circle')
+    // C = toggle du mode cercle. !e.repeat : maintenir C enfonce ne
+    // doit pas clignoter le mode on/off (impact visuel du bouton + du
+    // compteur), meme pattern que P. Le focus sur le bouton lui-meme
+    // est exclu (la touche Espace/Entrée y suffit).
+    if (!typing && !inCircleBtn && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyC' && !e.repeat) {
+        e.preventDefault()
+        toggleCircleMode()
     }
     // Preview = visualisation seule : undo/redo sont des mutations de
     // scene — elles resteraient invisibles a l'ecran (geometrie

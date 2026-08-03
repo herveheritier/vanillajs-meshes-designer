@@ -2,7 +2,7 @@ import { state } from './state.js'
 import {
     MIN_ZOOM, MAX_ZOOM, ZOOM_STEP_FACTOR, ROTATE_STEP,
     DEFAULT_GRID_STEP, MIN_GRID_STEP, MAX_GRID_STEP,
-    CIRCLE_MIN_SEGMENTS, CIRCLE_MAX_SEGMENTS,
+    CIRCLE_MIN_SEGMENTS, CIRCLE_MAX_SEGMENTS, CIRCLE_SEGMENTS_STORAGE_KEY,
     RETICLE_MODE_STORAGE_KEY, SELECTION_MODE_STORAGE_KEY, SELECTION_MODES,
     EDITING_MODE_STORAGE_KEY, EDITING_MODES,
     CONSOLE_VISIBLE_STORAGE_KEY,
@@ -405,6 +405,31 @@ const adjustCircleSegments = (delta) => {
     )
     updateCircleButton()
     requestDraw()
+    // Preference persistée (comme le pas de grille) : le choix de
+    // l'utilisateur survit au rechargement. Ecriture directe (meme
+    // pattern que FPS_VISIBLE_STORAGE_KEY dans toggleFps) — pas de
+    // transit par persistState, le reglage est volontairement hors du
+    // wire format des fichiers exportes.
+    try { localStorage.setItem(CIRCLE_SEGMENTS_STORAGE_KEY, String(state.circleSegments)) } catch (e) { /* ignore */ }
+}
+
+// Restaure le nombre de cotes mémorisé (preference de session, comme
+// reticleMode / FPS) : valeur stockée clampée dans les bornes
+// [CIRCLE_MIN_SEGMENTS, CIRCLE_MAX_SEGMENTS] ; sinon le defaut
+// CIRCLE_DEFAULT_SEGMENTS (déjà posé dans state.js) reste applique.
+export const restoreCircleSegments = () => {
+    try {
+        const stored = localStorage.getItem(CIRCLE_SEGMENTS_STORAGE_KEY)
+        if (stored !== null) {
+            const parsed = parseInt(stored, 10)
+            if (Number.isInteger(parsed)) {
+                state.circleSegments = Math.min(
+                    CIRCLE_MAX_SEGMENTS,
+                    Math.max(CIRCLE_MIN_SEGMENTS, parsed),
+                )
+            }
+        }
+    } catch (e) { /* ignore */ }
 }
 
 // Molette sur le bouton #circle : reglage du nombre de cotes quand le

@@ -58,6 +58,7 @@ Data flow: `main.js` owns app state → calls render primitives in `draw.js` (po
   - `meshesDesigner.consoleVisible` — bool
   - `meshesDesigner.consoleFrame` — JSON `{left,top,width,height}` in px for the log-overlay frame
   - `meshesDesigner.undo` — JSON `{ scene, historyStack, redoStack }` where `scene` is the exact `serializeState()` string written to `meshesDesigner.scene` at the same moment (fingerprint guard at boot)
+  - `meshesDesigner.circleSegments` — int, nombre de côtés du cercle (préférence de session restaurée au boot, réglée à la molette en mode cercle)
   - (scene + zoom + grid keys persisted too — search `localStorage` in `main.js` for the full list)
 - **`#messageLog`** is the scrollable log region inside `#messageBoard`. Mutations go through it, never through `#messageBoard.innerText` (would destroy the drag handle / clear button).
 - **Console overlay minimums:** `CONSOLE_MIN_WIDTH=80`, `CONSOLE_MIN_HEIGHT=30` — resize handler clamps to these.

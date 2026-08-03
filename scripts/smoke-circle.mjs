@@ -53,10 +53,10 @@ try {
     await page.waitForSelector('#board')
     await page.waitForTimeout(400)
 
-    // --- 1. Activer le mode cercle ---
-    await page.click('#circle')
+    // --- 1. Activer le mode cercle par le raccourci C ---
+    await page.keyboard.press('c')
     await page.waitForTimeout(120)
-    check('mode cercle actif (classe circle-active)', await circleActive())
+    check('raccourci C : mode cercle actif (classe circle-active)', await circleActive())
     check('compteur de cotes = 24 par defaut', (await circleText()) === '24')
 
     // --- 2. Tracer un cercle (centre 500,400 / rayon ~100 px) ---
@@ -78,8 +78,8 @@ try {
     info = await sceneInfo()
     check('redo : cercle reconstruit', info.points === 25 && info.tris === 24)
 
-    // --- 4. Re-activation + molette SUR LE BOUTON = nombre de cotes ---
-    await page.click('#circle')
+    // --- 4. Re-activation (C) + molette SUR LE BOUTON = nombre de cotes ---
+    await page.keyboard.press('c')
     await page.waitForTimeout(120)
     await page.locator('#circle').hover()
     await page.mouse.wheel(0, -100)  // deltaY < 0 -> +1 cote
@@ -94,10 +94,20 @@ try {
     check('cercle a 25 cotes : 25 triangles', info.tris === 25)
     check('mode cercle quitte apres la 2e creation', !(await circleActive()))
 
-    // --- 5. Trace trop petit (clic sans glisser) : ignore, mode reste ---
-    await page.keyboard.press('Control+z')
+    // --- 5. Nombre de cotes mémorisé : rechargement puis re-activation ---
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.waitForSelector('#board')
+    await page.waitForTimeout(400)
+    await page.keyboard.press('c')
     await page.waitForTimeout(120)
-    await page.click('#circle')
+    check('persistance : compteur de cotes = 25 apres rechargement', (await circleText()) === '25')
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(120)
+
+    // --- 6. Trace trop petit (clic sans glisser) : ignore, mode reste ---
+    await page.keyboard.press('c')
+    await page.waitForTimeout(120)
+    await page.keyboard.press('Control+z')
     await page.waitForTimeout(120)
     await page.mouse.move(500, 400)
     await page.mouse.down()
@@ -107,15 +117,15 @@ try {
     check('clic sans glisser : aucun cercle cree', info.points === 0 && info.tris === 0)
     check('mode toujours actif apres clic ignore', await circleActive())
 
-    // --- 6. Echap quitte le mode ---
+    // --- 7. Echap quitte le mode ---
     await page.keyboard.press('Escape')
     await page.waitForTimeout(120)
     check('Echap : mode cercle desactive', !(await circleActive()))
     check('Echap : compteur de cotes efface', (await circleText()) === '')
 
-    // --- 7. Re-activation : clic droit = annule le trace (le mode
-    // reste actif), Echap = quitte le mode ---
-    await page.click('#circle')
+    // --- 8. Re-activation (C) : clic droit = annule le trace (le
+    // mode reste actif), Echap = quitte le mode ---
+    await page.keyboard.press('c')
     await page.waitForTimeout(120)
     await page.mouse.move(500, 400)
     await page.mouse.down()
