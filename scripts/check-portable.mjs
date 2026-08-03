@@ -37,9 +37,10 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { pathToFileURL, fileURLToPath } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
-import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY } from './smoke_lib.mjs'
+import { createHarness } from './smoke_lib.mjs'
+import { runPortableBrowserTest } from './portable-browser-test.mjs'
 
 // Racine du projet : ce script vit dans scripts/, la racine est au-dessus.
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -126,89 +127,7 @@ check('regex des sources présents verbatim (' + sourceRegexes.length + ' trouv�
 
 // ===== Phase 3 — Test navigateur file:// =====
 // Le portable doit fonctionner sans serveur : chargement file://,
-// édition, persistance, autoimport. Même harnais que les smoke tests.
-const MESHES_TEXT = '0,0;10,0;5,8.66\n20,0;30,0;25,8.66\n'
-const AUTOIMPORT_PARAM = encodeURIComponent(Buffer.from(MESHES_TEXT, 'utf8').toString('base64'))
-
-const browser = await launchBrowser()
-try {
-    // ===== 3a — Chargement file://, canvas + toolbar =====
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
-    const errors = attachErrorCollector(page)
-    await page.goto(pathToFileURL(PORTABLE_PATH).href, { waitUntil: 'load' })
-    await page.waitForSelector('#board')
-    const toolbarIds = ['#grid', '#export', '#importMeshes', '#importJson', '#undo', '#redo']
-    const toolbarCount = await page.locator(toolbarIds.join(', ')).count()
-    check('3a. chargement file:// : canvas présent', true)
-    check('3a. toolbar complète présente (' + toolbarCount + '/6 boutons)', toolbarCount === 6)
-
-    // ===== 3b — Clic gauche dans le vide : crée un point, persiste =====
-    await page.mouse.click(640, 400)
-    const pointPersisted = await page.waitForFunction((key) => {
-        try {
-            const s = JSON.parse(localStorage.getItem(key) || '{}')
-            return Array.isArray(s.shapes) && s.shapes.length === 1 &&
-                Array.isArray(s.shapes[0].pointList) && s.shapes[0].pointList.length >= 1
-        } catch (e) { return false }
-    }, SCENE_STORAGE_KEY, { timeout: 8000 })
-        .then(() => true)
-        .catch(() => false)
-    check('3b. clic -> point créé et persité dans localStorage', pointPersisted)
-
-    // ===== 3c — Molette : zoom (zoomDisplay change) =====
-    // Polling de l'évolution de #zoomDisplay (waitForFunction) plutôt
-    // qu'un waitForTimeout fixe : pas de fenêtre temporelle arbitraire,
-    // le test passe dès que le zoom a effectivement changé.
-    const zoomBefore = await page.locator('#zoomDisplay').textContent()
-    await page.mouse.move(640, 400)
-    await page.mouse.wheel(0, -120)
-    const zoomChanged = await page.waitForFunction(
-        (before) => document.querySelector('#zoomDisplay').textContent.trim() !== before,
-        zoomBefore.trim(),
-        { timeout: 4000 },
-    ).then(() => true).catch(() => false)
-    const zoomAfter = await page.locator('#zoomDisplay').textContent()
-    check('3c. molette -> zoom effectif (' + zoomBefore.trim() + ' -> ' + zoomAfter.trim() + ')', zoomChanged)
-
-    // ===== 3d — Rechargement : scène restaurée (persistance) =====
-    await page.reload({ waitUntil: 'load' })
-    await page.waitForSelector('#board')
-    const restored = await page.waitForFunction((key) => {
-        try {
-            const s = JSON.parse(localStorage.getItem(key) || '{}')
-            return Array.isArray(s.shapes) && s.shapes.length === 1 &&
-                Array.isArray(s.shapes[0].pointList) && s.shapes[0].pointList.length >= 1
-        } catch (e) { return false }
-    }, SCENE_STORAGE_KEY, { timeout: 8000 })
-        .then(() => true)
-        .catch(() => false)
-    check('3d. rechargement : scène restaurée depuis localStorage', restored)
-
-    check('aucune erreur JS sur le parcours principal', errors.length === 0)
-    if (errors.length) console.error('ERREURS JS:\n' + errors.join('\n'))
-    await page.close()
-
-    // ===== 3e — Autoimport ?autoimport= (exerce les regex de convert.js) =====
-    const page2 = await browser.newPage({ viewport: { width: 1280, height: 800 } })
-    const errors2 = attachErrorCollector(page2)
-    await page2.goto(pathToFileURL(PORTABLE_PATH).href + '?autoimport=' + AUTOIMPORT_PARAM, { waitUntil: 'load' })
-    const imported = await page2.waitForFunction((key) => {
-        try {
-            const s = JSON.parse(localStorage.getItem(key) || '{}')
-            return Array.isArray(s.shapes) && s.shapes.length === 2 &&
-                s.shapes[0].pointList.length === 3 && s.shapes[1].pointList.length === 3
-        } catch (e) { return false }
-    }, SCENE_STORAGE_KEY, { timeout: 8000 })
-        .then(() => true)
-        .catch(() => false)
-    check('3e. autoimport file:// -> 2 formes de 3 points (regex convert.js exercés)', imported)
-    check('3e. aucune erreur JS sur la page autoimport', errors2.length === 0)
-    if (errors2.length) console.error('ERREURS JS:\n' + errors2.join('\n'))
-    await page2.close()
-} catch (err) {
-    check('parcours navigateur sans exception', false)
-    console.error('EXCEPTION:', err.message)
-}
-
-await browser.close()
-finish()
+// édition, persistance, autoimport. Le parcours complet (canvas,
+// toolbar, clic, zoom, rechargement, autoimport, favicon) est partagé
+// avec check-artifact.mjs : voir portable-browser-test.mjs.
+await runPortableBrowserTest(PORTABLE_PATH)

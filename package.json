@@ -13,7 +13,8 @@
     "smoke": "npm run smoke:preview && npm run smoke:edit && npm run smoke:import && npm run smoke:gestures && npm run smoke:modals && npm run smoke:rotate",
     "check": "bash scripts/check.sh",
     "build:portable": "node scripts/build-portable.mjs",
-    "check:portable": "node scripts/check-portable.mjs"
+    "check:portable": "node scripts/check-portable.mjs",
+    "check:artifact": "node scripts/check-artifact.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.49.1"

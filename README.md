@@ -55,6 +55,15 @@ npm run check:portable          # équivalent à : node scripts/check-portable.m
 
 Le check relance d'abord le build (l'artefact validé est toujours frais), puis : `node --check` sur le script fusionné, zéro import/export résiduel, zéro ligne vide, shim `localStorage` et renommages présents, regex des sources présents byte-à-byte ; enfin un parcours navigateur en `file://` (chargement, création de point + persistance, zoom molette, rechargement, autoimport — qui exerce en direct les regex de `convert.js`). Même harnais que les smoke tests (`scripts/smoke_lib.mjs`, Chromium système via `CHROMIUM_PATH`).
 
+Pour valider **l'artefact tel que publié par la CI** (le zip `meshes-portable` téléchargé depuis GitHub Actions — pas le fichier rebuildé en local) :
+
+```bash
+npm run check:artifact          # équivalent à : node scripts/check-artifact.mjs
+npm run check:artifact -- --local meshes-portable.html   # ou un fichier local
+```
+
+Le mode par défaut télécharge le dernier artefact du dernier run `master` réussi via `gh` CLI (**prérequis : `gh` authentifié + `unzip`**) et lance le même parcours navigateur `file://` — il prouve que le fichier livré par la CI fonctionne vraiment en double-clic. `--out-dir <dir>` contrôle le dossier d'extraction (défaut : temp, nettoyé), `--keep` le conserve, `--local <fichier>` teste un fichier local sans prérequis CI (le fichier doit déjà exister — `npm run build:portable` d'abord si besoin). Ce test post-CI n'est pas dans `npm run check:portable` ni dans le workflow : il dépend d'un run `master` publié, il reste donc volontairement un outil de vérification manuelle.
+
 ### Ce que fait le script
 
 1. **Fusion** : extrait les `<script type="module" src="…">` de `main.html` dans l'ordre topologique des tags, concatène les modules en un unique `<script type="module">` **inline** (un module inline n'est pas soumis au CORS `file://` — rien n'est fetché, c'est le blocage décrit en §1.1 de `PORTABILITE.md`), et supprime les imports/exports (renommages `import { state as _stateForShape }` et ré-exports `export { … }` gérés).

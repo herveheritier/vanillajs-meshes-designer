@@ -14,7 +14,7 @@ The whole UI is one HTML page driving a `<canvas>`; HTML/CSS/JS are not transpil
 - **Dev:** `python3 test_server.py` from the project root → serves on `http://localhost:8000/`, then open `main.html`. The script does a real bind-check (port + connect-back probe) and exits with an error if the port is taken.
 - **Test:** `npm run check` — `node --check` on all `.js`/`.mjs` + the 6 browser smoke suites (auto-starts/stops the dev server). See « Dev tooling & CI » below.
 - **Lint:** none.
-- **Build (optional):** `npm run build:portable` → single-file offline `meshes-portable.html` (Option A of `PORTABILITE.md`); `npm run check:portable` validates it (rebuild + static checks + `file://` browser test). See « Dev tooling & CI » below.
+- **Build (optional):** `npm run build:portable` → single-file offline `meshes-portable.html` (Option A of `PORTABILITE.md`); `npm run check:portable` validates it (rebuild + static checks + `file://` browser test); `npm run check:artifact` tests the CI-published artifact (downloads the latest `meshes-portable` from the last successful `master` run via `gh` + `unzip`, same `file://` walk — `--local <file>` for a local file without CI prerequisites). See « Dev tooling & CI » below.
 - **Headless import test:** `http://localhost:8000/main.html?autoimport=<base64-urlsafe-text>` triggers an auto-import of a meshes-formatted string (no file picker needed).
 
 ## Architecture
@@ -29,7 +29,7 @@ App: one HTML page driving **16 ES modules** (see the `main.html` script tags, t
 | `convert.js` | Parser: meshes-format text ↔ multi-shape JSON scene. Reads files via `FileReader` (this is why HTTP serving is mandatory). |
 | `test_server.py` | Threaded `http.server` on port 8000 with EADDRINUSE-diagnostics. |
 | `assets/` | `barre_boutons.png` (toolbar screenshot), `meshes-sample`, `mesh-1785093938339.json`, `alphabet2` (legacy example). `assets/favicon.svg` is the only asset referenced by the app (`<link rel="icon">`). |
-| `scripts/` | Dev tooling only (never shipped): `check.sh` (orchestrates `npm run check`), the 6 `smoke-*.mjs` suites + `smoke_lib.mjs` harness, and the portable toolchain `build-portable.mjs` + `check-portable.mjs`. See « Dev tooling & CI » below. |
+| `scripts/` | Dev tooling only (never shipped): `check.sh` (orchestrates `npm run check`), the 6 `smoke-*.mjs` suites + `smoke_lib.mjs` harness, and the portable toolchain `build-portable.mjs` + `check-portable.mjs` + `check-artifact.mjs` + the shared `portable-browser-test.mjs`. See « Dev tooling & CI » below. |
 
 Data flow: `main.js` owns app state → calls render primitives in `draw.js` (post-transformation via `modelToScreen`) → user input updates state → main persists via `localStorage`.
 
@@ -41,6 +41,7 @@ Data flow: `main.js` owns app state → calls render primitives in `draw.js` (po
 | `npm run smoke[:suite]` | 6 headless browser suites (preview, edit, import, gestures, modals, rotate) via `playwright-core` + harness `scripts/smoke_lib.mjs` (`CHROMIUM_PATH`, default `/usr/bin/chromium`). |
 | `npm run build:portable` | `node scripts/build-portable.mjs` : merges the 16 modules into a standalone `meshes-portable.html` (Option A of `PORTABILITE.md`) — inline module escapes the `file://` CORS, localStorage shim for Firefox, comments/blank lines stripped, `node --check` self-validated. Gitignored artifact, always regenerable; sources untouched. |
 | `npm run check:portable` | `node scripts/check-portable.mjs` : rebuild + static validation of the generated file (node --check of the merged script, zero residual import/export, zero blank line, shim, collision renames, source regexes verbatim) + `file://` browser test (load, click→point persisted, wheel zoom, reload restore, autoimport exercising convert.js regexes). |
+| `npm run check:artifact` | `node scripts/check-artifact.mjs` : tests the **CI-published** artifact — downloads the latest `meshes-portable` from the last successful `master` run (`gh` CLI + `unzip`, repo from `git remote`, `--repo` to override), extracts, runs the SAME `file://` browser walk as check:portable via the shared `scripts/portable-browser-test.mjs` helper, cleans the temp dir. `--local <file>` tests a local file without CI prerequisites; `--out-dir`, `--keep`, `--help`. Post-CI manual check (needs a published master run), intentionally NOT in `npm run check:portable` nor in the workflow. |
 
 - **CI** (`.github/workflows/check.yml`, on every push) : `npm run check` then `npm run check:portable`, then **uploads the artifact** (`meshes-portable.html` + `assets/`) via `actions/upload-artifact@v7`. The upload is **restricted to branch `master`** (`if: github.ref == 'refs/heads/master'`) — validations run on every branch, but branches don't produce artifacts.
 - **CI policy** : actions pinned to v7 (checkout, setup-node, upload-artifact = Node 24 runtime; ≤ v4 ran on deprecated Node 20). Dependabot watches the `github-actions` ecosystem weekly (`.github/dependabot.yml`).
