@@ -351,6 +351,7 @@ export const applyPreviewMode = () => {
         // seul le geste est abandonne.
         state.circleCenterModel = undefined
         state.circleRadiusModel = 0
+        state.circleOffsetAngle = 0
         state.shapeAnchorModel = undefined
         state.shapeCurrentModel = undefined
         state.shapeRadiusModel = 0

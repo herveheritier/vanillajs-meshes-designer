@@ -430,15 +430,20 @@ const strokeScreenPolyline = (pts) => {
 // repaint sans invalider le cache offscreen. Montre ce qui SERA
 // genere : le cercle vrai (arc en pointilles) + le polygone des N
 // cotes (la frontiere de l'eventail de triangles) + la ligne de rayon
-// + le marqueur de centre.
+// + le marqueur de centre. Meme contrat que circleGeometry : le
+// `state.circleOffsetAngle` (radians) decale le sommet 0 du polygone
+// pour que l'utilisateur voie immediatement quelle orientation de
+// cercle produira le 2e mousedown — feedback WYSIWYG du geste en
+// 2 temps.
 const drawCirclePreview = () => {
     const center = state.circleCenterModel
     const r = state.circleRadiusModel
     if (!center || r <= 0) return
     const n = Math.max(3, Math.round(state.circleSegments) || 24)
+    const offset = state.circleOffsetAngle
     const rim = []
     for (let i = 0; i < n; i++) {
-        const a = (i / n) * TAU
+        const a = (i / n) * TAU + offset
         rim.push(modelToScreen({ x: center.x + r * Math.cos(a), y: center.y + r * Math.sin(a) }))
     }
     drawRadialBase(center, r)

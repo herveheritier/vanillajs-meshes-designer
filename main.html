@@ -1391,7 +1391,7 @@
                      cotes, raccourci C = activer / desactiver. Echap ferme
                      le panneau ou desarme ; clic droit / Backspace
                      annulent le trace en cours. -->
-                <button id="shapes" title="Créer des formes prédéfinies (cercle, rectangle, carré, polygones, étoile) : ouvrir la liste puis clic + glisser sur le canvas ; raccourci C = mode cercle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.7 3.4 3.8.6-2.7 2.7.6 3.8-3.4-1.8-3.4 1.8.6-3.8L2.5 6l3.8-.6z"/></svg><span id="shapesText"></span></button>
+                <button id="shapes" title="Créer des formes prédéfinies (cercle, rectangle, carré, polygones, étoile) : ouvrir la liste puis clic + glisser sur le canvas ; raccourci C = mode cercle ; le cercle se trace en 2 clics (1er clic = centre, 2e clic = valider) avec orientation par souris"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.7 3.4 3.8.6-2.7 2.7.6 3.8-3.4-1.8-3.4 1.8.6-3.8L2.5 6l3.8-.6z"/></svg><span id="shapesText"></span></button>
             </div>
             <span class="toolbar-sep"></span>
             <!-- Groupe "Undo/redo" : miroite les raccourcis clavier
@@ -1491,7 +1491,7 @@
              #shapes, fermeture au clic exterieur / Echap). -->
         <div id="shapesPanel" hidden>
             <div class="shapes-title">Formes prédéfinies</div>
-            <button type="button" data-shape="circle" title="Créer un cercle (clic + glisser : centre puis rayon ; molette = nombre de côtés ; raccourci C)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="8" x2="12.5" y2="8"/><circle cx="8" cy="8" r="0.8" fill="currentColor" stroke="none"/></svg><span>Cercle</span></button>
+            <button type="button" data-shape="circle" title="Créer un cercle (1er clic = centre, mouvement de la souris = rayon + angle de départ, 2e clic = valider ; molette = nombre de côtés ; raccourci C)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="8" x2="12.5" y2="8"/><circle cx="8" cy="8" r="0.8" fill="currentColor" stroke="none"/></svg><span>Cercle</span></button>
             <button type="button" data-shape="rect" title="Créer un rectangle (clic + glisser : deux coins)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="10" height="8"/></svg><span>Rectangle</span></button>
             <button type="button" data-shape="square" title="Créer un carré (clic + glisser : deux coins)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg><span>Carré</span></button>
             <button type="button" data-shape="tri" title="Créer un triangle équilatéral (clic + glisser : centre puis rayon)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3l5 9H3z"/></svg><span>Triangle</span></button>

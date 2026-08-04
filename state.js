@@ -36,17 +36,31 @@ export const state = {
 
     // ===== Outil cercle (creation par eventail de triangles) =====
     // Mode transitoire (non persiste, comme la preview) : tant qu'il
-    // est actif, le clic gauche + glisser sur le canvas trace un
-    // cercle (1er clic = centre, glisser = rayon, relacher = creer).
-    // circleCenterModel : centre du cercle en cours, en coords model
-    // (snapToGrid applique). circleRadiusModel : rayon courant en
-    // coords model, mis a jour pendant le geste (pilote la
-    // previsualisation). circleSegments : nombre de cotes du polygone
-    // genere, reglable a la molette en mode cercle (clamp
-    // CIRCLE_MIN_SEGMENTS..CIRCLE_MAX_SEGMENTS).
+    // est actif, le geste « 1er clic = centre, mouvement de la
+    // souris = rayon + angle de depart, 2e clic = valider » trace
+    // un cercle (orientation par souris, cf. cahier des charges des
+    // evolutions). L'utilisateur peut relacher la souris entre les
+    // deux clics (le mode reste armé, l'angle se fige sur la
+    // dernière valeur du curseur).
+    // circleCenterModel : centre du cercle en cours en coords model
+    // (snapToGrid applique sur le 1er mousedown), undefined par
+    // defaut (= pas encore pose). Sa presence signale qu'on est en
+    // milieu de geste : le prochain 1er mousedown validera via
+    // commitCircleGesture au lieu de reinitialiser le centre.
+    // circleRadiusModel : rayon courant en coords model, mis a
+    // jour a chaque mousemove (pilote la previsualisation).
+    // circleOffsetAngle : angle de depart du polygone en radians
+    // (atan2 du vecteur curseur - centre, evalue en coords screen
+    // pour rester intuitif malgre l'axe Y inverse du canvas).
+    // Reset a 0 a chaque debut / annulation / fin de geste.
+    // circleSegments : nombre de cotes du polygone genere,
+    // reglable a la molette en mode cercle (clamp
+    // CIRCLE_MIN_SEGMENTS..CIRCLE_MAX_SEGMENTS), persiste en
+    // localStorage.
     circleMode: false,
     circleCenterModel: undefined,
     circleRadiusModel: 0,
+    circleOffsetAngle: 0,
     circleSegments: CIRCLE_DEFAULT_SEGMENTS,
 
     // ===== Formes prédéfinies (panneau #shapes) =====

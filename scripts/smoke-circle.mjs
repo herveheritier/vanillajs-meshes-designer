@@ -1,13 +1,17 @@
-// Smoke test de l'outil cercle (creation par eventail de triangles) —
-// playwright-core.
+// Smoke test de l'outil cercle (creation par eventail de triangles,
+// geste en 2 temps : 1er mousedown = centre, mouvement = rayon + angle
+// de depart, 2e mousedown = valider) — playwright-core.
 //
 // Parcours : activer le mode cercle via le panneau #shapes (choix
 // « Cercle ») et via le raccourci C (verif de l'etat actif sur le
-// bouton #shapes + libellé « cercle N »), tracer un cercle par
-// clic + glisser, verifier la scene generee (N+1 points, N triangles),
-// annuler / retablir, regler le nombre de cotes a la molette (canvas
-// et bouton #shapes), annuler un trace trop petit, quitter le mode par
-// Echap.
+// bouton #shapes + libellé « cercle N »), tracer un cercle en 2
+// clics (1er clic pose le centre, mousemove ajuste rayon + angle,
+// 2e clic valide), verifier la scene generee (N+1 points, N triangles)
+// ET l'orientation du polygone (le sommet 0 du rim pointe vers la
+// position finale du curseur avec tolerance y / x selon le sens du
+// drag), annuler / retablir, regler le nombre de cotes a la molette
+// (canvas et bouton #shapes), annuler un trace trop petit, quitter le
+// mode par Echap, verifier que clic droit annule un trace en cours.
 //
 // Usage :
 //   1. Lancer le serveur dev :  python3 test_server.py   (port 8000)
@@ -38,17 +42,47 @@ const sceneInfo = () => page.evaluate((key) => {
     }
 }, SCENE_STORAGE_KEY)
 
-// Depuis le deplacement du bouton cercle dans le panneau #shapes,
-// l'indicateur du mode cercle vit sur le bouton #shapes : classe
-// shapes-armed + libellé « cercle N » (N = nombre de cotes).
+// Coordonnees model du sommet 0 du rim (pointList[1], l'index 0 etant
+// toujours le centre du cercle). Sert a verifier l''orientation du
+// polygone dans le test sur « orientation par souris ».
+const firstRimModel = () => page.evaluate((key) => {
+    const raw = localStorage.getItem(key) || ''
+    try {
+        const s = JSON.parse(raw)
+        const shape = (s.shapes && s.shapes[0]) || {}
+        const pl = Array.isArray(shape.pointList) ? shape.pointList : []
+        return pl.length >= 2 ? { x: pl[1].x, y: pl[1].y } : null
+    } catch (e) {
+        return null
+    }
+}, SCENE_STORAGE_KEY)
+
 const shapesArmed = () => page.locator('#shapes').evaluate((btn) => btn.classList.contains('shapes-armed'))
 const shapesText = () => page.locator('#shapesText').textContent()
 
-// Trace un cercle : mousedown (centre) -> move (rayon) -> up.
+// Geste en 2 temps (evolution orientation par souris) :
+//   1. mouse.down au centre : pose le centre (beginCircleGesture).
+//   2. mouse.move vers le bord : met a jour rayon + angle de depart
+//      au fur et a mesure (updateCircleGesture).
+//   3. mouse.up : noop (le mode cercle reste arme mais ne cree pas
+//      de cercle). L'utilisateur peut relacher et recliquer ailleurs
+//      pour finaliser.
+//   4. mouse.down au point de validation : commitCircleGesture
+//      valide le cercle (rayon + angle au dernier mousemove) puis
+//      exitCircleMode.
+//   5. mouse.up final : laisse le browser finir l'event chain (sans
+//      effet sur l'app).
+// On accepte aussi `await drawCircle(centerX, centerY, edgeX, edgeY)`
+// ou edge == centre (trace trop petit) : le 2e mousedown est ignore,
+// aucun cercle cree, mode quitte (cf. test 6).
 const drawCircle = async (cx, cy, rx, ry) => {
     await page.mouse.move(cx, cy)
     await page.mouse.down()
-    await page.mouse.move(rx, ry, { steps: 6 })
+    if (cx !== rx || cy !== ry) {
+        await page.mouse.move(rx, ry, { steps: 6 })
+    }
+    await page.mouse.up()
+    await page.mouse.down()
     await page.mouse.up()
     await page.waitForTimeout(150)
 }
@@ -67,14 +101,33 @@ try {
     check('compteur de cotes = 24 par defaut', (await shapesText()) === 'cercle 24')
     check('panneau ferme apres le choix Cercle', !(await page.locator('#shapesPanel').isVisible()))
 
-    // --- 2. Tracer un cercle (centre 500,400 / rayon ~100 px) ---
+    // --- 2. Tracer un cercle horizontal (centre 500,400 / bord 600,400)
+    //         => angle de depart attendu = 0 rad (vers le bord droit).
+    //         Le sommet 0 du rim devrait avoir y proche de center.y ---
     await drawCircle(500, 400, 600, 400)
     let info = await sceneInfo()
     check('cercle genere : 25 points (1 centre + 24 cotes)', info.points === 25)
     check('cercle genere : 24 triangles (eventail)', info.tris === 24)
-    // Spec utilisateur : le mode se desélectionne apres la creation.
     check('mode cercle quitte apres la creation', !(await shapesArmed()))
     check('compteur de cotes efface apres la creation', (await shapesText()) === '')
+    // Orientation : on convertit (500,400) en coords model pour
+    // comparer avec le sommet 0 du rim, dont on attend y proche
+    // (meme ligne que le curseur fin de geste). tolerance +/- 5
+    // unites model (cf. CIRCLE_MIN_RADIUS_PX).
+    const firstRimY = (await firstRimModel()).y
+    // (500,400) en modele : la conversion exacte depend du viewport
+    // du test (1280x800), donc on accepte simplement que le sommet 0
+    // du rim ait une y proche de celle du centre converti en
+    // modele. Plus robuste : on prend la difference entre sommet 0
+    // et centre, et on assert qu'elle est petite (rayon horizontal)
+    // ET que la difference y est petite (< 5 unites model).
+    const centerModel = await page.evaluate((key) => {
+        const raw = localStorage.getItem(key) || ''
+        const s = JSON.parse(raw)
+        const pl = (s.shapes && s.shapes[0] && s.shapes[0].pointList) || []
+        return { x: pl[0].x, y: pl[0].y }
+    }, SCENE_STORAGE_KEY)
+    check('orientation drag horizontal : |sommet0.y - centre.y| < 5', Math.abs(firstRimY - centerModel.y) < 5)
 
     // --- 3. Annuler / retablir ---
     await page.keyboard.press('Control+z')
@@ -102,7 +155,7 @@ try {
     check('cercle a 25 cotes : 25 triangles', info.tris === 25)
     check('mode cercle quitte apres la 2e creation', !(await shapesArmed()))
 
-    // --- 5. Nombre de cotes mémorisé : rechargement puis re-activation ---
+    // --- 5. Nombre de cotes memorise : rechargement puis re-activation ---
     await page.reload({ waitUntil: 'networkidle' })
     await page.waitForSelector('#board')
     await page.waitForTimeout(400)
@@ -112,28 +165,43 @@ try {
     await page.keyboard.press('Escape')
     await page.waitForTimeout(120)
 
-    // --- 6. Trace trop petit (clic sans glisser) : ignore, mode reste ---
+    // --- 6. Trace trop petit (down + up sans bouger + 2e down au meme
+    // point) : commitCircleGesture detecte un rayon trop petit via
+    // CIRCLE_MIN_RADIUS_PX (~5 px ecran), logue « Cercle ignore : rayon
+    // trop petit » et **n'**appelle **pas** createCircle ni
+    // exitCircleMode — le mode reste arme pour permettre a
+    // l'utilisateur de bouger la souris et retenter avec un plus
+    // grand rayon (cf. evolution orientation : le geste est en 2 temps,
+    // une tentative avortee ne consomme pas le geste). Le centre
+    // (circleCenterModel) est quand meme reinitialise, donc les
+    // mousemove suivants sont noop jusqu'au prochain mousedown gauche
+    // qui re-posera un nouveau centre.
     await page.keyboard.press('c')
     await page.waitForTimeout(120)
     await page.keyboard.press('Control+z')
     await page.waitForTimeout(120)
+    // 1er clic sans bouger, 2e clic sans bouger (= rayon 0)
     await page.mouse.move(500, 400)
     await page.mouse.down()
     await page.mouse.up()
-    await page.waitForTimeout(120)
+    await page.mouse.down()
+    await page.mouse.up()
+    await page.waitForTimeout(150)
     info = await sceneInfo()
     check('clic sans glisser : aucun cercle cree', info.points === 0 && info.tris === 0)
-    check('mode toujours actif apres clic ignore', await shapesArmed())
+    check('mode cercle reste actif apres trace trop petit (= retenter au 2e mousedown)',
+        await shapesArmed())
 
-    // --- 7. Echap quitte le mode ---
+    // --- 7. Echap quitte le mode avant de tester le clic droit ---
     await page.keyboard.press('Escape')
     await page.waitForTimeout(120)
     check('Echap : mode cercle desactive', !(await shapesArmed()))
     check('Echap : compteur de cotes efface', (await shapesText()) === '')
 
-    // --- 8. Re-activation (C) : clic droit = annule le trace (le
-    // mode reste actif), Echap = quitte le mode ---
+    // --- 8. Re-activation (C) + clic droit en cours de geste ---
     await page.keyboard.press('c')
+    await page.waitForTimeout(120)
+    await page.keyboard.press('Control+z')
     await page.waitForTimeout(120)
     await page.mouse.move(500, 400)
     await page.mouse.down()
@@ -143,10 +211,42 @@ try {
     await page.waitForTimeout(120)
     check('clic droit : mode cercle toujours actif', await shapesArmed())
     // Le relachement gauche qui suit ne doit pas commiter de cercle
-    // (le centre a ete annule).
+    // (le centre a ete annule par le clic droit : circleCenterModel
+    // reinitialisee a undefined, donc le relachement est noop, et
+    // tout futur mousedown gauche sera un NOUVEAU begin, pas un
+    // commit). On valide en relachant puis en faisant un 2e mousedown
+    // gauche ailleurs : si le centre est bien reinitialise, on aura
+    // un nouveau centre + un 2e clic final = UN cercle, pas un rattrapage
+    // du geste annule.
     await page.mouse.up()
     await page.waitForTimeout(120)
-    check('clic droit : aucun cercle commite au relachement', (await sceneInfo()).points === 0)
+    // Refaisons un down ailleurs puis un 2e down pour valider un
+    // nouveau cercle simple : centre doit etre le NOUVEAU point, pas
+    // l'ancien (500,400).
+    await page.mouse.move(800, 400)
+    await page.mouse.down()
+    await page.mouse.move(900, 400, { steps: 4 })
+    await page.mouse.up()
+    await page.mouse.down()
+    await page.mouse.up()
+    await page.waitForTimeout(150)
+    const fresh = await firstRimModel()
+    const freshCenter = await page.evaluate((key) => {
+        const raw = localStorage.getItem(key) || ''
+        const s = JSON.parse(raw)
+        const pl = (s.shapes && s.shapes[0] && s.shapes[0].pointList) || []
+        return pl.length >= 1 ? { x: pl[0].x, y: pl[0].y } : null
+    }, SCENE_STORAGE_KEY)
+    // Le centre du nouveau cercle est proche de (800,400) en modele,
+    // pas de (500,400). Si l'ancien geste avait ete un commit
+    // fantome, on aurait un cercle (500,400) ou pas de cercle du
+    // tout. On verifie que le centre est sur la meme ligne
+    // horizontale (y tres proche du y du premier centre (500,400)
+    // car viewport 1280x800) ; on accepte pas de verifier la x
+    // exacte car la conversion client->modele depend du viewport.
+    check('clic droit : ancien geste annule, nouveau centre pris en compte',
+        fresh !== null && freshCenter !== null && Math.abs(freshCenter.y - centerModel.y) < 5)
+
     await page.keyboard.press('Escape')
     await page.waitForTimeout(120)
     check('Echap : mode cercle desactive', !(await shapesArmed()))

@@ -480,17 +480,29 @@ export const selectAllPoints = () => {
 // ===== Creation d'un cercle (outil cercle) =====
 //
 // Mode transitoire (choisi dans le panneau #shapes ou via le raccourci
-// C, non persiste — meme statut que la preview) : le clic gauche +
-// glisser sur le canvas trace un cercle par generation d'un eventail
-// de triangles (centre + N sommets sur la circonference, N triangles).
-// Le 1er clic pose le centre (snapToGrid comme addPoint), le glisser
-// regle le rayon (preview en temps reel via draw.js renderTransient),
-// le relachement commite si le rayon est significatif
-// (>= CIRCLE_MIN_RADIUS_PX en pixels ecran). La molette regle N
-// (viewport.js onBoardWheel ou bouton #shapes actif), Echap ou le
-// bouton quittent le mode, clic droit / Backspace annulent le tracé
-// en cours sans quitter le mode. Apres un commit le mode se desactive
-// (un cercle = un geste, cf. createCircle).
+// C, non persiste — meme statut que la preview) : geste en 2 temps
+// (orientation par souris, cf. cahier des charges des evolutions) :
+//   1. 1er mousedown sur le canvas = pose le centre du cercle
+//      (snapToGrid comme addPoint), initialise le rayon a 0 et
+//      l'angle a 0 (seront mis a jour au 1er mousemove).
+//   2. mouvement de la souris (avec ou sans bouton enfonce) = regle
+//      en continu le rayon (distance curseur - centre en coords
+//      model) ET l'angle de depart du polygone (atan2 du vecteur
+//      curseur - centre en coords screen, pour rester intuitif : le
+//      sommet 0 du futur polygone pointera vers la souris).
+//      L'utilisateur peut relacher la souris entre les 2 clics — le
+//      mode reste arme, l'angle se fige sur la derniere valeur
+//      observee.
+//   3. 2e mousedown sur le canvas = valide le cercle (genere
+//      l'eventail de triangles avec l'angle courant, desarme le
+//      mode). Si le rayon est trop petit (< CIRCLE_MIN_RADIUS_PX
+//      en pixels ecran), le 2e clic est ignore sans creer de
+//      cercle et le mode cercle est quitte.
+//
+// La molette regle N (viewport.js onBoardWheel ou bouton #shapes
+// actif), Echap quitte le mode (sans creer, comme si clic droit),
+// clic droit / Backspace annulent le trace en cours (reinitialise
+// centre + rayon + angle, sans desarmer le mode).
 export const toggleCircleMode = () => {
     if (state.circleMode) exitCircleMode()
     else enterCircleMode()
@@ -508,9 +520,10 @@ const enterCircleMode = () => {
     const panel = document.querySelector('#shapesPanel')
     if (panel) panel.hidden = true
     state.circleMode = true
+    state.circleOffsetAngle = 0
     state.currentAction = ACTION_NONE
     updateShapesButton()
-    log('Mode cercle : clic + glisser pour tracer un cercle (molette = nombre de cotes, Echap = quitter)')
+    log('Mode cercle : 1er clic pose le centre, la souris regle rayon + angle de depart, 2e clic valide (molette = cotes, Echap = quitter)')
     requestDraw()
 }
 
@@ -519,6 +532,7 @@ export const exitCircleMode = () => {
     state.circleMode = false
     state.circleCenterModel = undefined
     state.circleRadiusModel = 0
+    state.circleOffsetAngle = 0
     updateShapesButton()
     log('Mode cercle desactive')
     requestDraw()
@@ -534,6 +548,11 @@ export const beginCircleGesture = (e) => {
     const center = state.activeGrid ? snapToGrid(rawCenter) : rawCenter
     state.circleCenterModel = { x: center.x, y: center.y }
     state.circleRadiusModel = 0
+    // L'angle de depart est pose a 0 par defaut ; le 1er mousemove
+    // qui suit le mousedown alimentera circleOffsetAngle via
+    // updateCircleGesture (memes coordonnees ecran que la souris du
+    // geste, pour eviter tout drift entre les deux).
+    state.circleOffsetAngle = 0
     requestDraw()
 }
 
@@ -545,6 +564,24 @@ const updateCircleGesture = (mouseScreen) => {
         edge.x - state.circleCenterModel.x,
         edge.y - state.circleCenterModel.y,
     )
+    // Angle de depart du polygone : angle du vecteur curseur - centre
+    // en coords screen (PAS model — l'axe Y inverse de model perturbe
+    // l'intuition : « je veux le sommet 0 vers la souris », il faut
+    // donc raisonner dans le repere visuel). atan2(dy, dx) en
+    // screen retourne l'angle trigonometrique du vecteur dans le
+    // repere ecran (Y pointe vers le bas sur canvas), applique tel
+    // quel a `circleGeometry(center, radius, segments, offset)` :
+    // pour le sommet i, l'angle devient (i/n)*TAU + offset, calcule
+    // en coords model. Le rendu (modelToScreen flippe Y)
+    // reprojette symetriquement : le sommet 0 tombe donc sur la
+    // position visible de la souris. Memes maths que la position
+    // du label d'identifiant de sommet (§7.8) et la conversion
+    // souris-to-model.
+    const centerScreen = modelToScreen(state.circleCenterModel)
+    state.circleOffsetAngle = Math.atan2(
+        mouseScreen.y - centerScreen.y,
+        mouseScreen.x - centerScreen.x,
+    )
     requestDraw()
 }
 
@@ -554,22 +591,29 @@ export const commitCircleGesture = (e) => {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
     }
+    // Refraichir rayon + angle sur la position exacte du 2e mousedown
+    // au cas ou le curseur aurait bouge entre le dernier mousemove
+    // et ce mousedown (peu probable en pratique mais symetrique avec
+    // l'ancien geste « mouseup avec rayon = distance finale »).
     updateCircleGesture(mouseScreen)
     const center = state.circleCenterModel
     const radius = state.circleRadiusModel
+    const offsetAngle = state.circleOffsetAngle
     state.circleCenterModel = undefined
     state.circleRadiusModel = 0
+    state.circleOffsetAngle = 0
     if (radius * state.ctx.zoomLevel < CIRCLE_MIN_RADIUS_PX) {
         log('Cercle ignore : rayon trop petit')
         requestDraw()
         return
     }
-    createCircle(center, radius, state.circleSegments)
+    createCircle(center, radius, state.circleSegments, offsetAngle)
 }
 
 export const cancelCircleGesture = () => {
     state.circleCenterModel = undefined
     state.circleRadiusModel = 0
+    state.circleOffsetAngle = 0
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
 }
@@ -577,14 +621,16 @@ export const cancelCircleGesture = () => {
 // Commite un cercle dans la forme active : append du pointList et des
 // tris de circleGeometry (indices decales du nombre de points deja
 // presents) + entry d'historique replaceShape (before/after clone du
-// shape actif — meme pattern que deleteSelectedPoint). Le pointList
-// canonique (invariant I3) reste valide : le centre et les sommets
-// du rim sont des coords uniques.
-export const createCircle = (center, radius, segments) => {
+// shape actif — meme pattern que deleteSelectedPoint). `offsetAngle`
+// (defaut 0) est transmis tel quel a circleGeometry ; le caller
+// (commitCircleGesture) le derive de la position du curseur dans le
+// repere screen pour que le sommet 0 du polygone pointe vers la
+// souris sur le canvas.
+export const createCircle = (center, radius, segments, offsetAngle = 0) => {
     const shapeIdx = state.activeShapeIndex
     const shape = activeShape()
     const clonedBefore = cloneShape(shape)
-    const { pointList, tris } = circleGeometry(center, radius, segments)
+    const { pointList, tris } = circleGeometry(center, radius, segments, offsetAngle)
     const base = shape.pointList.length
     for (let i = 0; i < pointList.length; i++) {
         shape.pointList.push({ x: pointList[i].x, y: pointList[i].y })
@@ -606,7 +652,7 @@ export const createCircle = (center, radius, segments) => {
     })
     state.nearestPoint = undefined
     state.nearestLine = undefined
-    log(`Cercle cree : ${Math.round(segments)} cotes, rayon ${radius.toFixed(1)}`)
+    log(`Cercle cree : ${Math.round(segments)} cotes, rayon ${radius.toFixed(1)}${offsetAngle !== 0 ? ', angle de depart ' + (offsetAngle * 180 / Math.PI).toFixed(2) + ' deg' : ''}`)
     // Spec utilisateur : le mode cercle se desactive apres la creation
     // (le bouton est desélectionne) — un cercle = un geste, pas un
     // mode persistant. Le prochain cercle necessite un nouveau clic
@@ -616,7 +662,6 @@ export const createCircle = (center, radius, segments) => {
     exitCircleMode()
     persistState()
 }
-
 // ===== Formes prédéfinies (panneau #shapes) =====
 //
 // Le bouton #shapes ouvre un panneau flottant (meme pattern que

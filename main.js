@@ -239,12 +239,30 @@ document.addEventListener('mousedown', (e) => {
         if (e.button === 0) togglePreview()
         if (e.button !== 1) return
     }
-    // Mode cercle : le clic gauche commence un trace (centre), le clic
-    // droit annule le trace en cours sans quitter le mode ; le clic
-    // milieu garde son role de pan (branche e.button === 1 plus bas).
+    // Mode cercle : geste en 2 temps (orientation par souris) —
+    //   1. 1er mousedown gauche sur board : beginCircleGesture (pose
+    //      le centre) ; les mousemove suivants regleront rayon + angle.
+    //   2. 2e mousedown gauche sur board : commitCircleGesture (valide
+    //      le cercle avec le rayon et l'angle courants) +
+    //      exitCircleMode (l'utilisateur recommence pour un autre
+    //      cercle).
+    // Le clic droit annule le trace en cours (centre + rayon + angle)
+    // sans quitter le mode, exactement comme avant ; le clic milieu
+    // garde son role de pan (branche e.button === 1 plus bas).
+    // L'ancien geste « mouseup valide » a ete supprime : voir le
+    // handler mouseup plus bas, qui n'a plus de branche circleMode.
     if (state.circleMode && !state.previewMode) {
         if (e.button === 0) {
-            beginCircleGesture(e)
+            if (state.circleCenterModel) {
+                // 2e clic : valide le cercle (rayon + angle captures
+                // au dernier mousemove, rafralchis sur la position
+                // exacte du 2e mousedown dans commitCircleGesture).
+                commitCircleGesture(e)
+            } else {
+                // 1er clic : pose le centre, attend les mousemove
+                // (rayon + angle) et le 2e clic validant.
+                beginCircleGesture(e)
+            }
             return
         }
         if (e.button === 2) {
@@ -311,16 +329,18 @@ document.addEventListener('mouseup', (e) => {
     const wasGrabbing = grabbed()
     if (wasGrabbing) endGrabbing(e)
     if (state.isPanning && e.button === 1) endPan()
-    // Mode cercle : le relachement du clic gauche commite le cercle
-    // (rayon = distance centre -> curseur au release). Retour avant la
-    // logique de selection-box (jamais armee en mode cercle).
-    if (state.circleMode && !state.previewMode && e.button === 0) {
-        commitCircleGesture(e)
-        return
-    }
+    // Mode cercle : le mouseup gauche NE valide plus le cercle (cf.
+    // evolution orientation par souris : c'est le 2e mousedown qui
+    // valide, pas le relachement du 1er). On ne fait donc rien ici en
+    // mode cercle : le mousedown handler global a deja aiguille le
+    // 2e clic vers commitCircleGesture, et le 1er clic vers
+    // beginCircleGesture (avec mouseup no-op entre les deux — l'angle
+    // de depart se fige sur la derniere valeur du curseur observee
+    // avant le relachement, ce qui est la semantique souhaitee par le
+    // cahier des charges).
     // Forme predéfinie armee : le relachement du clic gauche commite la
     // forme (taille = coin oppose ou rayon au release). Retour avant la
-    // logique de selection-box (jamais armee en mode forme).
+    // logique de selection-box (jamais armee en mode forme). Inchange.
     if (state.shapeKind !== undefined && !state.previewMode && e.button === 0) {
         commitShapeGesture(e)
         return

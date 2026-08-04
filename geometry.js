@@ -189,15 +189,25 @@ export const isInsideSegmentByDot = (dot, p1, p2) => {
 // dans le pointList retourne — l'appelant (editor.js createCircle)
 // les decale du nombre de points deja presents dans la forme active.
 //
+// `offsetAngle` (defaut 0) : rotation en radians appliquee a
+// chaque sommet i, permettant de decaler l'angle de depart du
+// polygone (utilise par le geste « orientation par souris », cf.
+// cahier des charges des evolutions : le sommet 0 du polygone
+// pointe vers la position de la souris quand le geste valide).
+// Sens de rotation : CCW (math) en coords model ; le rendu
+// (modelToScreen avec Y inverse)projette le sommet 0 vers la
+// direction de la souris sur l'ecran si l'appelant calcule
+// l'angle en sens ecran (cf. editor.js updateCircleGesture).
+//
 // Fonction pure (aucun acces a state) : testable de maniere
 // isolee. `segments` est arrondi et borne a >= 3 (le defaut 24 rend
 // un disque visuellement lisse ; 3 donnerait un triangle).
-export const circleGeometry = (center, radius, segments) => {
+export const circleGeometry = (center, radius, segments, offsetAngle = 0) => {
     const n = Math.max(3, Math.round(segments) || CIRCLE_DEFAULT_SEGMENTS)
     const pointList = [{ x: center.x, y: center.y }]
     const tris = []
     for (let i = 0; i < n; i++) {
-        const a = (i / n) * TAU
+        const a = (i / n) * TAU + offsetAngle
         pointList.push({
             x: center.x + radius * Math.cos(a),
             y: center.y + radius * Math.sin(a),
