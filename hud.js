@@ -103,20 +103,22 @@ export const updateShapesButton = () => {
     if (btn) {
         // Quatre etats : panneau ouvert (bordure inset, comme
         // #triangleColor.color-panel-open), outil forme arme ou mode
-        // cercle / étoile actif (accent vert + libellé).
+        // cercle / étoile / anneau actif (accent vert + libellé).
         btn.classList.toggle('shapes-panel-open', !!state.shapesPanelOpen)
-        btn.classList.toggle('shapes-armed', state.shapeKind !== undefined || !!state.circleMode || !!state.starMode)
+        btn.classList.toggle('shapes-armed', state.shapeKind !== undefined || !!state.circleMode || !!state.starMode || !!state.annulusMode)
         btn.setAttribute('aria-pressed', state.shapesPanelOpen ? 'true' : 'false')
     }
     // Libellé a cote de l'icone : nom de la forme armee, ou
-    // « cercle N » quand le mode cercle est actif (N = nombre de
-    // cotes — meme langage que #gridText pour le pas de grille), ou
-    // « étoile » quand le mode étoile (3 clics) est actif ; vide
-    // quand rien n'est arme. textContent (pas innerHTML) : chaine
-    // statique / entier.
+    // « cercle N » / « anneau N » quand le mode cercle / anneau est
+    // actif (N = nombre de cotes — meme langage que #gridText pour le
+    // pas de grille), ou « étoile » quand le mode étoile (3 clics)
+    // est actif ; vide quand rien n'est arme. textContent (pas
+    // innerHTML) : chaine statique / entier.
     if (text) {
         if (state.circleMode) {
             text.textContent = 'cercle ' + state.circleSegments
+        } else if (state.annulusMode) {
+            text.textContent = 'anneau ' + state.circleSegments
         } else if (state.starMode) {
             const def = SHAPE_DEFS.star
             text.textContent = def ? def.label : 'étoile'

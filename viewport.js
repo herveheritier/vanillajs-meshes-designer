@@ -345,13 +345,18 @@ export const applyPreviewMode = () => {
         state.nearestPoint = undefined
         state.nearestLine = undefined
         state.nearestTriangle = undefined
-        // Un trace de cercle ou de forme en cours ne doit pas survivre
-        // a l'entree en preview : a la sortie, on retomberait sur une
-        // ancre fantome. L'outil lui-meme reste arme (toggle de vue),
-        // seul le geste est abandonne.
+        // Un trace de cercle / anneau ou de forme en cours ne doit pas
+        // survivre a l'entree en preview : a la sortie, on retomberait
+        // sur une ancre fantome. L'outil lui-meme reste arme (toggle
+        // de vue), seul le geste est abandonne.
         state.circleCenterModel = undefined
         state.circleRadiusModel = 0
         state.circleOffsetAngle = 0
+        state.annulusCenterModel = undefined
+        state.annulusOuterRadiusModel = 0
+        state.annulusOffsetAngle = 0
+        state.annulusPhase = 0
+        state.annulusInnerRatio = 0
         state.shapeAnchorModel = undefined
         state.shapeCurrentModel = undefined
         state.shapeRadiusModel = 0
@@ -445,7 +450,10 @@ export const wireCircleWheelControl = () => {
     const btn = document.querySelector('#shapes')
     if (!btn) return
     btn.addEventListener('wheel', (e) => {
-        if (!state.circleMode) return
+        // Mode cercle OU anneau : le compteur de cotes est partage
+        // (state.circleSegments), le bouton affiche « cercle N » /
+        // « anneau N ».
+        if (!state.circleMode && !state.annulusMode) return
         e.preventDefault()
         adjustCircleSegments(e.deltaY < 0 ? 1 : -1)
     }, { passive: false })
@@ -456,13 +464,13 @@ export const onBoardWheel = (e) => {
     if (!state.board) return
     const boardRect = state.board.getBoundingClientRect()
     const cursorScreen = { x: e.x - boardRect.x, y: e.y - boardRect.y }
-    // Mode cercle : la molette regle le nombre de cotes du polygone
-    // genere (au lieu de zoomer/pivoter). Meme langage que le reglage
-    // du pas de grille a la molette : retour immediat via la preview
-    // (draw.js renderTransient) + le libellé « cercle N » du bouton
-    // #shapes. Desactive en preview (la molette y zoome toujours,
-    // cf. §2.6).
-    if (state.circleMode && !state.previewMode) {
+    // Mode cercle / anneau : la molette regle le nombre de cotes du
+    // polygone genere (au lieu de zoomer/pivoter). Meme langage que le
+    // reglage du pas de grille a la molette : retour immediat via la
+    // preview (draw.js renderTransient) + le libellé « cercle N » /
+    // « anneau N » du bouton #shapes. Desactive en preview (la molette
+    // y zoome toujours, cf. §2.6).
+    if ((state.circleMode || state.annulusMode) && !state.previewMode) {
         adjustCircleSegments(e.deltaY < 0 ? 1 : -1)
         return
     }

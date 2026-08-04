@@ -8,9 +8,10 @@ import {
     COLOR_HOVER_NEAREST_TRIANGLE_STROKE, COLOR_HOVER_NEAREST_TRIANGLE_FILL,
     TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU,
     POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
-    CIRCLE_MIN_RADIUS_PX,
+    CIRCLE_MIN_RADIUS_PX, CIRCLE_DEFAULT_SEGMENTS,
     SHAPE_DEFS, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO,
     STAR_INNER_RATIO_MIN, STAR_INNER_RATIO_MAX,
+    ANNULUS_INNER_RATIO_MIN, ANNULUS_INNER_RATIO_MAX, ANNULUS_INNER_RATIO_DEFAULT,
 } from './constants.js'
 import { drawBoard, drawPoint, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
 import { updateSelectionHud, updateColorButtonState, updateShapesButton } from './hud.js'
@@ -21,7 +22,7 @@ import {
     activeTriangles, getAllVertices, getPointsAtSamePosition, getVertexIndex, getStackTriangleRefs, isPointSelected,
     getIndicesAtSamePosition,
     adjacentPoints, computeOrthogonalProjection, isInsideSegmentByDot,
-    circleGeometry, triangleGeometry, rectGeometry, starGeometry,
+    circleGeometry, triangleGeometry, rectGeometry, starGeometry, annulusGeometry,
 } from './geometry.js'
 import { saveState, movePointsPatch, insertPointPatch, replaceShapePatch, setFillsPatch, cloneShape } from './history.js'
 import { persistState, importMeshFromFile } from './io.js'
@@ -205,11 +206,11 @@ export const updateMouseHover = (cursorScreen) => {
     // du cercle est dessinee dans le calque transitoire (draw.js
     // renderTransient), qui repeint aussi le curseur (drawMouse) a
     // chaque drawBoard — plus besoin de le rappeler ici.
-    // Mode cercle / étoile OU forme predéfinie armee : meme
+    // Mode cercle / étoile / anneau OU forme predéfinie armee : meme
     // traitement — les overlays de survol (point le plus proche,
     // labels, highlights) sont du bruit pendant la construction ;
     // seule la preview (renderTransient) + le curseur sont dessines.
-    if (state.circleMode || state.starMode || state.shapeKind !== undefined) {
+    if (state.circleMode || state.starMode || state.annulusMode || state.shapeKind !== undefined) {
         drawBoard()
         return
     }
@@ -517,9 +518,10 @@ export const toggleCircleMode = () => {
 }
 
 const enterCircleMode = () => {
-    // Exclusion mutuelle avec l'outil forme predéfinie ET le mode
-    // étoile : un seul geste de creation actif a la fois.
+    // Exclusion mutuelle avec l'outil forme predéfinie ET les modes
+    // étoile / anneau : un seul geste de creation actif a la fois.
     if (state.starMode) exitStarMode()
+    if (state.annulusMode) exitAnnulusMode()
     if (state.shapeKind !== undefined) disarmShapeTool()
     // Ferme le panneau #shapes s'il est ouvert (meme comportement
     // qu'armShapeTool) : entrer en mode cercle depuis le panneau ouvert
@@ -706,10 +708,11 @@ export const createCircle = (center, radius, segments, offsetAngle = 0) => {
 // le trace en cours (reinitialise centre + rayon + angle + phase,
 // sans desarmer le mode).
 export const enterStarMode = () => {
-    // Exclusion mutuelle avec le mode cercle et l'outil forme : un
-    // seul geste de creation actif a la fois (meme contrat que
-    // enterCircleMode).
+    // Exclusion mutuelle avec le mode cercle / anneau et l'outil
+    // forme : un seul geste de creation actif a la fois (meme contrat
+    // que enterCircleMode).
     if (state.circleMode) exitCircleMode()
+    if (state.annulusMode) exitAnnulusMode()
     if (state.shapeKind !== undefined) disarmShapeTool()
     // Ferme le panneau #shapes s'il est ouvert (meme comportement
     // qu'enterCircleMode) : un seul Echap suffit alors a tout annuler.
@@ -878,6 +881,202 @@ export const createStar = (center, radius, offsetAngle = 0, innerRatio = SHAPE_S
     exitStarMode()
     persistState()
 }
+// ===== Creation d'un anneau (cercle perçé d'un trou, mode 3 clics) =====
+//
+// Mode transitoire calqué sur le mode étoile (meme logique que le
+// cercle + un reglage supplementaire au 3e clic, cf. cahier des
+// charges des evolutions « création d'un cercle percé d'un trou ») :
+//   1. 1er mousedown gauche = pose le centre (snapToGrid comme le
+//      cercle), rayon externe 0, angle 0, phase 0.
+//   2. mouvement de la souris (avec ou sans bouton enfonce) = regle
+//      le rayon EXTERIEUR + l'angle de depart. L'angle est calcule en
+//      coords MODEL (meme convention que updateCircleGesture) : le
+//      sommet exterieur 0 du futur anneau pointe vers la souris.
+//   3. 2e mousedown gauche = VERROUILLE rayon externe + angle
+//      (phase 1) : le mouvement regle alors la taille du TROU (ratio
+//      rayon interne / externe = distance curseur - centre / rayon
+//      externe, clamp ANNULUS_INNER_RATIO_MIN..MAX).
+//   4. 3e mousedown gauche = VALIDE l'anneau (rayon externe + angle +
+//      trou courants), desarme le mode (comme le cercle).
+//
+// La molette regle le nombre de cotes (meme compteur que le cercle,
+// state.circleSegments — viewport.js onBoardWheel). Echap quitte le
+// mode (sans creer), clic droit / Backspace annulent le trace en
+// cours (sans desarmer le mode).
+export const enterAnnulusMode = () => {
+    // Exclusion mutuelle avec le mode cercle / étoile et l'outil forme
+    // (un seul geste de creation actif a la fois, meme contrat que
+    // enterCircleMode / enterStarMode).
+    if (state.circleMode) exitCircleMode()
+    if (state.starMode) exitStarMode()
+    if (state.shapeKind !== undefined) disarmShapeTool()
+    // Ferme le panneau #shapes s'il est ouvert : un seul Echap suffit
+    // alors a tout annuler.
+    state.shapesPanelOpen = false
+    const panel = document.querySelector('#shapesPanel')
+    if (panel) panel.hidden = true
+    state.annulusMode = true
+    state.annulusCenterModel = undefined
+    state.annulusOuterRadiusModel = 0
+    state.annulusOffsetAngle = 0
+    state.annulusPhase = 0
+    state.annulusInnerRatio = ANNULUS_INNER_RATIO_DEFAULT
+    state.currentAction = ACTION_NONE
+    updateShapesButton()
+    log('Mode anneau : 1er clic = centre, mouvement = rayon externe + angle, 2e clic = verrouille, mouvement = taille du trou, 3e clic = valider (molette = cotes, Echap = quitter)')
+    requestDraw()
+}
+
+export const exitAnnulusMode = () => {
+    if (!state.annulusMode) return
+    state.annulusMode = false
+    state.annulusCenterModel = undefined
+    state.annulusOuterRadiusModel = 0
+    state.annulusOffsetAngle = 0
+    state.annulusPhase = 0
+    state.annulusInnerRatio = ANNULUS_INNER_RATIO_DEFAULT
+    updateShapesButton()
+    log('Mode anneau desactive')
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+}
+
+export const beginAnnulusGesture = (e) => {
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    const rawCenter = screenToModel(mouseScreen)
+    const center = state.activeGrid ? snapToGrid(rawCenter) : rawCenter
+    state.annulusCenterModel = { x: center.x, y: center.y }
+    state.annulusOuterRadiusModel = 0
+    state.annulusOffsetAngle = 0
+    state.annulusPhase = 0
+    state.annulusInnerRatio = ANNULUS_INNER_RATIO_DEFAULT
+    // Sync lastMousePos (meme raison que beginCircleGesture : le
+    // drawBoard differe repeint le curseur via renderTransient).
+    state.lastMousePos = mouseScreen
+    requestDraw()
+}
+
+const updateAnnulusGesture = (mouseScreen) => {
+    if (!state.annulusCenterModel) return
+    const rawEdge = screenToModel(mouseScreen)
+    const edge = state.activeGrid ? snapToGrid(rawEdge) : rawEdge
+    const cx = state.annulusCenterModel.x
+    const cy = state.annulusCenterModel.y
+    if (state.annulusPhase === 0) {
+        // Phase 1 : rayon externe + angle de depart (meme convention
+        // que updateCircleGesture, le Y-flip n'est compte qu'une fois).
+        state.annulusOuterRadiusModel = Math.hypot(edge.x - cx, edge.y - cy)
+        state.annulusOffsetAngle = Math.atan2(edge.y - cy, edge.x - cx)
+    } else {
+        // Phase 2 (apres le 2e clic) : la taille du trou suit la
+        // distance curseur - centre, normalisee par le rayon externe
+        // verrouille. Au bord (curseur a ~1 rayon externe) -> anneau
+        // fin (ratio ~1) ; vers le centre -> trou petit (disque plein).
+        // Clamp partage avec annulusGeometry (ANNULUS_INNER_RATIO_MIN..MAX).
+        state.annulusInnerRatio = state.annulusOuterRadiusModel > 0
+            ? Math.max(ANNULUS_INNER_RATIO_MIN, Math.min(ANNULUS_INNER_RATIO_MAX, Math.hypot(edge.x - cx, edge.y - cy) / state.annulusOuterRadiusModel))
+            : ANNULUS_INNER_RATIO_DEFAULT
+    }
+    requestDraw()
+}
+
+export const lockAnnulusRadius = (e) => {
+    if (!state.annulusCenterModel) return
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    // Rafraichit rayon externe + angle sur la position exacte du 2e
+    // mousedown (symetrique avec commitCircleGesture) puis passe en
+    // phase 2 : le prochain mouvement reglera la taille du trou.
+    updateAnnulusGesture(mouseScreen)
+    state.annulusPhase = 1
+    requestDraw()
+}
+
+export const commitAnnulusGesture = (e) => {
+    if (!state.annulusCenterModel) return
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    // Rafraichit la taille du trou sur la position exacte du 3e
+    // mousedown au cas ou le curseur aurait bouge entre le dernier
+    // mousemove et ce mousedown.
+    updateAnnulusGesture(mouseScreen)
+    const center = state.annulusCenterModel
+    const outerRadius = state.annulusOuterRadiusModel
+    const offsetAngle = state.annulusOffsetAngle
+    const innerRatio = state.annulusInnerRatio
+    state.annulusCenterModel = undefined
+    state.annulusOuterRadiusModel = 0
+    state.annulusOffsetAngle = 0
+    state.annulusPhase = 0
+    state.annulusInnerRatio = ANNULUS_INNER_RATIO_DEFAULT
+    if (outerRadius * state.ctx.zoomLevel < CIRCLE_MIN_RADIUS_PX) {
+        log('Anneau ignore : rayon trop petit')
+        requestDraw()
+        return
+    }
+    createAnnulus(center, outerRadius, offsetAngle, innerRatio)
+}
+
+export const cancelAnnulusGesture = () => {
+    state.annulusCenterModel = undefined
+    state.annulusOuterRadiusModel = 0
+    state.annulusOffsetAngle = 0
+    state.annulusPhase = 0
+    state.annulusInnerRatio = ANNULUS_INNER_RATIO_DEFAULT
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+}
+
+// Commite un anneau dans la forme active : append du pointList et des
+// tris de annulusGeometry (indices decales du nombre de points deja
+// presents) + entry d'historique replaceShape (meme pattern que
+// createCircle / createStar / deleteSelectedPoint). `offsetAngle`
+// (meme convention que le cercle) et `innerRatio` (taille du trou)
+// sont transmis tels quels ; le nombre de cotes vient de
+// state.circleSegments (compteur partage avec le cercle, reglable a
+// la molette en mode anneau).
+export const createAnnulus = (center, outerRadius, offsetAngle = 0, innerRatio = ANNULUS_INNER_RATIO_DEFAULT) => {
+    const shapeIdx = state.activeShapeIndex
+    const shape = activeShape()
+    const clonedBefore = cloneShape(shape)
+    const n = Math.max(3, Math.round(state.circleSegments) || CIRCLE_DEFAULT_SEGMENTS)
+    const innerRadius = Math.max(ANNULUS_INNER_RATIO_MIN, Math.min(ANNULUS_INNER_RATIO_MAX, innerRatio)) * outerRadius
+    const { pointList, tris } = annulusGeometry(center, outerRadius, innerRadius, n, offsetAngle)
+    const base = shape.pointList.length
+    for (let i = 0; i < pointList.length; i++) {
+        shape.pointList.push({ x: pointList[i].x, y: pointList[i].y })
+    }
+    for (let i = 0; i < tris.length; i++) {
+        shape.tris.push({
+            p1: tris[i].p1 + base,
+            p2: tris[i].p2 + base,
+            p3: tris[i].p3 + base,
+        })
+    }
+    const clonedAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            clonedBefore.pointList, clonedBefore.tris,
+            clonedAfter.pointList, clonedAfter.tris,
+        )],
+    })
+    state.nearestPoint = undefined
+    state.nearestLine = undefined
+    log(`Anneau cree : ${n} cotes, trou ${Math.round(innerRatio * 100)}% du rayon externe`)
+    // Spec utilisateur : le mode anneau se desactive apres la creation
+    // (comme le cercle / l'etoile) — un anneau = un geste. exitAnnulusMode
+    // re-log, met a jour le bouton et repaint.
+    exitAnnulusMode()
+    persistState()
+}
 // ===== Formes prédéfinies (panneau #shapes) =====
 //
 // Le bouton #shapes ouvre un panneau flottant (meme pattern que
@@ -948,10 +1147,11 @@ export const toggleShapesPanel = () => {
 // automatique) ou Echap (annulation).
 export const armShapeTool = (kind) => {
     if (!SHAPE_DEFS[kind]) return
-    // Exclusion mutuelle avec le mode cercle / étoile (un seul geste
-    // de creation actif a la fois).
+    // Exclusion mutuelle avec les modes cercle / étoile / anneau (un
+    // seul geste de creation actif a la fois).
     if (state.circleMode) exitCircleMode()
     if (state.starMode) exitStarMode()
+    if (state.annulusMode) exitAnnulusMode()
     state.shapesPanelOpen = false
     const panel = document.querySelector('#shapesPanel')
     if (panel) panel.hidden = true
@@ -1095,6 +1295,14 @@ export const createShape = (kind, anchor, current, radius, offsetAngle = 0) => {
         // sommets + UN SEUL triangle, sans le point central ni
         // l'eventail que produirait circleGeometry(n=3).
         geometry = triangleGeometry(anchor, radius, offsetAngle)
+    } else if (kind === 'annulus') {
+        // Branche DEFENSIVE : le panneau route l'anneau vers
+        // enterAnnulusMode (mode 3 clics), jamais vers armShapeTool —
+        // mais SHAPE_DEFS.annulus existe, donc un appel direct (tests,
+        // console) doit produire un anneau coherent (trou au ratio par
+        // defaut, clamp interne a annulusGeometry) et pas un 24-gone
+        // silencieux via la branche circleGeometry ci-dessous.
+        geometry = annulusGeometry(anchor, radius, ANNULUS_INNER_RATIO_DEFAULT * radius, state.circleSegments, offsetAngle)
     } else {
         const n = { penta: 5, hexa: 6 }[kind]
         geometry = circleGeometry(anchor, radius, n, offsetAngle)
@@ -1142,6 +1350,8 @@ export const wireShapesPanel = () => {
             exitCircleMode()
         } else if (state.starMode) {
             exitStarMode()
+        } else if (state.annulusMode) {
+            exitAnnulusMode()
         } else {
             openShapesPanel()
         }
@@ -1164,6 +1374,15 @@ export const wireShapesPanel = () => {
             // enterStarMode ferme le panneau lui-meme.
             if (shapeBtn.dataset.shape === 'star') {
                 enterStarMode()
+                return
+            }
+            // L'anneau (cercle perçé d'un trou) vit aussi dans le
+            // panneau : le bouton entre dans le mode 3 clics (meme
+            // logique que l'etoile : 1er = centre, 2e = verrouille
+            // rayon externe + angle, mouvement = taille du trou,
+            // 3e = valider). enterAnnulusMode ferme le panneau lui-meme.
+            if (shapeBtn.dataset.shape === 'annulus') {
+                enterAnnulusMode()
                 return
             }
             armShapeTool(shapeBtn.dataset.shape)
@@ -1994,6 +2213,17 @@ export const resolveMouseMoveOnBoard = (e) => {
     // P a été pressé en mode étoile.
     if (state.starMode && !state.previewMode) {
         updateStarGesture(mouseScreen)
+        state.lastMousePos = mouseScreen
+        updateMouseHover(mouseScreen)
+        return
+    }
+    // Mode anneau (3 clics) : le glisser regle le rayon externe + angle
+    // (phase 1) puis la taille du trou (phase 2, apres le 2e clic).
+    // Meme pattern que le cercle / l'etoile : preview via
+    // renderTransient + HUD coordonnees. La garde !previewMode laisse
+    // la molette zoomer si un P a été pressé en mode anneau.
+    if (state.annulusMode && !state.previewMode) {
+        updateAnnulusGesture(mouseScreen)
         state.lastMousePos = mouseScreen
         updateMouseHover(mouseScreen)
         return

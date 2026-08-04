@@ -95,3 +95,32 @@ export const countWhitePixelsNear = (page, cssX, cssY) => page.evaluate(({ x, y 
     }
     return white
 }, { x: cssX, y: cssY })
+
+// Compte les pixels VERTS (r < 100, g > 150, b < 100) dans une fenêtre
+// 16×16 autour de la position CSS (x, y) du canvas. Sert aux checks
+// « la prévisualisation du geste (cercle / étoile / anneau / formes)
+// est visible pendant le déroulement des actions » : COLOR_CIRCLE_PREVIEW
+// = rgba(0, 255, 0, 0.8) sur fond noir, dessiné par drawRadialBase /
+// strokeScreenPolyline (renderTransient). La croix blanche du curseur
+// (COLOR_CURSOR = #FFFFFF) ne compte pas.
+// PRECONDITIONS : (1) réticule désactivé (COLOR_RETICLE = #FFFFFF,
+// même règle que countWhitePixelsNear) — jamais activé par les suites ;
+// (2) échantillonner HORS des axes : COLOR_AXIS = #00A000 (vert opaque,
+// g=160) satisfait aussi le prédicat, donc un point posé sur l'axe X ou
+// Y compterait des pixels d'axe même sans aucune preview (faux positif).
+// Le cyan de la selection-box (rgba(0,255,255,0.15) sur noir -> b≈38)
+// matcherait aussi, mais la box n'est jamais armée pendant un geste de
+// construction.
+export const countGreenPixelsNear = (page, cssX, cssY) => page.evaluate(({ x, y }) => {
+    const board = document.querySelector('#board')
+    const ctx = board.getContext('2d')
+    const dpr = window.devicePixelRatio || 1
+    const px = Math.round(x * dpr)
+    const py = Math.round(y * dpr)
+    const img = ctx.getImageData(px - 8, py - 8, 16, 16).data
+    let green = 0
+    for (let i = 0; i < img.length; i += 4) {
+        if (img[i] < 100 && img[i + 1] > 150 && img[i + 2] < 100) green++
+    }
+    return green
+}, { x: cssX, y: cssY })

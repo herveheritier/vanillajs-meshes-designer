@@ -4,6 +4,7 @@ import { state } from './state.js'
 import {
     TAU, CIRCLE_DEFAULT_SEGMENTS,
     SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO, STAR_INNER_RATIO_MIN, STAR_INNER_RATIO_MAX,
+    ANNULUS_INNER_RATIO_MIN, ANNULUS_INNER_RATIO_MAX,
 } from './constants.js'
 
 // ===== Snap =====
@@ -247,6 +248,64 @@ export const triangleGeometry = (center, radius, offsetAngle = 0) => {
         pointList,
         tris: [{ p1: 0, p2: 1, p3: 2 }],
     }
+}
+
+// ===== Anneau (cercle perçé d'un trou) =====
+//
+// Fabrique la geometrie canonique d'un anneau : 2×segments sommets
+// (les `segments` sommets du cercle EXTERIEUR aux indices 0..N-1,
+// puis les `segments` sommets du cercle INTERIEUR — le trou — aux
+// indices N..2N-1, chaque sommet interieur i partageant l'angle du
+// sommet exterieur i) + 2×segments triangles reliant les deux
+// couronnes (chaque « quad » (exterieur_i, exterieur_{i+1},
+// interieur_{i+1}, interieur_i) est decoupe en 2 triangles). Le
+// centre est volontairement VIDE : le trou n'est pas une zone
+// re-remplie, c'est l'absence de triangles (cf. cahier des charges
+// des evolutions « création d'un cercle percé d'un trou »).
+//
+// Winding : les deux triangles d'un quad ont le meme signe de
+// cross-product en coords model (verifie : cross(T1) = r·sin(θ)·
+// (r - ri) > 0, cross(T2) = (r - ri)·ri·sin(θ) > 0), donc le fill
+// batched de draw.js (SAFE-BELT sur l'uniformite des windings en
+// screen-space) reste sur le chemin rapide.
+//
+// `offsetAngle` (defaut 0, radians) : rotation appliquee a chaque
+// sommet, meme convention que circleGeometry — le geste en 3 clics
+// passe l'angle du curseur (updateAnnulusGesture) pour que le
+// sommet exterieur 0 pointe vers la souris. Fonction pure (aucun
+// acces a state).
+export const annulusGeometry = (center, outerRadius, innerRadius, segments, offsetAngle = 0) => {
+    const n = Math.max(3, Math.round(segments) || CIRCLE_DEFAULT_SEGMENTS)
+    // Clamp du rayon du trou a la generation (meme pattern defensif que
+    // starGeometry sur rInner) : le rayon interne reste dans
+    // [MIN x externe, MAX x externe] — jamais zero (pas de trou) ni
+    // superieur ou egal au rayon externe (anneau degenere).
+    const rInner = Math.max(ANNULUS_INNER_RATIO_MIN, Math.min(ANNULUS_INNER_RATIO_MAX, outerRadius > 0 ? innerRadius / outerRadius : 0)) * outerRadius
+    const pointList = []
+    const tris = []
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + offsetAngle
+        pointList.push({
+            x: center.x + outerRadius * Math.cos(a),
+            y: center.y + outerRadius * Math.sin(a),
+        })
+    }
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + offsetAngle
+        pointList.push({
+            x: center.x + rInner * Math.cos(a),
+            y: center.y + rInner * Math.sin(a),
+        })
+    }
+    for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n
+        // Quad (exterieur_i, exterieur_j, interieur_j, interieur_i)
+        // decoupe en 2 triangles (winding uniforme, cf. commentaire
+        // ci-dessus).
+        tris.push({ p1: i, p2: j, p3: n + i })
+        tris.push({ p1: j, p2: n + j, p3: n + i })
+    }
+    return { pointList, tris }
 }
 
 // ===== Rectangle (2 coins) =====

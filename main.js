@@ -17,6 +17,7 @@ import {
     paintTriangleAtCursor,
     toggleCircleMode, beginCircleGesture, commitCircleGesture, cancelCircleGesture, exitCircleMode,
     beginStarGesture, lockStarRadius, commitStarGesture, cancelStarGesture, exitStarMode,
+    beginAnnulusGesture, lockAnnulusRadius, commitAnnulusGesture, cancelAnnulusGesture, exitAnnulusMode,
     wireShapesPanel, beginShapeGesture, commitShapeGesture, cancelShapeGesture,
     disarmShapeTool, closeShapesPanel,
 } from './editor.js'
@@ -302,6 +303,39 @@ document.addEventListener('mousedown', (e) => {
             return
         }
     }
+    // Mode anneau : geste en 3 temps (evolution « création d'un
+    // cercle percé d'un trou », meme logique que l'etoile + reglage
+    // du trou au 3e clic) —
+    //   1. 1er mousedown gauche : beginAnnulusGesture (pose le
+    //      centre) ; les mousemove reglent rayon externe + angle.
+    //   2. 2e mousedown gauche : lockAnnulusRadius (verrouille rayon
+    //      externe + angle, passe en phase trou) ; les mousemove
+    //      reglent la taille du trou (annulusInnerRatio).
+    //   3. 3e mousedown gauche : commitAnnulusGesture (valide
+    //      l'anneau avec rayon externe + angle + trou courants) +
+    //      exitAnnulusMode.
+    // Le clic droit annule le trace en cours sans quitter le mode,
+    // le clic milieu garde son role de pan (branche e.button === 1
+    // plus bas).
+    if (state.annulusMode && !state.previewMode) {
+        if (e.button === 0) {
+            if (!state.annulusCenterModel) {
+                // 1er clic : pose le centre.
+                beginAnnulusGesture(e)
+            } else if (state.annulusPhase === 1) {
+                // 3e clic : valide l'anneau (rayon externe + angle + trou).
+                commitAnnulusGesture(e)
+            } else {
+                // 2e clic : verrouille rayon externe + angle, phase trou.
+                lockAnnulusRadius(e)
+            }
+            return
+        }
+        if (e.button === 2) {
+            cancelAnnulusGesture()
+            return
+        }
+    }
     // Forme predéfinie armee : geste en 2 temps sur le modele du
     // cercle (evolution « generaliser la creation des formes ») —
     //   1. 1er mousedown gauche = ancre (1er coin pour rect/carre,
@@ -387,9 +421,9 @@ document.addEventListener('mouseup', (e) => {
     // PLUS la forme (evolution « generaliser la creation des formes » :
     // le geste suit le modele du cercle en 2 clics — le 1er clic pose
     // l'ancre, le 2e mousedown valide, cf. mousedown ci-dessus). Le
-    // mouseup est donc noop en mode forme, comme en mode cercle/étoile.
-    // Retour avant la logique de selection-box (jamais armee en mode
-    // forme).
+    // mouseup est donc noop en mode forme, comme en mode cercle/
+    // étoile/anneau. Retour avant la logique de selection-box (jamais
+    // armee en mode forme).
     const boardTarget = e.target && e.target.id === 'board'
     if (state.isSelectingBox) {
         if (boardTarget && state.selectionBoxStart && state.selectionBoxCurrent) {
@@ -413,12 +447,13 @@ document.addEventListener('mouseup', (e) => {
         state.selectionBoxStart = undefined
         state.selectionBoxCurrent = undefined
     }
-    if (!wasGrabbing && e.button === 2 && boardTarget && !state.previewMode && !state.circleMode && !state.starMode && state.shapeKind === undefined && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+    if (!wasGrabbing && e.button === 2 && boardTarget && !state.previewMode && !state.circleMode && !state.starMode && !state.annulusMode && state.shapeKind === undefined && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         // If no grab target was armed, a plain right click still has
         // selection semantics (including empty-space deselection).
-        // En mode cercle / étoile / forme armee, le clic droit a deja
-        // ete consomme par cancelCircleGesture / cancelStarGesture /
-        // cancelShapeGesture (mousedown) : on ne re-selectionne pas.
+        // En mode cercle / étoile / anneau / forme armee, le clic droit
+        // a deja ete consomme par cancelCircleGesture / cancelStarGesture
+        // / cancelAnnulusGesture / cancelShapeGesture (mousedown) : on ne
+        // re-selectionne pas.
         processRightClickSelection(e)
     }
 })
@@ -441,6 +476,13 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Backspace' && state.starMode && !state.previewMode) {
         e.preventDefault()
         cancelStarGesture()
+        return
+    }
+    // Mode anneau : Backspace annule le trace en cours (comme le clic
+    // droit) au lieu de supprimer un point — la construction prime.
+    if (e.code === 'Backspace' && state.annulusMode && !state.previewMode) {
+        e.preventDefault()
+        cancelAnnulusGesture()
         return
     }
     // Forme armee : Backspace annule le trace en cours (comme le clic
@@ -509,6 +551,13 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Escape' && !e.repeat && state.starMode) {
         e.preventDefault()
         exitStarMode()
+        return
+    }
+    // Mode anneau : Echap quitte le mode (et efface le trace en
+    // cours), meme contrat que le cercle / l'etoile.
+    if (e.code === 'Escape' && !e.repeat && state.annulusMode) {
+        e.preventDefault()
+        exitAnnulusMode()
         return
     }
     // Panneau #shapes : Echap ferme le panneau ouvert, sinon désarme

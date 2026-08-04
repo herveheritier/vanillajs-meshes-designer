@@ -11,7 +11,7 @@
 //   1. Lancer le serveur dev :  python3 test_server.py   (port 8000)
 //   2. node scripts/smoke-shapes.mjs [baseUrl]
 
-import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY, countWhitePixelsNear } from './smoke_lib.mjs'
+import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY, countWhitePixelsNear, countGreenPixelsNear } from './smoke_lib.mjs'
 
 const BASE_URL = (process.argv[2] || 'http://localhost:8000/main.html').replace(/\/$/, '')
 
@@ -217,6 +217,63 @@ try {
         starGeo !== null && Math.abs(starGeo.inner / starGeo.outer - 0.4) < 0.15)
     check('etoile : 1er pic oriente vers la souris (meme y que le centre)',
         starGeo !== null && Math.abs(starGeo.outerY - starGeo.centerY) < 5)
+
+    // --- 6b. Anneau (cercle perçé d'un trou, mode 3 clics, evolution
+    // « création d'un cercle percé d'un trou ») : 48 points (2x24
+    // cotes), 48 triangles, trou regle par la distance du 3e clic,
+    // orientation par souris (sommet exterieur 0 vers le curseur) ---
+    await page.keyboard.press('Control+z')
+    await page.waitForTimeout(120)
+    await armShape('annulus')
+    check('mode anneau : bouton #shapes arme + libellé', await shapesArmed() && (await shapesText()) === 'anneau 24')
+    check('mode anneau : panneau ferme', !(await panelVisible()))
+    // Geste : 1er clic = centre (500,400) ; mouvement vers (600,400)
+    // = rayon externe 100 px + angle (sommet 0 a droite) ; 2e clic =
+    // verrouille rayon externe + angle ; mouvement vers (560,400) =
+    // taille du trou (60/100 = ratio 0.6) ; 3e clic = valide.
+    await page.mouse.move(500, 400)
+    await page.mouse.down()
+    await page.mouse.move(600, 400, { steps: 4 })
+    await page.mouse.up()
+    await page.waitForTimeout(100)
+    // (fix regression) la preview doit suivre le mousemove AVANT le
+    // 2e clic. Sans la branche annulusMode dans resolveMouseMoveOnBoard,
+    // le geste ne se deroulait pas visuellement (preview figee a rayon
+    // 0 jusqu'au 2e/3e clic). Points d'echantillonnage HORS des axes
+    // (l'axe X, COLOR_AXIS = #00A000, est lui-meme vert et passerait
+    // le predicat a y=400 — faux positif) : sommet de la couronne
+    // exterieure a 90° (500,300) et sommet du trou (ratio par defaut
+    // 0.5) a 90° (500,350), tous deux dessines en vert
+    // COLOR_CIRCLE_PREVIEW pendant le geste.
+    check('anneau : preview rayon externe visible pendant le geste (pixels verts sur la couronne)',
+        (await countGreenPixelsNear(page, 500, 300)) > 0)
+    check('anneau : preview du trou visible pendant le geste (pixels verts au rayon interne)',
+        (await countGreenPixelsNear(page, 500, 350)) > 0)
+    await page.mouse.down()      // 2e clic : verrouille rayon externe + angle
+    await page.mouse.up()
+    await page.mouse.move(560, 400, { steps: 4 })
+    await page.mouse.down()      // 3e clic : valide avec trou ~0.6
+    await page.mouse.up()
+    await page.waitForTimeout(150)
+    info = await sceneInfo()
+    check('anneau cree : 48 points (2x24 cotes)', info.points === 48)
+    check('anneau cree : 48 triangles (2 par cote)', info.tris === 48)
+    check('mode anneau quitte apres la creation', !(await shapesArmed()))
+    // Geometrie : sommet exterieur 0 (pointList[0]) et sommet
+    // interieur 0 (pointList[24]) partagent l'angle 0 (meme y, ligne
+    // horizontale vers la droite = orientation par souris) ; le trou
+    // mesure 100 - 60 = 40 (ratio 0.6 du 3e clic).
+    const annGeo = await page.evaluate((key) => {
+        const raw = localStorage.getItem(key) || ''
+        const s = JSON.parse(raw)
+        const pl = (s.shapes && s.shapes[0] && s.shapes[0].pointList) || []
+        if (pl.length < 25) return null
+        return { gap: Math.abs(pl[0].x - pl[24].x), y0: pl[0].y, y24: pl[24].y }
+    }, SCENE_STORAGE_KEY)
+    check('anneau : trou ~0.6 du rayon externe (ecart radial ~40)',
+        annGeo !== null && Math.abs(annGeo.gap - 40) < 2)
+    check('anneau : sommet exterieur 0 oriente vers la souris (meme y que l\'interieur)',
+        annGeo !== null && Math.abs(annGeo.y0 - annGeo.y24) < 5)
 
     // --- 7. Echap : ferme le panneau / desarme l'outil ---
     await page.click('#shapes')

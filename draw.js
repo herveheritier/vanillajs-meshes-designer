@@ -20,6 +20,7 @@ import {
     COLOR_SELECTION_BOX_STROKE,
     COLOR_CIRCLE_PREVIEW,
     SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO, STAR_INNER_RATIO_MIN, STAR_INNER_RATIO_MAX,
+    ANNULUS_INNER_RATIO_MIN, ANNULUS_INNER_RATIO_MAX,
     PATTERN_AXIS,
     PATTERN_LINES,
     PATTERN_LINES_INACTIVE,
@@ -383,6 +384,9 @@ const renderTransient = () => {
     // Mode étoile (3 clics, meme logique que le cercle + profondeur) :
     // meme principe — previsualisation transitoire du geste en cours.
     if (state.starMode && state.starCenterModel) drawStarModePreview()
+    // Mode anneau (3 clics, meme logique que l'etoile + trou) : meme
+    // principe — previsualisation transitoire du geste en cours.
+    if (state.annulusMode && state.annulusCenterModel) drawAnnulusPreview()
     // Forme predéfinie armee (panneau #shapes) : meme principe —
     // previsualisation transitoire du geste en cours.
     if (state.shapeKind !== undefined && state.shapeAnchorModel) drawShapeToolPreview()
@@ -530,6 +534,47 @@ const drawStarModePreview = () => {
     // du sommet 0, c'est-a-dire -PI/2 + offset pour l'etoile.
     drawRadialBase(center, r, -Math.PI / 2 + offset)
     strokeScreenPolyline(pts)
+}
+
+// Previsualisation du mode anneau (cercle perçé d'un trou, creation
+// en 3 clics) : WYSIWYG strict avec annulusGeometry — la couronne
+// EXTERIEURE (polyline + cercle vrai en pointilles + ligne de rayon
+// vers le sommet exterieur 0 via drawRadialBase, qui pointe vers la
+// souris) et la couronne INTERIEURE (le trou : cercle en pointilles
+// + polyline du rayon interne). En phase 1 (apres le 2e clic), le
+// mouvement de la souris regle annulusInnerRatio et le trou se
+// deforme en direct (feedback taille du trou) ; en phase 0 le trou
+// est affiche au ratio par defaut (ANNULUS_INNER_RATIO_DEFAULT).
+const drawAnnulusPreview = () => {
+    const center = state.annulusCenterModel
+    const r = state.annulusOuterRadiusModel
+    if (!center || r <= 0) return
+    const n = Math.max(3, Math.round(state.circleSegments) || 24)
+    const offset = state.annulusOffsetAngle
+    const innerRatio = Math.max(ANNULUS_INNER_RATIO_MIN, Math.min(ANNULUS_INNER_RATIO_MAX, state.annulusInnerRatio))
+    const rInner = innerRatio * r
+    const outer = []
+    const inner = []
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + offset
+        outer.push(modelToScreen({ x: center.x + r * Math.cos(a), y: center.y + r * Math.sin(a) }))
+        inner.push(modelToScreen({ x: center.x + rInner * Math.cos(a), y: center.y + rInner * Math.sin(a) }))
+    }
+    // Couronne exterieure : cercle pointille + ligne de rayon vers le
+    // sommet 0 + marqueur de centre (socle radial partage).
+    drawRadialBase(center, r, offset)
+    strokeScreenPolyline(outer)
+    // Le trou : cercle du rayon interne en pointilles + polyline de la
+    // couronne interieure (WYSIWYG strict avec annulusGeometry).
+    const sp = modelToScreen(center)
+    const zoom = state.ctx.zoomLevel
+    state._ctx.setLineDash([4, 4])
+    state._ctx.strokeStyle = COLOR_CIRCLE_PREVIEW
+    state._ctx.beginPath()
+    state._ctx.arc(sp.x, sp.y, rInner * zoom, 0, TAU)
+    state._ctx.stroke()
+    state._ctx.setLineDash([])
+    strokeScreenPolyline(inner)
 }
 
 // Previsualisation de la forme predéfinie armee (panneau #shapes) :

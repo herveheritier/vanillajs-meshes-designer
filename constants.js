@@ -70,6 +70,8 @@ export const CIRCLE_MIN_RADIUS_PX = 5
 //     UN SEUL triangle — pas d'eventail, cf. cahier des charges)
 //   - penta / hexa : polygones reguliers = circleGeometry(n)
 //   - star   : etoile (starGeometry, 5 branches)
+//   - annulus : anneau (cercle perçé d'un trou) = annulusGeometry
+//     (2×N sommets, 2×N triangles — mode 3 clics, cf. editor.js)
 export const SHAPE_DEFS = {
     rect:   { label: 'rectangle' },
     square: { label: 'carré' },
@@ -77,6 +79,7 @@ export const SHAPE_DEFS = {
     penta:  { label: 'pentagone' },
     hexa:   { label: 'hexagone' },
     star:   { label: 'étoile' },
+    annulus: { label: 'anneau' },
 }
 // Etoile : nombre de branches + ratio rayon interne / rayon externe.
 export const SHAPE_STAR_POINTS = 5
@@ -88,6 +91,18 @@ export const SHAPE_STAR_INNER_RATIO = 0.4
 // drawStarModePreview (clamp a la saisie et au rendu).
 export const STAR_INNER_RATIO_MIN = 0.05
 export const STAR_INNER_RATIO_MAX = 0.95
+// Bornes du ratio du trou de l'anneau (cercle perçé d'un trou) : le
+// 3e clic du mode anneau regle le rayon interne par la distance
+// curseur - centre (0 = pas de trou, 1 = anneau infiniment fin),
+// normalisee par le rayon externe verrouille. Partagees par
+// annulusGeometry (clamp a la generation) et par updateAnnulusGesture /
+// drawAnnulusPreview (clamp a la saisie et au rendu).
+export const ANNULUS_INNER_RATIO_MIN = 0.05
+export const ANNULUS_INNER_RATIO_MAX = 0.95
+// Ratio de trou par defaut affiche en phase 1 du geste (avant le
+// 3e clic) : un trou a mi-rayon — compromis lisible entre un disque
+// plein (0) et un anneau fin (proche de 1).
+export const ANNULUS_INNER_RATIO_DEFAULT = 0.5
 
 export const MAX_HISTORY = 50
 

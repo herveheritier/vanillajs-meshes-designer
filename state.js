@@ -1,6 +1,6 @@
 // Rationale : voir DESIGN.md §1.1
 
-import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_INNER_RATIO } from './constants.js'
+import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_INNER_RATIO, ANNULUS_INNER_RATIO_DEFAULT } from './constants.js'
 
 export const state = {
     // ===== Scene / viewport =====
@@ -90,6 +90,35 @@ export const state = {
     // STAR_INNER_RATIO_MIN..MAX), initie a la valeur par defaut du
     // catalogue (SHAPE_STAR_INNER_RATIO).
     starInnerRatio: SHAPE_STAR_INNER_RATIO,
+
+    // ===== Outil anneau (cercle perçé d'un trou, creation en 3 clics) =====
+    // Mode transitoire (non persiste, comme le cercle / l'étoile)
+    // calqué sur le geste de l'étoile (meme logique que le cercle +
+    // reglage supplementaire au 3e clic) :
+    //   1. 1er clic = centre (annulusCenterModel), mouvement = rayon
+    //      EXTERIEUR + angle de depart (le sommet exterieur 0 pointe
+    //      vers la souris, meme convention que le cercle).
+    //   2. 2e clic = verrouille rayon externe + angle
+    //      (annulusPhase -> 1) ; le mouvement regle alors le rayon du
+    //      TROU (annulusInnerRatio = distance curseur - centre /
+    //      rayon externe, clamp ANNULUS_INNER_RATIO_MIN..MAX).
+    //   3. 3e clic = valide l'anneau (rayon externe, angle, trou
+    //      courants) puis desarme le mode (comme le cercle).
+    // La molette regle le nombre de cotes (meme compteur que le
+    // cercle, state.circleSegments) ; Echap quitte le mode, clic
+    // droit / Backspace annulent le trace en cours sans desarmer.
+    annulusMode: false,
+    annulusCenterModel: undefined,
+    annulusOuterRadiusModel: 0,
+    annulusOffsetAngle: 0,
+    // Phase du geste : 0 = reglage rayon externe + angle (apres le
+    // 1er clic), 1 = reglage rayon du trou (apres le 2e clic).
+    annulusPhase: 0,
+    // Taille du trou : ratio rayon interne / rayon externe, reglee au
+    // mouvement entre le 2e et le 3e clic (clamp
+    // ANNULUS_INNER_RATIO_MIN..MAX), initiee a la valeur par defaut
+    // (ANNULUS_INNER_RATIO_DEFAULT).
+    annulusInnerRatio: ANNULUS_INNER_RATIO_DEFAULT,
 
     // ===== Formes prédéfinies (panneau #shapes) =====
     // Panneau flottant du bouton #shapes (liste des formes
