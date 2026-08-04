@@ -12,8 +12,9 @@ import { updateZoomDisplay } from './viewport.js'
 import {
     selectAllPoints, deleteSelectedPoint, deleteSelectedSegment, deleteSelectedTriangle,
     endGrabbing, grabbed, resolveMouseMoveOnBoard, beginGrabbing,
-    processMouseUpSelection, processRightClickSelection, wireBoardDrop,
-    wireTriangleColorPanel, hideTriangleColorPanel,
+    processMouseUpSelection, processRightClickSelection, wireBoardDrop,    wireTriangleColorPanel,
+    hideTriangleColorPanel,
+    paintTriangleAtCursor,
     toggleCircleMode, beginCircleGesture, commitCircleGesture, cancelCircleGesture, exitCircleMode,
     wireShapesPanel, beginShapeGesture, commitShapeGesture, cancelShapeGesture,
     disarmShapeTool, closeShapesPanel,
@@ -264,6 +265,20 @@ document.addEventListener('mousedown', (e) => {
             cancelShapeGesture()
             return
         }
+    }
+    // Pinceau de coloration (palette #triangleColor ouverte et
+    // armée) : clic gauche sur un triangle = peintresTriangleAtCursor.
+    // On court-circuite la branche lasso / selection-box et la
+    // création de points (resolveMouseClickOnBoard). Le clic droit
+    // et le clic milieu ne sont PAS affectés — le cahier des charges
+    // de l'évolution précise que le bouton droit garde la sémantique
+    // de déplacement du mode courant ; le bouton milieu reste le
+    // pan. Si brushMode est false (palette ouverte mais Reset
+    // cliqué, ou palette fermée), on laisse le comportement normal
+    // (lasso / selection / création) filer vers la branche du bas.
+    if (state.brushMode && !state.previewMode && e.button === 0) {
+        paintTriangleAtCursor(e)
+        return
     }
     const mousePos = {
         x: e.x - state.board.getBoundingClientRect().x,

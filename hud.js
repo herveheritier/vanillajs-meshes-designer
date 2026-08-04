@@ -123,11 +123,34 @@ export const updateShapesButton = () => {
     }
 }
 
+// (evolution peinture) l'unique action du bouton #triangleColor est
+// d'ouvrir/fermer la palette de couleurs, independamment du mode de
+// selection et du contenu de la selection. L'ancien contrat
+// (desactive hors mode triangle OU selection vide) est obsolete : le
+// pinceau peut peindre des triangles en un clic, sans qu'aucun tri
+// ne soit pre-selectionne.
+// Trois etats visuels distincts (cf. classes CSS dans main.html) :
+//   - etat neutre : bouton gris comme les autres (rien n'est ouvert, le
+//     pinceau n'est pas armé).
+//   - .color-panel-open : la palette est deployee (meme langage visuel
+//     que #triangleColor.color-panel-open historique : ring inset vert).
+//   - .color-active : la palette est deployee ET brushMode est vrai
+//     (le curseur est en mode pinceau, un clic gauche peindra). Sur
+//     cet etat, on ajoute en plus un accent vert fort (couleur,
+//     bordure) pour distinguer "palette ouverte mais pinceau
+//     desarme" (apres un clic sur Reset) de "palette ouverte avec
+//     pinceau arme".
+//
+// Pas de raccourci pour basculer (la touche du bouton reste celle
+// implicitement documentee par le title HTML). Meme API (juste
+// updater les classes CSS), pas besoin de readapter les call sites
+// (applyColorToSelectedTriangles reste exporte pour les tests et le
+// panel historique).
 export const updateColorButtonState = () => {
     const btn = document.querySelector('#triangleColor')
     if (!btn) return
-    const ready = state.selectionMode === 'triangle' && (state.selectedTriangles && state.selectedTriangles.length > 0)
-    btn.disabled = !ready
-    btn.classList.toggle('color-ready', ready)
-    if (!ready) btn.classList.remove('color-panel-open')
+    btn.disabled = false
+    const panelOpen = !!state.isTriangleColorPanelOpen
+    btn.classList.toggle('color-panel-open', panelOpen)
+    btn.classList.toggle('color-active', panelOpen && !!state.brushMode)
 }

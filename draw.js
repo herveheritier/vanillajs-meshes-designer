@@ -78,6 +78,18 @@ export const drawPointsBatch = (points, radius, color) => {
     state._ctx.stroke()
 }
 
+// drawMouse : la croix / point blanc au curseur est dessinée ici
+// (et pas en CSS — le curseur du board est `display:none` inline,
+// cf. main.js boot, pour qu'on controle tout pixel-par-pixel).
+// En mode pinceau (panel de couleurs ouvert ET brushMode actif), on
+// ajoute en dessous du curseur un petit disque rempli de la couleur
+// courante du pinceau — feedback visuel immediate de « tu vas peindre
+// de cette couleur-là ». Le ring blanc exterieur reste pour distinguer
+// le marqueur d'un selecteur de couleur opaque (sur fond noir / sur
+// triangles deja colores). Taille (rayon 7) choisie pour rester
+// lisible sans envahir la zone de hit : ~3 px du disque blanc central
+// + 4 px de « padding » sur le pourtour.
+const BRUSH_CURSOR_RADIUS = 7
 export const drawMouse = (p) => {
     if (!p) return
     state._ctx.setLineDash([])
@@ -85,6 +97,19 @@ export const drawMouse = (p) => {
     state._ctx.beginPath()
     state._ctx.arc(p.x, p.y, 3, 0, TAU)
     state._ctx.stroke()
+    if (state.brushMode && typeof state.brushColor === 'string') {
+        state._ctx.beginPath()
+        state._ctx.fillStyle = state.brushColor
+        state._ctx.arc(p.x, p.y, BRUSH_CURSOR_RADIUS, 0, TAU)
+        state._ctx.fill()
+        // Ring blanc fin pour rendre le marqueur lisible quand
+        // brushColor est proche du noir (ex: un preset futur) ou
+        // sur fond deja proche de la couleur (un triangle deja
+        // peint de la meme teinte).
+        state._ctx.strokeStyle = '#ffffff'
+        state._ctx.lineWidth = 1
+        state._ctx.stroke()
+    }
 }
 
 // Label d'identifiant stable du sommet survole (cf. §7.8) : petite

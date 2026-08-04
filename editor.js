@@ -1924,67 +1924,51 @@ export const rotateSelectedPoints = (center, angle) => {
 
 // ===== Coloration des triangles (mode 'triangle') =====
 
-// (modifyShapeModel-spec §3.6) : la liste de triangles de la
-// forme active est `tris` (indexe)
-//
-// (delta) setFillsPatch ne stocke que les fills modifiés
-// (`{s, t, fill}`). Le fill absent (clear) est encodé par
-// `fill: undefined`. Différentiel typique : juste les N tris
-// sélectionnés, ~24 B/tri × 2 directions vs cloneScene plein
-// (=O(forme)).
-export const applyColorToSelectedTriangles = (color) => {
-    if (!state.shapes || !state.shapes[state.activeShapeIndex]) return
-    if (!state.selectedTriangles || state.selectedTriangles.length === 0) return
-    const tris = state.shapes[state.activeShapeIndex].tris
-    if (!Array.isArray(tris)) return
-
-    // (delta) capture BEFORE fills (avant mutation).
-    const beforeEntries = []
-    state.selectedTriangles.forEach(idx => {
-        const t = tris[idx]
-        if (!t) return
-        beforeEntries.push({
-            s: state.activeShapeIndex, t: idx,
-            fill: typeof t.fill === 'string' ? t.fill : undefined,
-        })
-    })
-
-    // Mutation réelle.
-    state.selectedTriangles.forEach(idx => {
-        const t = tris[idx]
-        if (!t) return
-        if (color === TRIANGLE_COLOR_CLEAR) {
-            delete t.fill
-        } else if (typeof color === 'string' && color.length > 0) {
-            t.fill = color
-        }
-    })
-
-    // (delta) capture AFTER fills (post-mutation).
-    const afterEntries = []
-    state.selectedTriangles.forEach(idx => {
-        const t = tris[idx]
-        if (!t) return
-        afterEntries.push({
-            s: state.activeShapeIndex, t: idx,
-            fill: typeof t.fill === 'string' ? t.fill : undefined,
-        })
-    })
-    saveState({ patches: [setFillsPatch(beforeEntries, afterEntries)] })
-
-    requestDraw()
-    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
-    persistState()
-}
-
 // ===== Panneau flottant de coloration =====
 
-// Rationale : voir DESIGN.md §3.3
+// Helper dedie au panneau de couleurs : bascule la classe
+// `.swatch-active` sur l'element N (data-index) du conteneur ; si
+// l'index est null / invalide, retire la classe partout
+// (utilise apres un clic sur Reset du panneau). Centralise la
+// sequence « retirer partout, ajouter sur un » qui etait
+// repetee en showTriangleColorPanel + buildColorSwatches +
+// wireTriangleColorPanel (input + reset). host : le
+// #triangleColorSwatches ; dataIndex : entier >= 0, ou null
+// pour desactiver tous les swatches.
+const setActiveSwatch = (host, dataIndex) => {
+    if (!host) return
+    host.querySelectorAll('.swatch').forEach(s => s.classList.remove('swatch-active'))
+    if (dataIndex === null || dataIndex === undefined) return
+    const target = host.querySelector('.swatch[data-index="' + String(dataIndex) + '"]')
+    if (target) target.classList.add('swatch-active')
+}
+
+// (evolution peinture) le panneau est un toggle panel :
+//   - ouvert une fois : le pinceau est immédiatement armé avec une
+//     couleur par défaut (1er preset, swatch visuellement
+//     sélectionne). L'utilisateur peut peindre des le premier clic
+//     gauche sur un triangle, sans cliquer une couleur.
+//   - clic sur un swatch / input color picker : maj brushColor
+//     (le pinceau reste armé).
+//   - clic sur le bouton Reset du panneau : désarme le pinceau
+//     (brushMode = false, le panneau reste ouvert à la recherche
+//     d'une nouvelle couleur). Distinct du comportement historique
+//     « applique TRIANGLE_COLOR_CLEAR aux triangles selectionnes »
+//     car le panneau n'est plus un outil d'application sur la
+//     selection — c'est un nuancier pour le pinceau.
+//   - fermeture (re-clic bouton / Escape / clic exterieur) : panneau
+//     cache + brushMode = false + brushColor = undefined.
+//
+// Le bouton est désormais TOUJOURS interactif (cf. markup main.html,
+// pas d'attribut disabled) et hud.js updateColorButtonState ne le
+// disabled plus. L'ancienne garde
+// `selectionMode==='triangle' && selectedTriangles.length>0`
+// est retirée : c'est précisément le verrou que l'évolution fait
+// sauter.
 export const toggleTriangleColorPanel = () => {
     const btn = document.querySelector('#triangleColor')
     const panel = document.querySelector('#triangleColorPanel')
     if (!btn || !panel) return
-    if (state.selectionMode !== 'triangle' || !state.selectedTriangles || state.selectedTriangles.length === 0) return
     if (state.isTriangleColorPanelOpen) {
         hideTriangleColorPanel()
         return
@@ -1996,9 +1980,28 @@ export const showTriangleColorPanel = () => {
     const btn = document.querySelector('#triangleColor')
     const panel = document.querySelector('#triangleColorPanel')
     if (!btn || !panel) return
+    // Pré-armement du pinceau avec le 1er preset (swatch visuellement
+    // sélectionne). On évite ainsi un « deux clics » inutile à
+    // l'ouverture : des que le panneau est visible, l'utilisateur
+    // peut peindre. Le 1er swatch est mis en surbrillance via la
+    // classe .swatch-active et le color input picker est
+    // resynchronise sur la valeur hex correspondante (les affinités
+    // swatch <-> picker ne sont pas strictement symétriques : le
+    // picker travaille en #rrggbb, les swatches en rgba avec alpha
+    // alpha definie dans TRIANGLE_COLOR_PRESETS, intentionnellement
+    // non persistee dans le color picker — on accepte que le
+    // passage picker -> preset ne preserve pas l'alpha, comme
+    // avant).
     positionPanelUnderButton(btn, panel)
     state.isTriangleColorPanelOpen = true
     btn.classList.add('color-panel-open')
+    const firstPreset = TRIANGLE_COLOR_PRESETS[0]
+    state.brushColor = firstPreset.fill
+    state.brushMode = true
+    setActiveSwatch(document.querySelector('#triangleColorSwatches'), 0)
+    const input = document.querySelector('#triangleColorInput')
+    if (input && firstPreset) input.value = firstPreset.bg
+    updateColorButtonState()
 }
 
 export const hideTriangleColorPanel = () => {
@@ -2006,7 +2009,77 @@ export const hideTriangleColorPanel = () => {
     const btn = document.querySelector('#triangleColor')
     if (panel) panel.hidden = true
     state.isTriangleColorPanelOpen = false
+    // Palette fermée → pinceau désarmé (cf. cahier des charges
+    // évolution). On purge aussi brushColor pour que le prochain
+    // show reparte proprement d'un état vierge (pas de couleur
+    // orpheline si l'utilisateur a bricolé le picker entre-temps).
+    state.brushMode = false
+    state.brushColor = undefined
     if (btn) btn.classList.remove('color-panel-open')
+    updateColorButtonState()
+}
+
+// Peint un seul triangle (sous le curseur en mode pinceau). Distinct
+// de applyColorToSelectedTriangles (qui itère sur selectedTriangles) :
+// ici on cible directement un index de tri, sans dépendre d'une
+// sélection. Mêmes garde-fous que applyColorToSelectedTriangles
+// (capture BEFORE/AFTER fills → patch setFills compact, persistState
+// + requestDraw pour repeindre, mutation live de t.fill). Si color
+// est undefined ou TRIANGLE_COLOR_CLEAR, on efface le fill (delete
+// t.fill) — au cas où le pinceau serait réarmé sans couleur
+// (improbable en pratique : show panneau arme toujours avec un
+// preset, et Reset désarme sans fixer de couleur).
+const paintSingleTriangle = (triangleIndex, color) => {
+    if (!state.shapes || !state.shapes[state.activeShapeIndex]) return
+    const tris = state.shapes[state.activeShapeIndex].tris
+    if (!Array.isArray(tris) || triangleIndex < 0 || triangleIndex >= tris.length) return
+    const tri = tris[triangleIndex]
+    if (!tri) return
+    // (Q2c) invariance : p1/p2/p3 doivent être des entiers (un tri
+    // partiellement construit n'est pas peignable — on ne peint que
+    // des triangles « complets »).
+    if (!Number.isInteger(tri.p1) || !Number.isInteger(tri.p2) || !Number.isInteger(tri.p3)) return
+    const shapeIdx = state.activeShapeIndex
+    const beforeEntries = [{ s: shapeIdx, t: triangleIndex, fill: typeof tri.fill === 'string' ? tri.fill : undefined }]
+    if (color === undefined || color === TRIANGLE_COLOR_CLEAR) {
+        delete tri.fill
+    } else if (typeof color === 'string' && color.length > 0) {
+        tri.fill = color
+    }
+    const afterEntries = [{ s: shapeIdx, t: triangleIndex, fill: typeof tri.fill === 'string' ? tri.fill : undefined }]
+    saveState({ patches: [setFillsPatch(beforeEntries, afterEntries)] })
+    // workIsSaved est mis a 1 dans io.js apres saveMesh/loadState/
+    // reset ; on le remet a 0 ici pour signaler au prochain
+    // recomputeSceneDirty que la scene a diverge de la baseline.
+    // workIsBackuped (champ legacy non lu) n'est plus pose.
+    state.ctx.workIsSaved = 0
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+    persistState()
+}
+
+// (evolution peinture) clic gauche sur le canvas en mode pinceau :
+// trouve le triangle le plus proche du curseur (mêmes critères que
+// findNearestTriangle : intérieur ou proche du centroide) et lui
+// applique brushColor. Pas de creation de point / lasso / suppression
+// — le mousedown handler global de main.js return tôt après l'appel
+// pour court-circuiter toutes les autres branches.
+// Si aucun triangle n'est atteignable (zone vide, point trop loin),
+// on noop : le pinceau n'a rien à peindre, et ne touche pas à la
+// sélection courante.
+export const paintTriangleAtCursor = (e) => {
+    if (!state.brushMode) return
+    if (typeof state.brushColor !== 'string') return
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    const rawTarget = screenToModel(mouseScreen)
+    const target = state.activeGrid ? snapToGrid(rawTarget) : rawTarget
+    const nt = findNearestTriangle(target)
+    if (!nt) return
+    paintSingleTriangle(nt.triangleIndex, state.brushColor)
+    log(`Peinture : triangle ${nt.triangleIndex}`)
 }
 
 const buildColorSwatches = () => {
@@ -2018,13 +2091,21 @@ const buildColorSwatches = () => {
         sw.type = 'button'
         sw.className = 'swatch'
         sw.style.backgroundColor = preset.bg
-        sw.title = 'Appliquer ' + preset.bg
+        sw.title = 'Peindre avec ' + preset.bg
         sw.dataset.index = String(i)
         sw.addEventListener('click', (e) => {
             if (e.button !== 0) return
-            applyColorToSelectedTriangles(preset.fill)
-            host.querySelectorAll('.swatch').forEach(s => s.classList.remove('swatch-active'))
-            sw.classList.add('swatch-active')
+            // (evolution peinture) armer le pinceau avec la couleur
+            // choisie, ne plus appliquer a la selection. La
+            // sélection est orthogonale au pinceau : si elle contient
+            // des triangles, on ne les peint PAS automatiquement,
+            // l'utilisateur le fera au clic gauche sur chaque tri.
+            state.brushColor = preset.fill
+            state.brushMode = true
+            setActiveSwatch(host, i)
+            const input = document.querySelector('#triangleColorInput')
+            if (input) input.value = preset.bg
+            updateColorButtonState()
         })
         host.appendChild(sw)
     })
@@ -2042,25 +2123,39 @@ export const wireTriangleColorPanel = () => {
         toggleTriangleColorPanel()
     })
     input.addEventListener('input', () => {
-        applyColorToSelectedTriangles(input.value)
-        const host = document.querySelector('#triangleColorSwatches')
-        if (host) {
-            host.querySelectorAll('.swatch').forEach(s => {
-                const preset = TRIANGLE_COLOR_PRESETS[Number(s.dataset.index)]
-                if (preset && preset.fill === input.value) {
-                    s.classList.add('swatch-active')
-                } else {
-                    s.classList.remove('swatch-active')
-                }
-            })
-        }
+        // Le picker natif renvoie toujours du #rrggbb (alpha 1
+        // implicite) : la conversion vers rgba avec alpha 0.45
+        // comme les presets est possible mais perdrait l'intent
+        // utilisateur (il peut vouloir une couleur opaque).
+        // On respecte donc sa valeur hex telle quelle et on arme
+        // le pinceau directement avec.
+        state.brushColor = input.value
+        state.brushMode = true
+        // Swatch actif : on cherche un preset dont le .bg matche la
+        // valeur hex du picker (comparaison case-insensitive). Si
+        // la couleur custom n'est pas un preset, on desactive tous
+        // les swatches (couleur libre active mais aucun preset ne
+        // matche).
+        const matchIdx = TRIANGLE_COLOR_PRESETS.findIndex(p => p.bg.toLowerCase() === input.value.toLowerCase())
+        setActiveSwatch(document.querySelector('#triangleColorSwatches'), matchIdx >= 0 ? matchIdx : null)
+        updateColorButtonState()
     })
     resetBtn.addEventListener('click', (e) => {
         if (e.button !== 0) return
-        applyColorToSelectedTriangles(TRIANGLE_COLOR_CLEAR)
-        const host = document.querySelector('#triangleColorSwatches')
-        if (host) host.querySelectorAll('.swatch').forEach(s => s.classList.remove('swatch-active'))
+        // (evolution peinture) Reset = desarmer le pinceau, NE PAS
+        // appliquer TRIANGLE_COLOR_CLEAR aux triangles selectionnes.
+        // Le panneau reste ouvert pour permettre a l'utilisateur
+        // de choisir une nouvelle couleur. On enleve la
+        // surbrillance des swatches (aucune couleur n'est active)
+        // et on remet la valeur du picker au preset[0] (cohérent
+        // avec l'ancien comportement : picker "fraichement
+        // initialisé" apres un reset). Pas de requestDraw /
+        // persistState ici : on ne mute pas la scene.
+        state.brushMode = false
+        state.brushColor = undefined
+        setActiveSwatch(document.querySelector('#triangleColorSwatches'), null)
         input.value = TRIANGLE_COLOR_PRESETS[0].bg
+        updateColorButtonState()
     })
     document.addEventListener('mousedown', (e) => {
         if (!state.isTriangleColorPanelOpen) return
@@ -2068,6 +2163,13 @@ export const wireTriangleColorPanel = () => {
         if (!target) return
         if (panel.contains(target)) return
         if (btn.contains(target)) return
+        // Le clic sur un triangle du canvas declenche
+        // paintTriangleAtCursor via le mousedown handler global —
+        // on NE ferme PAS le panneau sur un simple clic sur un tri
+        // (l'utilisateur peut peindre plusieurs triangles d'affilée
+        // sans rouvrir la palette). Un clic exterieur (toolbar,
+        // overlay, console) ferme, comme avant.
+        if (target.id === 'board') return
         hideTriangleColorPanel()
     })
 }

@@ -622,44 +622,42 @@
                 border-radius: 14px;
                 white-space: nowrap;
             }
-            /* Bouton Colorier : releve la stylistique partagee des
-               autres boutons de la toolbar (hauteur 30px, monospace,
-               border subtil). Sur etat disponible (mode triangle
-               + selection non vide), passe en accent vert comme
-               les autres outils de selection. Sur etat disabled
-               (defaut CSS des boutons toolbar .disabled), le bouton
-               au global reste grise. updateColorButtonState (hud.js)
-               ajoute/retire la classe .color-ready pour basculer
-               le bouton en vert accent selon le contexte : une
-               fois en mode triangle ET triangles selectionnes, le
-               bouton prend la classe .color-ready.
-               La classe permet de garder une separation stricte
-               avec le styled "disabled hover" global de la
-               toolbar (cursor:not-allowed, .opacity:0.35) : un
-               bouton colorier disabled LE RESTE tout en gagnant
-               l'indication visuelle que, dans un autre contexte,
-               il pourrait devenir actif (le hover d'un bouton
-               disabled reste gris, comme les autres boutons
-               .disabled). */
-            #toolbar #triangleColor.color-ready:not(:disabled) {
+            /* Bouton Peinture (#triangleColor) : releve la stylistique
+               partagee des autres boutons de la toolbar (hauteur
+               30px, monospace, border subtil). Deux classes CSS
+               coordonnent le rendu selon l'etat de la palette de
+               couleurs sous-jacente (cf. state.js Palette de
+               couleurs) :
+                 .color-panel-open : palette deployee (ouvree par
+                   toggleTriangleColorPanel). Ring inset vert pour
+                   confirmer le deploiement, sans imposer une couleur
+                   de texte forte (l'outil peut etre ouvert avec le
+                   pinceau desarme apres un clic sur Reset).
+                 .color-active : palette deployee ET brushMode =
+                   true (pinceau arme avec une couleur). Accent vert
+                   fort (texte + fond + bordure) pour signaler un
+                   outil pret a peindre en un clic gauche.
+               updateColorButtonState (hud.js) gere ces deux
+               classes en miroir de state.isTriangleColorPanelOpen /
+               state.brushMode. Le bouton n'est jamais disabled
+               (cf. evolution peinture : il s'ouvre quel que soit le
+               mode de selection ou l'etat de la selection). */
+            #toolbar #triangleColor.color-active {
                 color: rgb(55, 194, 0);
                 background-color: rgba(55, 194, 0, 0.10);
                 border-color: rgba(55, 194, 0, 0.45);
             }
-            #toolbar #triangleColor.color-ready:not(:disabled):hover {
+            #toolbar #triangleColor.color-active:hover {
                 background-color: rgba(55, 194, 0, 0.22);
                 border-color: rgb(55, 194, 0);
                 color: rgb(80, 220, 25);
-            }
-            #toolbar #triangleColor.color-ready:not(:disabled):active {
-                color: rgb(55, 194, 0);
             }
             /* Bouton Colorier : sur etat "actif" (panneau
                actuellement ouvert), bordure vert pleine + scale
                subtil pour confirmer que le panneau est deployé.
                (Le bouton reste cliquable : il sert aussi a
                refermer le panneau via toggleTriangleColorPanel.) */
-            #toolbar #triangleColor.color-panel-open:not(:disabled) {
+            #toolbar #triangleColor.color-panel-open {
                 box-shadow: 0 0 0 2px rgba(55, 194, 0, 0.55) inset;
             }
 
@@ -1362,17 +1360,25 @@
                      l'appel final dans doit() garantit "(0)" au boot meme
                      apres une scene restauree depuis localStorage. -->
                 <span id="selectionCount" title="Nombre de points sélectionnés">0</span>
-                <!-- Bouton Colorier : ouvre le panneau flottant de
-                     selection de couleur pour les triangles selectionnes
-                     (mode 'triangle' uniquement). Reste desactive
-                     hors mode triangle OU si aucun triangle
-                     selectionne : la pilule est grisee (claire) au
-                     lieu du look 'outil disponible' pour signaler
-                     l'indisponibilite. Le tooltip precise les 2
-                     prerequis. Place apres #selectionCount pour
+                <!-- Bouton Peinture : ouvre / ferme la palette de
+                     couleurs des triangles (#triangleColorPanel). Le
+                     panneau peut s'ouvrir quel que soit le mode de
+                     selection — une fois ouvert, le pinceau est arme
+                     avec une couleur par defaut (1er preset, swatch
+                     actif) et le clic gauche sur un triangle le
+                     peint avec la couleur courante de la palette.
+                     Le clic droit garde la semantique de deplacement
+                     du mode courant (grab / selection selon
+                     selectionMode) ; Echap, clic exterieur ou
+                     re-clic sur le bouton ferment la palette et
+                     desarment le pinceau. Pas de `disabled` : le
+                     bouton reste interactif tout le temps, comme
+                     les autres toggles (grille, reticule, formes).
+                     title documente le double usage (toggle panel
+                     + pinceau). Place apres #selectionCount pour
                      rester dans la meme thematique 'outils de
                      selection'. -->
-                <button id="triangleColor" title="Colorier les triangles sélectionnés (mode triangle uniquement)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 12.2a1.7 1.7 0 01-2.4 0L9 10.1l-3.6-3.6a1.7 1.7 0 010-2.4l.4-.4a1.7 1.7 0 012.4 0L11.8 7l1.7 1.8a1.7 1.7 0 010 2.4z"/><path d="M2 14L7 9"/><circle cx="3.7" cy="12.3" r="1.1" fill="currentColor" stroke="none"/></svg></button>
+                <button id="triangleColor" title="Ouvrir / fermer la palette de couleurs (pinceau : clic gauche sur un triangle pour le peindre avec la couleur choisie, Échap pour quitter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 12.2a1.7 1.7 0 01-2.4 0L9 10.1l-3.6-3.6a1.7 1.7 0 010-2.4l.4-.4a1.7 1.7 0 012.4 0L11.8 7l1.7 1.8a1.7 1.7 0 010 2.4z"/><path d="M2 14L7 9"/><circle cx="3.7" cy="12.3" r="1.1" fill="currentColor" stroke="none"/></svg></button>
                 <!-- Formes prédéfinies (dont le cercle) : ouvre un panneau
                      (meme pattern que #triangleColorPanel) listant les
                      formes a creer : cercle, rectangle, carre, polygones

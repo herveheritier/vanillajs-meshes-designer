@@ -104,10 +104,44 @@ export const state = {
     // adopte le nom du fichier source).
     sceneName: 'nouvelleScene',
 
+    // ===== Palette de couleurs (#triangleColor) =====
+    // Trois champs couvrent le cycle de vie de la palette, groupes
+    // ici parce qu'ils sont lus ensemble par hud.js + editor.js :
+    //
+    // isTriangleColorPanelOpen : true tant que le panneau flottant
+    // est deploye (cache ou visible via positionPanelUnderButton).
+    // Indépendant de brushMode — un utilisateur peut ouvrir le
+    // panneau sans armer le pinceau (clic sur Reset, qui pose
+    // brushMode = false tout en laissant le panneau ouvert à la
+    // recherche d'une nouvelle couleur).
+    //
+    // brushMode / brushColor : non persistés (meme politique que
+    // previewMode / circleMode / shapeKind). Le pinceau peut etre
+    // armé ou non pendant que la palette est ouverte :
+    //   - à l'ouverture (showTriangleColorPanel), brushMode = true
+    //     ET brushColor = 1er preset actif (1er swatch mis en
+    //     surbrillance) — l'utilisateur peut peindre des le
+    //     premier coup, sans cliquer une couleur.
+    //   - clic sur un swatch / input color picker = maj
+    //     brushColor, brushMode reste true.
+    //   - clic sur le bouton Reset du panneau = brushMode = false
+    //     (panneau reste ouvert).
+    //   - fermeture du panneau (re-clic bouton, Escape, clic
+    //     exterieur) = brushMode = false ET brushColor =
+    //     undefined.
+    // Le pipeline souris (main.js mousedown) court-circuite la
+    // branche lasso quand brushMode est vrai : clic gauche sur un
+    // triangle = peintresTriangleAtCursor. Les clics milieu (pan)
+    // et droit (grab selon le mode) ne sont PAS affectes —
+    // l'evolution precise que le bouton droit garde la semantique
+    // de deplacement.
+    isTriangleColorPanelOpen: false,
+    brushMode: false,
+    brushColor: undefined,
+
     // ===== Selection / box =====
     selectedPoints: [],
     selectedTriangles: [],
-    isTriangleColorPanelOpen: false,
     isSelectingBox: false,
     selectionBoxStart: undefined,
     selectionBoxCurrent: undefined,

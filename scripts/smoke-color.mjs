@@ -3,12 +3,17 @@
 // survivants — playwright-core.
 //
 // Parcours : creer un rectangle (2 triangles) via le panneau #shapes,
-// colorer le triangle 0 via le panneau de couleurs, puis pour chacun
-// des 3 modes de suppression (sommet / segment / triangle) supprimer
-// un element appartenant a l'AUTRE triangle (tri 1), et verifier que
-// le triangle colore (tri 0) conserve son fill dans la scene
-// persister. Un undo (Ctrl+Z) restaure le rectangle colore entre
-// chaque scenario.
+// ouvrir le panneau #triangleColor (sans selection requise,
+// evolution peinture), choisir le 2e swatch (orange FB8C00,
+// distinct du 1er preset actif a l'ouverture) puis cliquer dans le
+// triangle 0 pour le peindre. Pour chacun des 3 modes de suppression
+// (sommet / segment / triangle), supprimer un element appartenant
+// au triangle 1 (non colore) et verifier que le triangle 0 survit
+// avec son fill. Un undo (Ctrl+Z) restaure le rectangle colore entre
+// chaque scenario. Le panneau est ferme avant la phase de
+// suppression pour ne pas detourner le clic gauche de selection
+// vers paintTriangleAtCursor (cf. branche brushMode dans le
+// mousedown handler global de main.js).
 //
 // Geometrie du rectangle (500,400) -> (700,550) en coords client.
 // L'axe Y est INVERSE (modelToScreen flippe Y, DESIGN §2.1) : le
@@ -21,7 +26,7 @@
 // Le centre du rectangle (600,475) tombe EXACTEMENT sur la diagonale
 // (ambigu entre les 2 tris) : on clique donc nettement A L'INTERIEUR
 // d'un tri pour cibler de facon deterministe.
-//   colorer tri 0 : clic (660,500)      (sous la diagonale, cote tri 0)
+//   peindre tri 0 : clic (660,500)      (sous la diagonale, cote tri 0)
 //   supprimer tri 1 : clic (567,450)    (au-dessus de la diagonale)
 //
 // Usage :
@@ -38,8 +43,8 @@ const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 const errors = attachErrorCollector(page)
 
-// Premier preset du panneau de couleurs (TRIANGLE_COLOR_PRESETS[0]).
-const COLORED_FILL = 'rgba(229, 57, 53, 0.45)'
+// 2e preset du panneau de couleurs (TRIANGLE_COLOR_PRESETS[1], orange).
+const COLORED_FILL = 'rgba(251, 140, 0, 0.45)'
 
 // Snapshot lisible de la forme active (points + tris avec fill) depuis
 // le localStorage de la page. Scene absente (= raw vide) => scene
@@ -83,20 +88,55 @@ const createRect = async () => {
     await page.waitForTimeout(150)
 }
 
-// Colore le triangle 0 : mode triangle, clic dans tri 0 (deterministe,
-// hors diagonale), panneau de couleurs + premier swatch, puis retour
-// au mode vertex.
+// (evolution peinture) Le panneau #triangleColor peut s'ouvrir sans
+// selection ni mode triangle : le bouton n'est plus jamais disabled.
+// A l'ouverture, le 1er preset est arme (swatch actif, brushMode =
+// true, brushColor = preset[0].fill). Pour ce test on choisit
+// explicitement le 2e preset (orange, distinct du rouge par defaut)
+// pour verifier que le clic swatch met bien a jour brushColor et
+// bascule le swatch actif. On peint ensuite tri 0 au clic gauche
+// (le mousedown handler global aiguille vers paintTriangleAtCursor
+// grace a brushMode). Le panneau est referme en sortie pour que les
+// etapes suivantes (suppressions en mode vertex / segment /
+// triangle) fonctionnent normalement : sinon le clic gauche de
+// selection serait detourne vers le pinceau.
 const colorTri0 = async () => {
-    await cycleMode(2)   // vertex -> triangle
-    await page.mouse.click(660, 500)
-    await page.waitForTimeout(120)
     await page.click('#triangleColor')
     await page.waitForTimeout(100)
     check('panneau de couleurs ouvert', await page.locator('#triangleColorPanel').isVisible())
-    await page.click('#triangleColorSwatches .swatch')
+
+    // Bouton en etat "panel ouvert + pinceau arme" (les 2 classes
+    // CSS attendues par updateColorButtonState).
+    const btnClasses = await page.locator('#triangleColor').evaluate(el => el.className)
+    check('bouton peinture en etat color-panel-open', /\bcolor-panel-open\b/.test(btnClasses))
+    check('bouton peinture en etat color-active', /\bcolor-active\b/.test(btnClasses))
+
+    // 1er swatch actif a l'ouverture (pre-armement).
+    const firstSwatch = page.locator('#triangleColorSwatches .swatch').first()
+    const firstActive = await firstSwatch.evaluate(el => el.classList.contains('swatch-active'))
+    check('1er swatch actif a l\'ouverture', firstActive)
+
+    // Cliquer le 2e swatch (orange) : on verifie que le clic
+    // swatch met a jour brushColor et bascule l'etat actif. On
+    // laisse Intentionally le panneau ouvert pour peindre.
+    const swatches = await page.locator('#triangleColorSwatches .swatch').all()
+    await swatches[1].click()
     await page.waitForTimeout(150)
-    await cycleMode(1)   // triangle -> vertex
+    check('2e swatch actif apres clic', await swatches[1].evaluate(el => el.classList.contains('swatch-active')))
+    check('1er swatch desactive apres clic', !(await swatches[0].evaluate(el => el.classList.contains('swatch-active'))))
+
+    // Peindre tri 0 : clic gauche -> paintTriangleAtCursor ->
+    // paintSingleTriangle -> t.fill = brushColor (orange FB8C00).
+    await page.mouse.click(660, 500)
+    await page.waitForTimeout(150)
+
+    // Fermer le panneau via un nouveau toggle : le panneau se cache
+    // et brushMode repasse a false (desarmement du pinceau).
+    await page.click('#triangleColor')
     await page.waitForTimeout(80)
+    check('panneau ferme apres toggle', await page.locator('#triangleColorPanel').evaluate(el => el.hidden))
+    const classesAfterClose = await page.locator('#triangleColor').evaluate(el => el.className)
+    check('bouton peinture : aucune classe active apres fermeture', !/\bcolor-(panel-open|active)\b/.test(classesAfterClose))
 }
 
 // Undo (Ctrl+Z) puis verifie que le rectangle colore (4 points) est
@@ -114,6 +154,14 @@ try {
     await page.waitForTimeout(400)
 
     // --- 1. Etat initial + rectangle colore ---
+
+    // Sanity : le bouton #triangleColor n'est plus jamais disabled,
+    // même au démarrage (mode vertex par défaut + sélection vide).
+    {
+        const disabled = await page.locator('#triangleColor').evaluate(el => el.disabled)
+        check('bouton peinture interactif au boot', !disabled)
+    }
+
     let info = await sceneInfo()
     check('scene vide au depart', info.points === 0 && info.tris.length === 0)
 
@@ -124,7 +172,7 @@ try {
 
     await colorTri0()
     info = await sceneInfo()
-    check('triangle 0 colore : fill present', info.tris[0].fill === COLORED_FILL)
+    check('triangle 0 colore : fill = orange (2e preset)', info.tris[0].fill === COLORED_FILL)
     check('triangle 1 non colore : pas de fill', info.tris[1].fill === undefined)
 
     // --- 2. Suppression d'un SOMMET (mode vertex) : le sommet p3
