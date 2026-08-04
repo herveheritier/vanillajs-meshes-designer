@@ -1,6 +1,6 @@
 // Rationale : voir DESIGN.md §1.1
 
-import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS } from './constants.js'
+import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_INNER_RATIO } from './constants.js'
 
 export const state = {
     // ===== Scene / viewport =====
@@ -62,6 +62,34 @@ export const state = {
     circleRadiusModel: 0,
     circleOffsetAngle: 0,
     circleSegments: CIRCLE_DEFAULT_SEGMENTS,
+
+    // ===== Outil étoile (creation en 3 clics) =====
+    // Mode transitoire (non persiste, comme le cercle) calqué sur le
+    // geste du cercle + une phase supplementaire :
+    //   1. 1er clic = centre (starCenterModel), mouvement = rayon +
+    //      angle de depart (le 1er pic de l'etoile pointe vers la
+    //      souris, cf. updateStarGesture : offset = atan2 + PI/2
+    //      compense le -PI/2 canonique de starGeometry).
+    //   2. 2e clic = verrouille rayon + angle (starPhase -> 1) ; le
+    //      mouvement regle alors la PROFONDEUR des branches
+    //      (starInnerRatio = distance curseur - centre / rayon).
+    //   3. 3e clic = valide l'etoile (rayon, angle, profondeur
+    //      courants) puis desarme le mode (comme le cercle).
+    // La molette du cercle (cotes) ne s'applique pas ici ; Echap
+    // quitte le mode, clic droit / Backspace annulent le trace en
+    // cours sans desarmer.
+    starMode: false,
+    starCenterModel: undefined,
+    starRadiusModel: 0,
+    starOffsetAngle: 0,
+    // Phase du geste : 0 = reglage rayon + angle (apres le 1er clic),
+    // 1 = reglage profondeur des branches (apres le 2e clic).
+    starPhase: 0,
+    // Profondeur des branches : ratio rayon interne / rayon externe,
+    // regle au mouvement entre le 2e et le 3e clic (clamp
+    // STAR_INNER_RATIO_MIN..MAX), initie a la valeur par defaut du
+    // catalogue (SHAPE_STAR_INNER_RATIO).
+    starInnerRatio: SHAPE_STAR_INNER_RATIO,
 
     // ===== Formes prédéfinies (panneau #shapes) =====
     // Panneau flottant du bouton #shapes (liste des formes

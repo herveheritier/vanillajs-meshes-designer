@@ -10,6 +10,7 @@ import {
     POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
     CIRCLE_MIN_RADIUS_PX,
     SHAPE_DEFS, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO,
+    STAR_INNER_RATIO_MIN, STAR_INNER_RATIO_MAX,
 } from './constants.js'
 import { drawBoard, drawPoint, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
 import { updateSelectionHud, updateColorButtonState, updateShapesButton } from './hud.js'
@@ -204,11 +205,11 @@ export const updateMouseHover = (cursorScreen) => {
     // du cercle est dessinee dans le calque transitoire (draw.js
     // renderTransient), qui repeint aussi le curseur (drawMouse) a
     // chaque drawBoard — plus besoin de le rappeler ici.
-    // Mode cercle OU forme predéfinie armee : meme traitement — les
-    // overlays de survol (point le plus proche, labels, highlights)
-    // sont du bruit pendant la construction ; seule la preview
-    // (renderTransient) + le curseur sont dessines.
-    if (state.circleMode || state.shapeKind !== undefined) {
+    // Mode cercle / étoile OU forme predéfinie armee : meme
+    // traitement — les overlays de survol (point le plus proche,
+    // labels, highlights) sont du bruit pendant la construction ;
+    // seule la preview (renderTransient) + le curseur sont dessines.
+    if (state.circleMode || state.starMode || state.shapeKind !== undefined) {
         drawBoard()
         return
     }
@@ -516,8 +517,9 @@ export const toggleCircleMode = () => {
 }
 
 const enterCircleMode = () => {
-    // Exclusion mutuelle avec l'outil forme predéfinie : un seul geste
-    // de creation actif a la fois.
+    // Exclusion mutuelle avec l'outil forme predéfinie ET le mode
+    // étoile : un seul geste de creation actif a la fois.
+    if (state.starMode) exitStarMode()
     if (state.shapeKind !== undefined) disarmShapeTool()
     // Ferme le panneau #shapes s'il est ouvert (meme comportement
     // qu'armShapeTool) : entrer en mode cercle depuis le panneau ouvert
@@ -681,6 +683,201 @@ export const createCircle = (center, radius, segments, offsetAngle = 0) => {
     exitCircleMode()
     persistState()
 }
+// ===== Creation d'une étoile (mode 3 clics) =====
+//
+// Mode transitoire calqué sur le mode cercle (meme logique de geste,
+// cf. cahier des charges des evolutions) + une phase supplementaire
+// pour la profondeur des branches :
+//   1. 1er mousedown gauche = pose le centre (snapToGrid comme le
+//      cercle), rayon 0, angle 0, phase 0.
+//   2. mouvement de la souris (avec ou sans bouton enfonce) = regle
+//      rayon + angle de depart. L'angle est calcule en coords MODEL
+//      (meme convention que updateCircleGesture) ; +PI/2 compense le
+//      -PI/2 canonique de starGeometry pour que le 1er pic (sommet
+//      exterieur 0) pointe vers la souris.
+//   3. 2e mousedown gauche = VERROUILLE rayon + angle (phase 1) : le
+//      mouvement regle alors la profondeur des branches (ratio rayon
+//      interne / externe = distance curseur - centre / rayon, clamp
+//      STAR_INNER_RATIO_MIN..MAX).
+//   4. 3e mousedown gauche = VALIDE l'etoile (rayon + angle +
+//      profondeur courants), desarme le mode (comme le cercle).
+//
+// Echap quitte le mode (sans creer), clic droit / Backspace annulent
+// le trace en cours (reinitialise centre + rayon + angle + phase,
+// sans desarmer le mode).
+export const enterStarMode = () => {
+    // Exclusion mutuelle avec le mode cercle et l'outil forme : un
+    // seul geste de creation actif a la fois (meme contrat que
+    // enterCircleMode).
+    if (state.circleMode) exitCircleMode()
+    if (state.shapeKind !== undefined) disarmShapeTool()
+    // Ferme le panneau #shapes s'il est ouvert (meme comportement
+    // qu'enterCircleMode) : un seul Echap suffit alors a tout annuler.
+    state.shapesPanelOpen = false
+    const panel = document.querySelector('#shapesPanel')
+    if (panel) panel.hidden = true
+    state.starMode = true
+    state.starCenterModel = undefined
+    state.starRadiusModel = 0
+    state.starOffsetAngle = 0
+    state.starPhase = 0
+    state.starInnerRatio = SHAPE_STAR_INNER_RATIO
+    state.currentAction = ACTION_NONE
+    updateShapesButton()
+    log('Mode etoile : 1er clic = centre, mouvement = rayon + angle, 2e clic = verrouille, mouvement = profondeur des branches, 3e clic = valider (Echap = quitter)')
+    requestDraw()
+}
+
+export const exitStarMode = () => {
+    if (!state.starMode) return
+    state.starMode = false
+    state.starCenterModel = undefined
+    state.starRadiusModel = 0
+    state.starOffsetAngle = 0
+    state.starPhase = 0
+    state.starInnerRatio = SHAPE_STAR_INNER_RATIO
+    updateShapesButton()
+    log('Mode etoile desactive')
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+}
+
+export const beginStarGesture = (e) => {
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    const rawCenter = screenToModel(mouseScreen)
+    const center = state.activeGrid ? snapToGrid(rawCenter) : rawCenter
+    state.starCenterModel = { x: center.x, y: center.y }
+    state.starRadiusModel = 0
+    state.starOffsetAngle = 0
+    state.starPhase = 0
+    state.starInnerRatio = SHAPE_STAR_INNER_RATIO
+    // Sync lastMousePos (meme raison que beginCircleGesture : le
+    // drawBoard differe repeint le curseur via renderTransient).
+    state.lastMousePos = mouseScreen
+    requestDraw()
+}
+
+const updateStarGesture = (mouseScreen) => {
+    if (!state.starCenterModel) return
+    const rawEdge = screenToModel(mouseScreen)
+    const edge = state.activeGrid ? snapToGrid(rawEdge) : rawEdge
+    const cx = state.starCenterModel.x
+    const cy = state.starCenterModel.y
+    if (state.starPhase === 0) {
+        // Phase 1 : rayon + angle de depart. L'angle est evalue en
+        // coords MODEL (meme raisonnement que updateCircleGesture : le
+        // Y-flip de modelToScreen n'est compte qu'une fois). +PI/2
+        // compense le -PI/2 canonique de starGeometry : le 1er pic
+        // (sommet exterieur 0, angle = -PI/2 + offset) tombe pile sous
+        // le curseur sur l'ecran.
+        state.starRadiusModel = Math.hypot(edge.x - cx, edge.y - cy)
+        state.starOffsetAngle = Math.atan2(edge.y - cy, edge.x - cx) + Math.PI / 2
+    } else {
+        // Phase 2 (apres le 2e clic) : la profondeur des branches suit
+        // la distance curseur - centre, normalisee par le rayon
+        // verrouille. Au bord (curseur a ~1 rayon) -> etoile plate
+        // (ratio ~1) ; vers le centre -> branches profondes. Clamp
+        // partage avec starGeometry (STAR_INNER_RATIO_MIN..MAX).
+        state.starInnerRatio = state.starRadiusModel > 0
+            ? Math.max(STAR_INNER_RATIO_MIN, Math.min(STAR_INNER_RATIO_MAX, Math.hypot(edge.x - cx, edge.y - cy) / state.starRadiusModel))
+            : SHAPE_STAR_INNER_RATIO
+    }
+    requestDraw()
+}
+
+export const lockStarRadius = (e) => {
+    if (!state.starCenterModel) return
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    // Rafraichit rayon + angle sur la position exacte du 2e mousedown
+    // (symetrique avec commitCircleGesture) puis passe en phase 2 : le
+    // prochain mouvement reglera la profondeur des branches.
+    updateStarGesture(mouseScreen)
+    state.starPhase = 1
+    requestDraw()
+}
+
+export const commitStarGesture = (e) => {
+    if (!state.starCenterModel) return
+    const mouseScreen = {
+        x: e.x - state.board.getBoundingClientRect().x,
+        y: e.y - state.board.getBoundingClientRect().y,
+    }
+    // Rafraichit la profondeur sur la position exacte du 3e mousedown
+    // au cas ou le curseur aurait bouge entre le dernier mousemove
+    // et ce mousedown.
+    updateStarGesture(mouseScreen)
+    const center = state.starCenterModel
+    const radius = state.starRadiusModel
+    const offsetAngle = state.starOffsetAngle
+    const innerRatio = state.starInnerRatio
+    state.starCenterModel = undefined
+    state.starRadiusModel = 0
+    state.starOffsetAngle = 0
+    state.starPhase = 0
+    state.starInnerRatio = SHAPE_STAR_INNER_RATIO
+    if (radius * state.ctx.zoomLevel < CIRCLE_MIN_RADIUS_PX) {
+        log('Etoile ignoree : rayon trop petit')
+        requestDraw()
+        return
+    }
+    createStar(center, radius, offsetAngle, innerRatio)
+}
+
+export const cancelStarGesture = () => {
+    state.starCenterModel = undefined
+    state.starRadiusModel = 0
+    state.starOffsetAngle = 0
+    state.starPhase = 0
+    state.starInnerRatio = SHAPE_STAR_INNER_RATIO
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+}
+
+// Commite une étoile dans la forme active : append du pointList et des
+// tris de starGeometry (indices decales du nombre de points deja
+// presents) + entry d'historique replaceShape (meme pattern que
+// createCircle / deleteSelectedPoint). `offsetAngle` (compense du
+// -PI/2, cf. updateStarGesture) et `innerRatio` (profondeur) sont
+// transmis tels quels a starGeometry.
+export const createStar = (center, radius, offsetAngle = 0, innerRatio = SHAPE_STAR_INNER_RATIO) => {
+    const shapeIdx = state.activeShapeIndex
+    const shape = activeShape()
+    const clonedBefore = cloneShape(shape)
+    const { pointList, tris } = starGeometry(center, radius, SHAPE_STAR_POINTS, innerRatio, offsetAngle)
+    const base = shape.pointList.length
+    for (let i = 0; i < pointList.length; i++) {
+        shape.pointList.push({ x: pointList[i].x, y: pointList[i].y })
+    }
+    for (let i = 0; i < tris.length; i++) {
+        shape.tris.push({
+            p1: tris[i].p1 + base,
+            p2: tris[i].p2 + base,
+            p3: tris[i].p3 + base,
+        })
+    }
+    const clonedAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            clonedBefore.pointList, clonedBefore.tris,
+            clonedAfter.pointList, clonedAfter.tris,
+        )],
+    })
+    state.nearestPoint = undefined
+    state.nearestLine = undefined
+    log(`Etoile creee : 5 branches, profondeur ${Math.round(innerRatio * 100)}%`)
+    // Spec utilisateur : le mode étoile se desactive apres la creation
+    // (comme le cercle) — une etoile = un geste. exitStarMode re-log,
+    // met a jour le bouton et repaint (requestDraw + updateMouseHover).
+    exitStarMode()
+    persistState()
+}
 // ===== Formes prédéfinies (panneau #shapes) =====
 //
 // Le bouton #shapes ouvre un panneau flottant (meme pattern que
@@ -749,9 +946,10 @@ export const toggleShapesPanel = () => {
 // automatique) ou Echap (annulation).
 export const armShapeTool = (kind) => {
     if (!SHAPE_DEFS[kind]) return
-    // Exclusion mutuelle avec le mode cercle (un seul geste de
-    // creation actif a la fois).
+    // Exclusion mutuelle avec le mode cercle / étoile (un seul geste
+    // de creation actif a la fois).
     if (state.circleMode) exitCircleMode()
+    if (state.starMode) exitStarMode()
     state.shapesPanelOpen = false
     const panel = document.querySelector('#shapesPanel')
     if (panel) panel.hidden = true
@@ -913,6 +1111,8 @@ export const wireShapesPanel = () => {
             disarmShapeTool()
         } else if (state.circleMode) {
             exitCircleMode()
+        } else if (state.starMode) {
+            exitStarMode()
         } else {
             openShapesPanel()
         }
@@ -926,6 +1126,15 @@ export const wireShapesPanel = () => {
             // enterCircleMode ferme le panneau lui-meme.
             if (shapeBtn.dataset.shape === 'circle') {
                 enterCircleMode()
+                return
+            }
+            // L'etoile vit aussi dans le panneau : le bouton entre dans
+            // le mode 3 clics (meme logique que le cercle + profondeur
+            // des branches au 3e clic, cf. cahier des charges des
+            // evolutions) au lieu d'armer l'outil clic + glisser.
+            // enterStarMode ferme le panneau lui-meme.
+            if (shapeBtn.dataset.shape === 'star') {
+                enterStarMode()
                 return
             }
             armShapeTool(shapeBtn.dataset.shape)
@@ -1745,6 +1954,17 @@ export const resolveMouseMoveOnBoard = (e) => {
     // cercle.
     if (state.circleMode && !state.previewMode) {
         updateCircleGesture(mouseScreen)
+        state.lastMousePos = mouseScreen
+        updateMouseHover(mouseScreen)
+        return
+    }
+    // Mode étoile (3 clics) : le glisser regle rayon + angle (phase 1)
+    // puis la profondeur des branches (phase 2, apres le 2e clic).
+    // Meme pattern que le cercle : preview via renderTransient + HUD
+    // coordonnees. La garde !previewMode laisse la molette zoomer si un
+    // P a été pressé en mode étoile.
+    if (state.starMode && !state.previewMode) {
+        updateStarGesture(mouseScreen)
         state.lastMousePos = mouseScreen
         updateMouseHover(mouseScreen)
         return

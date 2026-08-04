@@ -125,14 +125,49 @@ try {
     check('hexagone cree : 7 points (centre + 6)', info.points === 7)
     check('hexagone cree : 6 triangles', info.tris === 6)
 
-    // --- 6. Etoile : 11 points, 10 triangles ---
+    // --- 6. Etoile (mode 3 clics, evolution : meme logique que le
+    // cercle + profondeur des branches au 3e clic) : 11 points, 10
+    // triangles, orientation par souris (1er pic vers le curseur) et
+    // profondeur reglee par la distance du 3e clic ---
     await page.keyboard.press('Control+z')
     await page.waitForTimeout(120)
     await armShape('star')
-    await drawDrag(500, 400, 600, 400)
+    check('mode etoile : bouton #shapes arme + libellé', await shapesArmed() && (await shapesText()) === 'étoile')
+    check('mode etoile : panneau ferme', !(await panelVisible()))
+    // Geste : 1er clic = centre (500,400) ; mouvement vers (600,400)
+    // = rayon 100 px + angle (1er pic a droite) ; 2e clic = verrouille
+    // rayon + angle ; mouvement vers (540,400) = profondeur des
+    // branches (40/100 = ratio 0.4) ; 3e clic = valide.
+    await page.mouse.move(500, 400)
+    await page.mouse.down()
+    await page.mouse.move(600, 400, { steps: 4 })
+    await page.mouse.up()
+    await page.mouse.down()      // 2e clic : verrouille rayon + angle
+    await page.mouse.up()
+    await page.mouse.move(540, 400, { steps: 4 })
+    await page.mouse.down()      // 3e clic : valide avec profondeur ~0.4
+    await page.mouse.up()
+    await page.waitForTimeout(150)
     info = await sceneInfo()
     check('etoile cree : 11 points (centre + 10 sommets)', info.points === 11)
     check('etoile cree : 10 triangles', info.tris === 10)
+    check('mode etoile quitte apres la creation', !(await shapesArmed()))
+    // Geometrie : 1er pic (pointList[1]) a ~1 x rayon du centre, 1er
+    // sommet interieur (pointList[2]) a ~0.4 x rayon (profondeur du
+    // 3e clic), et pic 0 sur la meme ligne que le centre (rayon
+    // horizontal vers la droite = orientation par souris).
+    const starGeo = await page.evaluate((key) => {
+        const raw = localStorage.getItem(key) || ''
+        const s = JSON.parse(raw)
+        const pl = (s.shapes && s.shapes[0] && s.shapes[0].pointList) || []
+        if (pl.length < 3) return null
+        const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
+        return { outer: d(pl[1], pl[0]), inner: d(pl[2], pl[0]), outerY: pl[1].y, centerY: pl[0].y }
+    }, SCENE_STORAGE_KEY)
+    check('etoile : profondeur des branches ~0.4 (3e clic)',
+        starGeo !== null && Math.abs(starGeo.inner / starGeo.outer - 0.4) < 0.15)
+    check('etoile : 1er pic oriente vers la souris (meme y que le centre)',
+        starGeo !== null && Math.abs(starGeo.outerY - starGeo.centerY) < 5)
 
     // --- 7. Echap : ferme le panneau / desarme l'outil ---
     await page.click('#shapes')

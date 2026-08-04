@@ -16,6 +16,7 @@ import {
     hideTriangleColorPanel,
     paintTriangleAtCursor,
     toggleCircleMode, beginCircleGesture, commitCircleGesture, cancelCircleGesture, exitCircleMode,
+    beginStarGesture, lockStarRadius, commitStarGesture, cancelStarGesture, exitStarMode,
     wireShapesPanel, beginShapeGesture, commitShapeGesture, cancelShapeGesture,
     disarmShapeTool, closeShapesPanel,
 } from './editor.js'
@@ -270,6 +271,37 @@ document.addEventListener('mousedown', (e) => {
             return
         }
     }
+    // Mode étoile : geste en 3 temps (evolution « meme logique que le
+    // cercle + profondeur des branches au 3e clic ») —
+    //   1. 1er mousedown gauche : beginStarGesture (pose le centre) ;
+    //      les mousemove reglent rayon + angle.
+    //   2. 2e mousedown gauche : lockStarRadius (verrouille rayon +
+    //      angle, passe en phase profondeur) ; les mousemove reglent
+    //      la profondeur des branches (starInnerRatio).
+    //   3. 3e mousedown gauche : commitStarGesture (valide l'etoile
+    //      avec rayon + angle + profondeur courants) + exitStarMode.
+    // Le clic droit annule le trace en cours sans quitter le mode,
+    // le clic milieu garde son role de pan (branche e.button === 1
+    // plus bas).
+    if (state.starMode && !state.previewMode) {
+        if (e.button === 0) {
+            if (!state.starCenterModel) {
+                // 1er clic : pose le centre.
+                beginStarGesture(e)
+            } else if (state.starPhase === 1) {
+                // 3e clic : valide l'etoile (rayon + angle + profondeur).
+                commitStarGesture(e)
+            } else {
+                // 2e clic : verrouille rayon + angle, phase profondeur.
+                lockStarRadius(e)
+            }
+            return
+        }
+        if (e.button === 2) {
+            cancelStarGesture()
+            return
+        }
+    }
     // Forme predéfinie armee : le clic gauche commence le trace (ancre
     // = coin pour rect/carre, centre sinon), le clic droit annule le
     // trace en cours sans desarmer ; le clic milieu garde son role de
@@ -368,12 +400,12 @@ document.addEventListener('mouseup', (e) => {
         state.selectionBoxStart = undefined
         state.selectionBoxCurrent = undefined
     }
-    if (!wasGrabbing && e.button === 2 && boardTarget && !state.previewMode && !state.circleMode && state.shapeKind === undefined && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+    if (!wasGrabbing && e.button === 2 && boardTarget && !state.previewMode && !state.circleMode && !state.starMode && state.shapeKind === undefined && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         // If no grab target was armed, a plain right click still has
         // selection semantics (including empty-space deselection).
-        // En mode cercle / forme armee, le clic droit a deja ete
-        // consomme par cancelCircleGesture / cancelShapeGesture
-        // (mousedown) : on ne re-selectionne pas.
+        // En mode cercle / étoile / forme armee, le clic droit a deja
+        // ete consomme par cancelCircleGesture / cancelStarGesture /
+        // cancelShapeGesture (mousedown) : on ne re-selectionne pas.
         processRightClickSelection(e)
     }
 })
@@ -389,6 +421,13 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Backspace' && state.circleMode && !state.previewMode) {
         e.preventDefault()
         cancelCircleGesture()
+        return
+    }
+    // Mode étoile : Backspace annule le trace en cours (comme le clic
+    // droit) au lieu de supprimer un point — la construction prime.
+    if (e.code === 'Backspace' && state.starMode && !state.previewMode) {
+        e.preventDefault()
+        cancelStarGesture()
         return
     }
     // Forme armee : Backspace annule le trace en cours (comme le clic
@@ -450,6 +489,13 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Escape' && !e.repeat && state.circleMode) {
         e.preventDefault()
         exitCircleMode()
+        return
+    }
+    // Mode étoile : Echap quitte le mode (et efface le trace en
+    // cours), meme contrat que le cercle.
+    if (e.code === 'Escape' && !e.repeat && state.starMode) {
+        e.preventDefault()
+        exitStarMode()
         return
     }
     // Panneau #shapes : Echap ferme le panneau ouvert, sinon désarme

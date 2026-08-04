@@ -19,7 +19,7 @@ import {
     COLOR_SELECTION_BOX_FILL,
     COLOR_SELECTION_BOX_STROKE,
     COLOR_CIRCLE_PREVIEW,
-    SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO,
+    SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO, STAR_INNER_RATIO_MIN, STAR_INNER_RATIO_MAX,
     PATTERN_AXIS,
     PATTERN_LINES,
     PATTERN_LINES_INACTIVE,
@@ -380,6 +380,9 @@ const renderTransient = () => {
     // circleCenterModel/circleRadiusModel), pas du modele — il vit ici
     // et non dans l'offscreen de la scene stable.
     if (state.circleMode && state.circleCenterModel) drawCirclePreview()
+    // Mode étoile (3 clics, meme logique que le cercle + profondeur) :
+    // meme principe — previsualisation transitoire du geste en cours.
+    if (state.starMode && state.starCenterModel) drawStarModePreview()
     // Forme predéfinie armee (panneau #shapes) : meme principe —
     // previsualisation transitoire du geste en cours.
     if (state.shapeKind !== undefined && state.shapeAnchorModel) drawShapeToolPreview()
@@ -496,6 +499,37 @@ const drawCirclePreview = () => {
     }
     drawRadialBase(center, r, offset)
     strokeScreenPolyline(rim)
+}
+
+// Previsualisation du mode étoile (creation en 3 clics) : WYSIWYG
+// strict avec starGeometry — le contour de l'etoile (sommets exterieurs
+// et interieurs alternes, meme formule que la creation avec
+// offsetAngle + innerRatio), la frontiere du disque de rayon en
+// pointilles + la ligne de rayon vers le 1er pic (drawRadialBase avec
+// angle = -PI/2 + offset : le pic 0 tombe pile sur la direction du
+// curseur) + marqueur de centre. En phase 2 (apres le 2e clic), le
+// mouvement de la souris regle starInnerRatio et l'etoile se deforme
+// en direct (feedback profondeur des branches) ; en phase 1 l'etoile
+// est affichee avec la profondeur par defaut, seule l'orientation
+// suit la souris.
+const drawStarModePreview = () => {
+    const center = state.starCenterModel
+    const r = state.starRadiusModel
+    if (!center || r <= 0) return
+    const n = SHAPE_STAR_POINTS
+    const rInner = Math.max(STAR_INNER_RATIO_MIN, Math.min(STAR_INNER_RATIO_MAX, state.starInnerRatio)) * r
+    const offset = state.starOffsetAngle
+    const pts = []
+    for (let i = 0; i < n; i++) {
+        const aOuter = (i / n) * TAU - Math.PI / 2 + offset
+        const aInner = ((i + 0.5) / n) * TAU - Math.PI / 2 + offset
+        pts.push(modelToScreen({ x: center.x + r * Math.cos(aOuter), y: center.y + r * Math.sin(aOuter) }))
+        pts.push(modelToScreen({ x: center.x + rInner * Math.cos(aInner), y: center.y + rInner * Math.sin(aInner) }))
+    }
+    // Ligne de rayon vers le 1er pic : drawRadialBase attend l'angle
+    // du sommet 0, c'est-a-dire -PI/2 + offset pour l'etoile.
+    drawRadialBase(center, r, -Math.PI / 2 + offset)
+    strokeScreenPolyline(pts)
 }
 
 // Previsualisation de la forme predéfinie armee (panneau #shapes) :

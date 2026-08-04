@@ -1,7 +1,10 @@
 // Rationale : voir DESIGN.md §3.2
 
 import { state } from './state.js'
-import { TAU, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO } from './constants.js'
+import {
+    TAU, CIRCLE_DEFAULT_SEGMENTS,
+    SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO, STAR_INNER_RATIO_MIN, STAR_INNER_RATIO_MAX,
+} from './constants.js'
 
 // ===== Snap =====
 export const snapToGrid = (point) => {
@@ -250,15 +253,24 @@ export const rectGeometry = (corner1, corner2) => {
 // puis 2×points triangles en eventail (centre, exterieur_i, interieur_i)
 // et (centre, interieur_i, exterieur_{i+1}). Le premier pic pointe
 // vers le haut (decalage -PI/2, convention Y inverse de l'app : un
-// model.y plus grand rend en haut). Fonction pure.
-export const starGeometry = (center, radius, points = SHAPE_STAR_POINTS, innerRatio = SHAPE_STAR_INNER_RATIO) => {
+// model.y plus grand rend en haut).
+//
+// `offsetAngle` (defaut 0, radians) : rotation appliquee a chaque
+// sommet, decalee par-dessus le -PI/2 canonique. Le mode etoile
+// (3 clics, meme logique que le cercle) passe l'angle du curseur
+// + PI/2 (cf. editor.js updateStarGesture) pour que le 1er pic
+// (sommet exterieur 0) pointe vers la souris : le geste d'orientation
+// par souris devient identique au cercle, le -PI/2 historique restant
+// le comportement par defaut des anciens appels (createShape drag).
+// Fonction pure (aucun acces a state).
+export const starGeometry = (center, radius, points = SHAPE_STAR_POINTS, innerRatio = SHAPE_STAR_INNER_RATIO, offsetAngle = 0) => {
     const n = Math.max(3, Math.round(points) || SHAPE_STAR_POINTS)
-    const rInner = Math.max(0.05, Math.min(0.95, innerRatio)) * radius
+    const rInner = Math.max(STAR_INNER_RATIO_MIN, Math.min(STAR_INNER_RATIO_MAX, innerRatio)) * radius
     const pointList = [{ x: center.x, y: center.y }]
     const tris = []
     for (let i = 0; i < n; i++) {
-        const aOuter = (i / n) * TAU - Math.PI / 2
-        const aInner = ((i + 0.5) / n) * TAU - Math.PI / 2
+        const aOuter = (i / n) * TAU - Math.PI / 2 + offsetAngle
+        const aInner = ((i + 0.5) / n) * TAU - Math.PI / 2 + offsetAngle
         pointList.push({ x: center.x + radius * Math.cos(aOuter), y: center.y + radius * Math.sin(aOuter) })
         pointList.push({ x: center.x + rInner * Math.cos(aInner), y: center.y + rInner * Math.sin(aInner) })
     }
