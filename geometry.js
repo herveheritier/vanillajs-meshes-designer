@@ -220,6 +220,35 @@ export const circleGeometry = (center, radius, segments, offsetAngle = 0) => {
     return { pointList, tris }
 }
 
+// ===== Triangle (3 sommets, un seul triangle) =====
+//
+// Fabrique la geometrie canonique d'un triangle equilateral : les 3
+// sommets sur le cercle circonscrit (MEME formule que les sommets de
+// circleGeometry avec n=3) mais UN SEUL triangle — pas d'eventail
+// depuis un centre (le point central n'existe pas dans la forme
+// generee, cf. cahier des charges des evolutions « la forme triangle
+// doit être composée d'un seul triangle au lieu de trois »).
+//
+// `offsetAngle` (defaut 0, radians) : rotation appliquee a chaque
+// sommet, meme convention que circleGeometry — le geste en 2 clics
+// passe l'angle du curseur (updateShapeGesture) pour que le sommet 0
+// pointe vers la souris. Fonction pure (aucun acces a state).
+export const triangleGeometry = (center, radius, offsetAngle = 0) => {
+    const n = 3
+    const pointList = []
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + offsetAngle
+        pointList.push({
+            x: center.x + radius * Math.cos(a),
+            y: center.y + radius * Math.sin(a),
+        })
+    }
+    return {
+        pointList,
+        tris: [{ p1: 0, p2: 1, p3: 2 }],
+    }
+}
+
 // ===== Rectangle (2 coins) =====
 //
 // Fabrique la geometrie canonique d'un rectangle axis-aligned a partir

@@ -21,7 +21,7 @@ import {
     activeTriangles, getAllVertices, getPointsAtSamePosition, getVertexIndex, getStackTriangleRefs, isPointSelected,
     getIndicesAtSamePosition,
     adjacentPoints, computeOrthogonalProjection, isInsideSegmentByDot,
-    circleGeometry, rectGeometry, starGeometry,
+    circleGeometry, triangleGeometry, rectGeometry, starGeometry,
 } from './geometry.js'
 import { saveState, movePointsPatch, insertPointPatch, replaceShapePatch, setFillsPatch, cloneShape } from './history.js'
 import { persistState, importMeshFromFile } from './io.js'
@@ -1089,8 +1089,14 @@ export const createShape = (kind, anchor, current, radius, offsetAngle = 0) => {
         geometry = rectGeometry(anchor, current)
     } else if (kind === 'star') {
         geometry = starGeometry(anchor, radius, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO)
+    } else if (kind === 'tri') {
+        // Evolution « la forme triangle doit être composée d'un seul
+        // triangle au lieu de trois » : le triangle est genere en 3
+        // sommets + UN SEUL triangle, sans le point central ni
+        // l'eventail que produirait circleGeometry(n=3).
+        geometry = triangleGeometry(anchor, radius, offsetAngle)
     } else {
-        const n = { tri: 3, penta: 5, hexa: 6 }[kind]
+        const n = { penta: 5, hexa: 6 }[kind]
         geometry = circleGeometry(anchor, radius, n, offsetAngle)
     }
     const base = shape.pointList.length
@@ -1114,7 +1120,7 @@ export const createShape = (kind, anchor, current, radius, offsetAngle = 0) => {
     })
     state.nearestPoint = undefined
     state.nearestLine = undefined
-    log(`${SHAPE_DEFS[kind].label} cree : ${geometry.pointList.length} points, ${geometry.tris.length} triangles`)
+    log(`${SHAPE_DEFS[kind].label} cree : ${geometry.pointList.length} points, ${geometry.tris.length} triangle${geometry.tris.length > 1 ? 's' : ''}`)
     disarmShapeTool()
     persistState()
 }

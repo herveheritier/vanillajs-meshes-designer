@@ -590,6 +590,16 @@ const drawShapeToolPreview = () => {
         const a = (i / n) * TAU + offset
         rim.push(modelToScreen({ x: anchor.x + radius * Math.cos(a), y: anchor.y + radius * Math.sin(a) }))
     }
+    // Triangle : la forme generee est reduite a ses 3 sommets (un seul
+    // triangle, pas d'eventail — cf. cahier des charges) — on ne trace
+    // que le contour, SANS le socle radial (cercle pointille + ligne
+    // de rayon + marqueur de centre) qui n'existera pas dans le
+    // resultat (WYSIWYG strict). L'orientation reste visible : le
+    // sommet 0 du contour pointe vers la souris.
+    if (kind === 'tri') {
+        strokeScreenPolyline(rim)
+        return
+    }
     drawRadialBase(anchor, radius, offset)
     strokeScreenPolyline(rim)
 }

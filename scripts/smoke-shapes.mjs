@@ -1,8 +1,9 @@
 // Smoke test du panneau de formes prédéfinies (#shapes) — playwright-core.
 //
 // Parcours : ouvrir / fermer le panneau, armer chaque forme via les
-// boutons du panneau, tracer par clic + glisser, verifier la geometrie
-// generee (points + triangles, carre a cotes egaux), undo/redo,
+// boutons du panneau, tracer en 2 clics (evolution : meme modele que
+// le cercle), verifier la geometrie generee (points + triangles,
+// carre a cotes egaux, triangle en un seul triangle), undo/redo,
 // fermeture par Echap et clic exterieur, desarmement par Echap, trace
 // trop petit ignore.
 //
@@ -144,6 +145,34 @@ try {
     }, SCENE_STORAGE_KEY)
     check('hexagone : sommet 0 oriente vers la souris (meme y que le centre)',
         hexaOrientation !== null && Math.abs(hexaOrientation.v0y - hexaOrientation.centerY) < 5)
+
+    // --- 5b. Triangle : la forme est composee d'UN SEUL triangle
+    // (3 sommets, pas d'eventail depuis un centre — evolution « la
+    // forme triangle doit être composée d'un seul triangle au lieu
+    // de trois »). Geste en 2 clics inchange, sommet 0 vers la souris.
+    await page.keyboard.press('Control+z')
+    await page.waitForTimeout(120)
+    await armShape('tri')
+    await drawShape2Clicks(500, 400, 600, 400)
+    info = await sceneInfo()
+    check('triangle cree : 3 points (pas de centre)', info.points === 3)
+    check('triangle cree : 1 seul triangle', info.tris === 1)
+    check('outil desarme apres creation du triangle', !(await shapesArmed()))
+    // Drag horizontal (offset = 0) : triangle equilateral inscrit dans
+    // un cercle de rayon 100 -> cotes ~173.2, et le sommet 0 (angle 0)
+    // est le sommet le plus a droite (oriente vers la souris).
+    const triGeo = await page.evaluate((key) => {
+        const raw = localStorage.getItem(key) || ''
+        const s = JSON.parse(raw)
+        const pl = (s.shapes && s.shapes[0] && s.shapes[0].pointList) || []
+        if (pl.length < 3) return null
+        const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
+        return { s01: d(pl[0], pl[1]), s12: d(pl[1], pl[2]), s20: d(pl[2], pl[0]), v0x: pl[0].x, v1x: pl[1].x, v2x: pl[2].x }
+    }, SCENE_STORAGE_KEY)
+    check('triangle : equilateral (3 cotes egaux)',
+        triGeo !== null && Math.abs(triGeo.s01 - triGeo.s12) < 0.5 && Math.abs(triGeo.s12 - triGeo.s20) < 0.5)
+    check('triangle : sommet 0 oriente vers la souris (le plus a droite)',
+        triGeo !== null && triGeo.v0x > triGeo.v1x && triGeo.v0x > triGeo.v2x)
 
     // --- 6. Etoile (mode 3 clics, evolution : meme logique que le
     // cercle + profondeur des branches au 3e clic) : 11 points, 10

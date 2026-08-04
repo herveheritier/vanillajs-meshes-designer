@@ -66,7 +66,9 @@ export const CIRCLE_MIN_RADIUS_PX = 5
 // est arme. La generation geometrique est deleguee par kind :
 //   - rect   : rectangle par 2 coins (rectGeometry)
 //   - square : carre (cote = max(|dx|,|dy|), signe preserve)
-//   - tri / penta / hexa : polygones reguliers = circleGeometry(n)
+//   - tri    : triangle equilateral = triangleGeometry (3 sommets,
+//     UN SEUL triangle — pas d'eventail, cf. cahier des charges)
+//   - penta / hexa : polygones reguliers = circleGeometry(n)
 //   - star   : etoile (starGeometry, 5 branches)
 export const SHAPE_DEFS = {
     rect:   { label: 'rectangle' },
