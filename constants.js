@@ -79,6 +79,13 @@ export const SHAPE_DEFS = {
 // Etoile : nombre de branches + ratio rayon interne / rayon externe.
 export const SHAPE_STAR_POINTS = 5
 export const SHAPE_STAR_INNER_RATIO = 0.4
+// Bornes du ratio interne (profondeur des branches) : le 3e clic du
+// mode etoile regle la profondeur par la distance curseur - centre
+// (0 = branches qui touchent le centre, 1 = etoile plate). Partagees
+// par starGeometry (clamp a la generation) et par updateStarGesture /
+// drawStarModePreview (clamp a la saisie et au rendu).
+export const STAR_INNER_RATIO_MIN = 0.05
+export const STAR_INNER_RATIO_MAX = 0.95
 
 export const MAX_HISTORY = 50
 
