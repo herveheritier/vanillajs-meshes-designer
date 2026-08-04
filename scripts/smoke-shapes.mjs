@@ -10,7 +10,7 @@
 //   1. Lancer le serveur dev :  python3 test_server.py   (port 8000)
 //   2. node scripts/smoke-shapes.mjs [baseUrl]
 
-import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY } from './smoke_lib.mjs'
+import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY, countWhitePixelsNear } from './smoke_lib.mjs'
 
 const BASE_URL = (process.argv[2] || 'http://localhost:8000/main.html').replace(/\/$/, '')
 
@@ -167,6 +167,16 @@ try {
     info = await sceneInfo()
     check('clic sans glisser : aucune forme creee', info.points === 0 && info.tris === 0)
     check('outil toujours arme apres clic ignore', await shapesArmed())
+    // (evolution pointeur) : meme sans mouvement apres le 1er clic, la
+    // croix blanche doit rester visible — beginShapeGesture appelait
+    // requestDraw() seul, le drawBoard differe effacait le curseur du
+    // dernier mousemove jusqu'au prochain mousemove (fix : renderTransient
+    // repeint le curseur a chaque drawBoard via state.lastMousePos).
+    // On compte les pixels blancs (COLOR_CURSOR = #FFFFFF) autour de la
+    // position du clic ; le marqueur de centre de la preview (vert) ne
+    // compte pas.
+    check('pointeur visible apres le 1er clic forme sans mouvement (pixels blancs > 0)',
+        (await countWhitePixelsNear(page, 500, 400)) > 0)
     await page.keyboard.press('Escape')
     await page.waitForTimeout(100)
 

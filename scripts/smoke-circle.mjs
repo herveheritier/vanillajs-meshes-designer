@@ -17,7 +17,7 @@
 //   1. Lancer le serveur dev :  python3 test_server.py   (port 8000)
 //   2. node scripts/smoke-circle.mjs [baseUrl]
 
-import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY } from './smoke_lib.mjs'
+import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY, countWhitePixelsNear } from './smoke_lib.mjs'
 
 const BASE_URL = (process.argv[2] || 'http://localhost:8000/main.html').replace(/\/$/, '')
 
@@ -336,6 +336,32 @@ try {
     await page.waitForTimeout(120)
     check('Echap : mode cercle desactive', !(await shapesArmed()))
     check('Echap : compteur de cotes efface', (await shapesText()) === '')
+
+    // --- 9. Pointeur visible au 1er clic (evolution : « lors de la
+    // creation d'une forme, au premier clic, le pointeur ne devrait pas
+    // disparaître »). La regression etait que beginCircleGesture (1er
+    // mousedown) appelait requestDraw() seul : le drawBoard differe
+    // blittait l'offscreen par-dessus le curseur dessine au dernier
+    // mousemove, et la croix blanche disparaissait jusqu'au prochain
+    // deplacement de souris (drawMouse est un overlay post-blit repeint
+    // par updateMouseHover seulement). Fix : renderTransient repeint le
+    // curseur a chaque drawBoard (state.lastMousePos). On verifie donc
+    // qu'APRES le 1er clic SANS aucun mouvement, des pixels blancs
+    // (COLOR_CURSOR = #FFFFFF, ring rayon ~3 px autour de la position
+    // du clic) sont presents dans le canvas — le marqueur de centre de
+    // la preview (COLOR_CIRCLE_PREVIEW, vert) est, lui, au meme endroit
+    // mais ne compte pas pour un pixel blanc. ---
+    await page.keyboard.press('c')
+    await page.waitForTimeout(120)
+    await page.mouse.move(400, 300)
+    await page.mouse.down()      // 1er clic : pose le centre
+    await page.mouse.up()
+    await page.waitForTimeout(250)  // laisse le drawBoard differe s'executer
+    check('pointeur visible apres le 1er clic sans mouvement (pixels blancs > 0)',
+        (await countWhitePixelsNear(page, 400, 300)) > 0)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(120)
+    check('Echap apres test pointeur : mode cercle desactive', !(await shapesArmed()))
 
     check('aucune erreur JS sur tout le parcours', errors.length === 0)
 } catch (err) {

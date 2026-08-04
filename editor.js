@@ -11,7 +11,7 @@ import {
     CIRCLE_MIN_RADIUS_PX,
     SHAPE_DEFS, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO,
 } from './constants.js'
-import { drawBoard, drawPoint, drawMouse, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
+import { drawBoard, drawPoint, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
 import { updateSelectionHud, updateColorButtonState, updateShapesButton } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
@@ -202,14 +202,14 @@ export const updateMouseHover = (cursorScreen) => {
     // sont que du bruit pendant la construction d'un cercle. On se
     // limite au HUD coordonnees + au repaint : la previsualisation
     // du cercle est dessinee dans le calque transitoire (draw.js
-    // renderTransient), drawMouse repeint le curseur.
+    // renderTransient), qui repeint aussi le curseur (drawMouse) a
+    // chaque drawBoard — plus besoin de le rappeler ici.
     // Mode cercle OU forme predéfinie armee : meme traitement — les
     // overlays de survol (point le plus proche, labels, highlights)
     // sont du bruit pendant la construction ; seule la preview
     // (renderTransient) + le curseur sont dessines.
     if (state.circleMode || state.shapeKind !== undefined) {
         drawBoard()
-        drawMouse(cursorScreen)
         return
     }
     const actionModel = screenToModel(cursorScreen)
@@ -239,8 +239,11 @@ export const updateMouseHover = (cursorScreen) => {
     if (signature === lastHoverSignature && !isSceneDirty()) return
     lastHoverSignature = signature
 
+    // Le curseur est repeint par renderTransient pendant drawBoard
+    // (cf. plus haut) ; les overlays de survol ci-dessous (nearest
+    // point vert, labels, highlights) se dessinent par-dessus, comme
+    // avant.
     drawBoard()
-    drawMouse(cursorScreen)
 
     if (state.nearestPoint && state.nearestPoint.point) {
         drawPoint(state.nearestPoint.point, 5, COLOR_HOVER_NEAREST_POINT)
@@ -325,8 +328,12 @@ export const resolveMouseClickOnBoard = (e) => {
     state.nearestLine = findSelectedLine(pointToAdd)
     if (!state.nearestLine || state.nearestLine.distance > lineHitRadiusModel()) state.nearestLine = undefined
     addPoint(pointToAdd)
+    // Même sync que les gestes cercle/forme : le drawBoard différé
+    // (requestDraw) repeint le curseur via renderTransient, donc
+    // lastMousePos doit pointer sur la position du clic pour que le
+    // pointeur survive au repaint.
+    state.lastMousePos = mouseScreen
     requestDraw()
-    drawMouse(mouseScreen)
 }
 
 // (modifyShapeModel-spec §3.6) : dedup tolerance 1 px scanne
@@ -553,6 +560,11 @@ export const beginCircleGesture = (e) => {
     // updateCircleGesture (memes coordonnees ecran que la souris du
     // geste, pour eviter tout drift entre les deux).
     state.circleOffsetAngle = 0
+    // Synchronise lastMousePos (memes coordonnees que la souris du
+    // geste) : le drawBoard differe par requestDraw repeint le curseur
+    // via renderTransient a CETTE position (cf. draw.js) — sans ce
+    // sync, un 1er clic sans mouvement ferait disparaître le pointeur.
+    state.lastMousePos = mouseScreen
     requestDraw()
 }
 
@@ -775,6 +787,11 @@ export const beginShapeGesture = (e) => {
     state.shapeAnchorModel = { x: anchor.x, y: anchor.y }
     state.shapeCurrentModel = { x: anchor.x, y: anchor.y }
     state.shapeRadiusModel = 0
+    // Meme sync que beginCircleGesture : le curseur est repeint par
+    // renderTransient au drawBoard differe, il faut donc pointer
+    // lastMousePos sur la position du 1er clic (pointeur visible meme
+    // sans mouvement, cf. cahier des charges).
+    state.lastMousePos = mouseScreen
     requestDraw()
 }
 

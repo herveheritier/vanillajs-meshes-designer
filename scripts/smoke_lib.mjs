@@ -69,3 +69,29 @@ export const hudHelpers = (page) => ({
     undoCount: () => page.locator('#undoCount').textContent(),
     sceneDirty: () => page.locator('#sceneStatus').getAttribute('data-dirty'),
 })
+
+// Compte les pixels blancs (r,g,b > 200) dans une fenêtre 16×16 autour
+// de la position CSS (x, y) du canvas. Sert aux checks « le pointeur
+// est visible après un clic sans mouvement » : la croix blanche du
+// curseur (COLOR_CURSOR = #FFFFFF, ring rayon ~3 px) laisse des pixels
+// blancs, le marqueur de centre de la preview (COLOR_CIRCLE_PREVIEW,
+// vert) n'en laisse pas.
+// PRECONDITION : le réticule doit être désactivé (reticleMode = 0) —
+// COLOR_RETICLE est aussi #FFFFFF et tracerait des lignes à travers la
+// fenêtre (faux positif). Les suites ne l'activent jamais et tournent
+// dans un contexte frais (défaut 0) ; ne pas toggler le réticule
+// avant cet appel.
+export const countWhitePixelsNear = (page, cssX, cssY) => page.evaluate(({ x, y }) => {
+    const board = document.querySelector('#board')
+    const ctx = board.getContext('2d')
+    const dpr = window.devicePixelRatio || 1
+    // Position CSS px -> pixels physiques du bitmap (dpr).
+    const px = Math.round(x * dpr)
+    const py = Math.round(y * dpr)
+    const img = ctx.getImageData(px - 8, py - 8, 16, 16).data
+    let white = 0
+    for (let i = 0; i < img.length; i += 4) {
+        if (img[i] > 200 && img[i + 1] > 200 && img[i + 2] > 200) white++
+    }
+    return white
+}, { x: cssX, y: cssY })

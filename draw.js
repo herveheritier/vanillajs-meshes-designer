@@ -383,6 +383,21 @@ const renderTransient = () => {
     // Forme predéfinie armee (panneau #shapes) : meme principe —
     // previsualisation transitoire du geste en cours.
     if (state.shapeKind !== undefined && state.shapeAnchorModel) drawShapeToolPreview()
+    // Curseur (drawMouse) : overlay post-blit par nature (le board a
+    // `cursor: none`, la croix blanche est peinte pixel-par-pixel). Il
+    // doit etre repeint a CHAQUE drawBoard, comme le reticule, et pas
+    // seulement au mousemove : tant qu'il n'etait dessine que par
+    // updateMouseHover (editor.js), tout requestDraw isole — 1er clic
+    // du geste cercle/forme, armement de l'outil, molette — blittait
+    // l'offscreen par-dessus le curseur du dernier mousemove et le
+    // faisait disparaître jusqu'au prochain deplacement de souris
+    // (exigence cahier des charges : « au premier clic, le pointeur ne
+    // devrait pas disparaître »). state.lastMousePos est maintenu a
+    // chaque mousemove sur le board (resolveMouseMoveOnBoard) et par
+    // les fonctions qui posent un geste sans mouvement prealable
+    // (beginCircleGesture / beginShapeGesture / resolveMouseClickOnBoard) :
+    // le curseur survit donc a n'importe quel repaint.
+    if (state.lastMousePos) drawMouse(state.lastMousePos)
 }
 
 // ===== Previews transitoires de creation (cercle + formes) =====
