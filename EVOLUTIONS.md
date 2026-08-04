@@ -1,12 +1,13 @@
 # evolutions
 ## évolutions à réaliser sur l'application
-- pour la création d'une étoile suivre la même logique que pour la création d'un cercle mais ajouter également le réglage de la profondeur des branches à prendre en compte au 3ème clic
+- généraliser le principe de création des formes sur le modèle du cercle : 1er clic pour poser le 1er point, mouvement du pointeur pour déterminer la taille et/ou l'orientation, 2ème clic pour valider...
 - différents boutons pour forcer l'alignement et la répartition des points sélectionnés
 - création d'un cercle percé d'un trou
 - revoir la création de la forme triangle ; elle doit être composée d'un seul triangle au lieu de trois
 - ajouter une distinction visuelle pour les sommets qui correspondent à plusieurs points afin de faciliter leur regroupement
 - la palette de couleur peut être modifiée et enrichie ; elle est conservée en localhost
 ## évolutions effectuées sur l'application (date, id de commit)
+- 04/08/2026 (905418f) : création d'une étoile en 3 clics : 1er = centre, 2e = verrouille rayon + angle de départ, 3e = profondeur des branches (le 1er pic suit la souris comme pour le cercle)
 - 04/08/2026 (b19622e) : lors de la création d'une forme (cercle et formes prédéfinies), le pointeur reste visible après le premier clic, même sans mouvement de souris
 - 04/08/2026 (4ec3310) : la ligne de rayon de l'aperçu du cercle suit l'angle de départ, et l'orientation du cercle est correcte même lors d'un tracé vertical
 - 04/08/2026 (97ffbd0) : la création d'un cercle se fait en 2 clics : le 1er pose le centre, le mouvement de la souris regle le rayon et l'angle de depart, le 2e clic valide
