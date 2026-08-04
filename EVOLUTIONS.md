@@ -1,10 +1,10 @@
 # evolutions
 ## évolutions à réaliser sur l'application
 - différents boutons pour forcer l'alignement et la répartition des points sélectionnés
-- création d'un cercle percé d'un trou
 - ajouter une distinction visuelle pour les sommets qui correspondent à plusieurs points afin de faciliter leur regroupement
 - la palette de couleur peut être modifiée et enrichie ; elle est conservée en localhost
 ## évolutions effectuées sur l'application (date, id de commit)
+- 04/08/2026 (f538544) : création d'un cercle percé d'un trou (anneau) en 3 clics : 1er = centre, 2e = verrouille rayon externe + angle, mouvement = taille du trou, 3e = valider (molette = nombre de côtés)
 - 04/08/2026 (1e75148) : la forme triangle est désormais composée d'un seul triangle (3 sommets, sans point central) au lieu de trois
 - 04/08/2026 (896e553) : généralisation de la création des formes sur le modèle du cercle : 1er clic = pose l'ancre (coin pour rectangle/carré, centre pour les polygones), mouvement = taille et orientation (le sommet 0 pointe vers la souris), 2e clic = valide
 - 04/08/2026 (905418f) : création d'une étoile en 3 clics : 1er = centre, 2e = verrouille rayon + angle de départ, 3e = profondeur des branches (le 1er pic suit la souris comme pour le cercle)
