@@ -564,23 +564,30 @@ const updateCircleGesture = (mouseScreen) => {
         edge.x - state.circleCenterModel.x,
         edge.y - state.circleCenterModel.y,
     )
-    // Angle de depart du polygone : angle du vecteur curseur - centre
-    // en coords screen (PAS model — l'axe Y inverse de model perturbe
-    // l'intuition : « je veux le sommet 0 vers la souris », il faut
-    // donc raisonner dans le repere visuel). atan2(dy, dx) en
-    // screen retourne l'angle trigonometrique du vecteur dans le
-    // repere ecran (Y pointe vers le bas sur canvas), applique tel
-    // quel a `circleGeometry(center, radius, segments, offset)` :
-    // pour le sommet i, l'angle devient (i/n)*TAU + offset, calcule
-    // en coords model. Le rendu (modelToScreen flippe Y)
-    // reprojette symetriquement : le sommet 0 tombe donc sur la
-    // position visible de la souris. Memes maths que la position
-    // du label d'identifiant de sommet (§7.8) et la conversion
-    // souris-to-model.
-    const centerScreen = modelToScreen(state.circleCenterModel)
+    // Angle de depart du polygone : on calcule l'angle en COORDS
+    // MODEL (Y up, meme convention que circleGeometry) pour que le
+    // sommet 0 tombe pile sous le curseur a l'ecran. Si on calculait
+    // l'angle en coords screen avec atan2(dy_screen, dx_screen), on
+    // recupererait un angle en convention math Y-up applique a un
+    // edgeModel lui-meme en Y-up : les deux vecteurs seraient
+    // colineaires mais dans le sens vertical inverse (atan2 voit la
+    // souris en bas comme angle +pi/2 « en haut en math », circleGeometry
+    // place donc le sommet 0 EN HAUT en model, et le modelToScreen
+    // flippant Y le rend AU-DESSUS de la souris a l'ecran). En passant
+    // par screenToModel d'abord, le vecteur (edge - center) est
+    // evalue en coords model (Y up) comme le reste du pipeline : le
+    // sommet 0 sort alors SOUS la souris sur l'ecran, sans symetrie
+    // parasite. Meme maths que la conversion souris -> modele -> vertex
+    // de geometry.js (le Y-flip n'est compte qu'une fois, cote
+    // modelToScreen, et pas du tout cote generation). A noter aussi
+    // : l'ancienne version calculait le rayon depuis `edge` (snap ON)
+    // mais l'angle depuis `mouseScreen` non-snappe — source de
+    // desaccord jusqu'a un demi-pas de grille quand activeGrid.
+    // Avec `edge` pour les deux, rayon et angle derivent du meme point
+    // snappe — comportement coherent.
     state.circleOffsetAngle = Math.atan2(
-        mouseScreen.y - centerScreen.y,
-        mouseScreen.x - centerScreen.x,
+        edge.y - state.circleCenterModel.y,
+        edge.x - state.circleCenterModel.x,
     )
     requestDraw()
 }

@@ -106,7 +106,7 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
 - **Scène multi-formes** : chaque forme possède ses propres points (`pointList`) et triangles (`tris`). Navigation par *forme précédente / suivante / nouvelle / supprimer* depuis la barre d'outils, ou via le compteur `i/N` affiché en pilule verte.
 - **Forme active seulement** : les opérations d'édition (sélection, déplacement, suppression) ne concernent que la forme courante ; les autres sont rendues en lignes estompées pour contexte.
 - **Grille magnétique** : pas affichable et ajustable à la molette sur le bouton grille ; middle-click sur ce même bouton réinitialise le pas au défaut ; `G` affiche / masque.
-- **Cercle** : création d'un disque par génération d'un éventail de triangles (choisi dans le panneau Formes ou raccourci `C` ; clic + glisser = centre puis rayon ; molette sur le canvas ou sur le bouton actif = nombre de côtés, mémorisé entre les sessions ; le mode se désactive après chaque création, `Échap` quitte, clic droit annule le tracé).
+- **Cercle** : création d'un disque par génération d'un éventail de triangles (choisi dans le panneau Formes ou raccourci `C` ; tracé en 2 clics : le 1er pose le centre, le mouvement de la souris règle simultanément le rayon ET l'angle de départ (le sommet 0 du polygone pointe vers la souris), le 2e clic valide ; molette sur le canvas ou sur le bouton actif = nombre de côtés, mémorisé entre les sessions ; le mode se désactive après chaque création, `Échap` quitte, clic droit annule le tracé).
 - **Navigation** :
   - **wheel** : zoom centré sur le curseur (×1.1 par cran, clamp `[0.1, 10]`) ; pivote les points sélectionnés si 2+ sont sélectionnés.
   - **middle-click + drag** : déplace l'origine (pan du `viewCenter`), le contenu suit le curseur (convention « grab content »).
@@ -131,7 +131,7 @@ Orienter la vue pendant la construction : **molette** pour zoomer (×1.1 par cra
 | `Ctrl+0` | Réinitialiser le zoom (100 %, recentré sur l'origine) |
 | `G` | Afficher / masquer la grille |
 | `P` | Prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons ; `Échap`, `P` ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition) |
-| `C` | Activer / désactiver le mode cercle (tracé clic + glisser : centre puis rayon ; molette = nombre de côtés, mémorisé entre les sessions) |
+| `C` | Activer / désactiver le mode cercle (tracé en 2 clics : 1er = centre, mouvement = rayon + angle de départ, 2e = valider ; molette = nombre de côtés, mémorisé entre les sessions) |
 | `E` | (Supprimé — un seul mode édition) |
 | `?` | Afficher / masquer l'aide |
 | **Souris** | |

@@ -390,7 +390,21 @@ const renderTransient = () => {
 // Socle radial partage (cercle + formes radiales) : cercle vrai en
 // pointilles (frontiere du disque approxime) + ligne de rayon +
 // marqueur de centre, en pixels ecran.
-const drawRadialBase = (center, radius) => {
+//
+// `angle` (defaut 0, radians) : direction du rayon dans le repere
+// modele (meme convention que circleGeometry — la generation du
+// sommet 0 utilise `(i/n)*TAU + offset` en coords model Y-up). Le
+// rayon est calcule en modele (cos/sin autour de `center`) puis
+// projete en SCREEN via modelToScreen : on obtient le VRAI point
+// ou le sommet 0 apparait a l'ecran, et la ligne le relie au
+// centre. Pour le cercle en cours (drawCirclePreview) `angle` =
+// `state.circleOffsetAngle` : la ligne suit l'angle de depart
+// regle a la souris. Pour les polygones reguliers (tri / penta /
+// hexa / etoile du panneau #shapes) `angle` n'est pas transmis et
+// reste a 0 = le rayon « canonique » horizontal a droite, qui
+// sert de repere visuel stable tant que ces formes n'ont pas
+// d'orientation par souris (evolution future, pas le besoin actuel).
+const drawRadialBase = (center, radius, angle = 0) => {
     const sp = modelToScreen(center)
     const zoom = state.ctx.zoomLevel
     state._ctx.setLineDash([4, 4])
@@ -399,9 +413,21 @@ const drawRadialBase = (center, radius) => {
     state._ctx.arc(sp.x, sp.y, radius * zoom, 0, TAU)
     state._ctx.stroke()
     state._ctx.setLineDash([])
+    // Endpoint du rayon en coords model : centre + (r*cos(angle),
+    // r*sin(angle)). La projection via modelToScreen tient compte du
+    // Y-flip canvas <-> modele, donc le point tombe exactement ou
+    // le sommet 0 du polygone genere apparaitra. Le delta X/Y
+    // ajoute a center dans la branche par defaut (angle = 0) reste
+    // (r, 0) — strictement equivalent a l'ancienne formule en
+    // screen `radius*zoom, 0`, les polygones reguliers gardent leur
+    // rayon horizontal historique.
+    const endpoint = modelToScreen({
+        x: center.x + radius * Math.cos(angle),
+        y: center.y + radius * Math.sin(angle),
+    })
     state._ctx.beginPath()
     state._ctx.moveTo(sp.x, sp.y)
-    state._ctx.lineTo(sp.x + radius * zoom, sp.y)
+    state._ctx.lineTo(endpoint.x, endpoint.y)
     state._ctx.stroke()
     state._ctx.beginPath()
     state._ctx.arc(sp.x, sp.y, 3, 0, TAU)
@@ -429,12 +455,19 @@ const strokeScreenPolyline = (pts) => {
 // dessinee dans le calque transitoire pour suivre le curseur a chaque
 // repaint sans invalider le cache offscreen. Montre ce qui SERA
 // genere : le cercle vrai (arc en pointilles) + le polygone des N
-// cotes (la frontiere de l'eventail de triangles) + la ligne de rayon
-// + le marqueur de centre. Meme contrat que circleGeometry : le
-// `state.circleOffsetAngle` (radians) decale le sommet 0 du polygone
-// pour que l'utilisateur voie immediatement quelle orientation de
-// cercle produira le 2e mousedown — feedback WYSIWYG du geste en
-// 2 temps.
+// cotes (la frontiere de l'eventail de triangles) + la ligne de
+// rayon (qui pointe vers le sommet 0 — feedback WYSIWYG : la ligne
+// mene pile au bord du polygone que le 2e mousedown commitera) +
+// marqueur de centre. Meme contrat que circleGeometry : le
+// `state.circleOffsetAngle` (radians, calcule en coords model Y-up
+// — voir updateCircleGesture) decale le sommet 0 du polygone ; le
+// rayon de drawRadialBase est emis avec le MEME offset pour que
+// ligne et polygone restent colinear (le rayon mene au bord). Le
+// resultat : la souris ne touche pas forcement le rayon (le mode
+// cercle est en 2 clics, rayon et angle sont regles par le
+// mousemove du 1er clic) ; en pratique la souris sera a proximite
+// du sommet 0 par design, et les deux se deplacent ensemble parce
+// que tous les deux derivent du meme offset.
 const drawCirclePreview = () => {
     const center = state.circleCenterModel
     const r = state.circleRadiusModel
@@ -446,7 +479,7 @@ const drawCirclePreview = () => {
         const a = (i / n) * TAU + offset
         rim.push(modelToScreen({ x: center.x + r * Math.cos(a), y: center.y + r * Math.sin(a) }))
     }
-    drawRadialBase(center, r)
+    drawRadialBase(center, r, offset)
     strokeScreenPolyline(rim)
 }
 

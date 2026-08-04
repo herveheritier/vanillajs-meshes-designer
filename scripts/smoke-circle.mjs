@@ -155,6 +155,91 @@ try {
     check('cercle a 25 cotes : 25 triangles', info.tris === 25)
     check('mode cercle quitte apres la 2e creation', !(await shapesArmed()))
 
+    // --- 4b. Orientation par souris en drag VERTICAL (au-dessus
+    //         puis en dessous du centre) : le sommet 0 du rim doit
+    //         tomber du cote de la souris sur l'ecran. La regression
+    //         historique etait que atan2(dy, dx) en coords screen
+    //         appliquait le Y-flip deux fois (atan2 math + modelToScreen
+    //         canvas Y down) — le sommet 0 sortait du cote oppose a
+    //         la souris verticalement (souris en bas -> sommet 0 en
+    //         haut). Smoke test : on trace deux cercles avec le meme
+    //         rayon mais « dessous » et « dessus » du centre, et on
+    //         verifie le signe du delta entre rim0 et centre en
+    //         coords model (model Y up = screen Y down : souris bas
+    //         sur screen => rim.y < centre.y en model).
+    // Defensive : on force segments a 25 sur le bouton actif (via
+    // molette) avant chaque sous-test, pour ne pas dependre du fait
+    // que test 4 ait deja regle le compteur via sa propre molette
+    // (= fragilite si l'ordre des tests est reordonne plus tard :
+    // on aurait pu retomber sur le defaut 24 et fausser les checks
+    // `info.points === 26` / `info.tris === 25`). ---
+    const setSegmentsTo25 = async () => {
+        // Relancer le mode si besoin (Esc quitte le mode si actif).
+        await page.keyboard.press('Control+z')
+        await page.waitForTimeout(80)
+        await page.keyboard.press('c')
+        await page.waitForTimeout(80)
+        await page.locator('#shapes').hover()
+        await page.mouse.wheel(0, -100)  // +1 cote : 24 -> 25
+        await page.waitForTimeout(80)
+        // Si on etait deja a 25 (apres +1 du test 4), la molette +
+        // 1 nous mettrait a 26 ; on rembobine d'un cran pour retomber
+        // sur 25 dans tous les cas.
+        const txt = await shapesText()
+        if (txt !== 'cercle 25') {
+            await page.mouse.wheel(0, 100)  // -1 cote
+            await page.waitForTimeout(80)
+        }
+    }
+
+    // Cercles 1 : souris sous le centre (500,400 -> 500,600)
+    await setSegmentsTo25()
+    await drawCircle(500, 400, 500, 600)
+    info = await sceneInfo()
+    check('cercle vertical bas : points = 1 centre + 25 cotes', info.points === 26)
+    check('cercle vertical bas : triangles = 25', info.tris === 25)
+    check('cercle vertical bas : mode quitte apres creation', !(await shapesArmed()))
+    const rimDown = await firstRimModel()
+    const centerDown = await page.evaluate((key) => {
+        const raw = localStorage.getItem(key) || ''
+        const s = JSON.parse(raw)
+        const pl = (s.shapes && s.shapes[0] && s.shapes[0].pointList) || []
+        return pl.length >= 1 ? { x: pl[0].x, y: pl[0].y } : null
+    }, SCENE_STORAGE_KEY)
+    // souris sous le centre sur l'ecran (Y down, screen.y > center.y) :
+    // en coords model (Y up, modelToScreen flippe Y), cela correspond a
+    // un edge en model.y < center.y (= -200 vs 0 sur cet exemple). On
+    // attend donc le meme signe en sortie : rim model.y strictement
+    // inferieur a center model.y. Avant le fix (atan2 en coords
+    // screen bouclait le Y-flip), le rim sortait du cote oppose :
+    // rim.y > center.y, d'ou ce check sert de regression.
+    check('orientation souris bas : rim.y < centre.y en modele (vertex 0 sous la souris)',
+        rimDown && centerDown && rimDown.y < centerDown.y)
+    check('orientation souris bas : |rim.y - centre.y| >= 100 (rayon nominal 200 px ecran)',
+        rimDown && centerDown && Math.abs(rimDown.y - centerDown.y) >= 100)
+
+    // Cercles 2 : souris au-dessus du centre (500,400 -> 500,200)
+    await setSegmentsTo25()
+    await drawCircle(500, 400, 500, 200)
+    info = await sceneInfo()
+    check('cercle vertical haut : points = 1 centre + 25 cotes', info.points === 26)
+    check('cercle vertical haut : triangles = 25', info.tris === 25)
+    check('cercle vertical haut : mode quitte apres creation', !(await shapesArmed()))
+    const rimUp = await firstRimModel()
+    const centerUp = await page.evaluate((key) => {
+        const raw = localStorage.getItem(key) || ''
+        const s = JSON.parse(raw)
+        const pl = (s.shapes && s.shapes[0] && s.shapes[0].pointList) || []
+        return pl.length >= 1 ? { x: pl[0].x, y: pl[0].y } : null
+    }, SCENE_STORAGE_KEY)
+    // souris au-dessus du centre sur l'ecran : rim.y > center.y en modele.
+    check('orientation souris haut : rim.y > centre.y en modele (vertex 0 sur la souris)',
+        rimUp && centerUp && rimUp.y > centerUp.y)
+    check('orientation souris haut : |rim.y - centre.y| >= 100 (rayon nominal 200 px ecran)',
+        rimUp && centerUp && Math.abs(rimUp.y - centerUp.y) >= 100)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(120)
+
     // --- 5. Nombre de cotes memorise : rechargement puis re-activation ---
     await page.reload({ waitUntil: 'networkidle' })
     await page.waitForSelector('#board')
