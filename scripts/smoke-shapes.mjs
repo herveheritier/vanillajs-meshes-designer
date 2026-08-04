@@ -49,10 +49,17 @@ const armShape = async (kind) => {
     await page.waitForTimeout(100)
 }
 
-const drawDrag = async (x1, y1, x2, y2) => {
+// Geste en 2 temps (evolution « generaliser la creation des formes sur
+// le modele du cercle ») : 1er clic = ancre (1er coin pour rect/carre,
+// centre pour les polygones), mouvement = taille (+ orientation pour
+// les polygones), 2e clic = valide. Le relachement du 1er clic ne
+// cree rien.
+const drawShape2Clicks = async (x1, y1, x2, y2) => {
     await page.mouse.move(x1, y1)
     await page.mouse.down()
     await page.mouse.move(x2, y2, { steps: 6 })
+    await page.mouse.up()
+    await page.mouse.down()
     await page.mouse.up()
     await page.waitForTimeout(150)
 }
@@ -90,7 +97,7 @@ try {
     check('outil arme : classe shapes-armed', await shapesArmed())
     check('outil arme : libellé rectangle', (await shapesText()) === 'rectangle')
     check('panneau ferme apres armement', !(await panelVisible()))
-    await drawDrag(500, 400, 700, 550)
+    await drawShape2Clicks(500, 400, 700, 550)
     let info = await sceneInfo()
     check('rectangle cree : 4 points', info.points === 4)
     check('rectangle cree : 2 triangles', info.tris === 2)
@@ -110,20 +117,33 @@ try {
     await page.keyboard.press('Control+z')
     await page.waitForTimeout(120)
     await armShape('square')
-    await drawDrag(500, 400, 700, 600)  // dx=200, dy=200 -> cote = 200
+    await drawShape2Clicks(500, 400, 700, 600)  // dx=200, dy=200 -> cote = 200
     info = await sceneInfo()
     check('carre cree : 4 points', info.points === 4)
     check('carre : cotes egaux', info.pointList.length === 4 &&
         Math.abs((info.pointList[1].x - info.pointList[0].x) - (info.pointList[3].y - info.pointList[0].y)) < 0.01)
 
-    // --- 5. Hexagone : 7 points, 6 triangles ---
+    // --- 5. Hexagone : 7 points, 6 triangles, orientation par souris
+    // (le sommet 0 du polygone pointe vers le curseur, comme le
+    // cercle) ---
     await page.keyboard.press('Control+z')
     await page.waitForTimeout(120)
     await armShape('hexa')
-    await drawDrag(500, 400, 600, 400)
+    await drawShape2Clicks(500, 400, 600, 400)
     info = await sceneInfo()
     check('hexagone cree : 7 points (centre + 6)', info.points === 7)
     check('hexagone cree : 6 triangles', info.tris === 6)
+    // Drag horizontal : offset = 0, le sommet 0 (pointList[1]) doit
+    // avoir la meme y modele que le centre (vertex 0 vers la droite).
+    const hexaOrientation = await page.evaluate((key) => {
+        const raw = localStorage.getItem(key) || ''
+        const s = JSON.parse(raw)
+        const pl = (s.shapes && s.shapes[0] && s.shapes[0].pointList) || []
+        if (pl.length < 2) return null
+        return { v0y: pl[1].y, centerY: pl[0].y }
+    }, SCENE_STORAGE_KEY)
+    check('hexagone : sommet 0 oriente vers la souris (meme y que le centre)',
+        hexaOrientation !== null && Math.abs(hexaOrientation.v0y - hexaOrientation.centerY) < 5)
 
     // --- 6. Etoile (mode 3 clics, evolution : meme logique que le
     // cercle + profondeur des branches au 3e clic) : 11 points, 10

@@ -302,13 +302,26 @@ document.addEventListener('mousedown', (e) => {
             return
         }
     }
-    // Forme predéfinie armee : le clic gauche commence le trace (ancre
-    // = coin pour rect/carre, centre sinon), le clic droit annule le
-    // trace en cours sans desarmer ; le clic milieu garde son role de
-    // pan (branche e.button === 1 plus bas).
+    // Forme predéfinie armee : geste en 2 temps sur le modele du
+    // cercle (evolution « generaliser la creation des formes ») —
+    //   1. 1er mousedown gauche = ancre (1er coin pour rect/carre,
+    //      centre pour les polygones) ; les mousemove reglent taille
+    //      + orientation.
+    //   2. 2e mousedown gauche = commitShapeGesture (valide la forme
+    //      avec taille + orientation courantes) + disarmShapeTool.
+    // Le relâchement du 1er clic ne cree rien (le mouseup n'a plus de
+    // branche forme, cf. plus bas). Le clic droit annule le trace en
+    // cours sans desarmer ; le clic milieu garde son role de pan
+    // (branche e.button === 1 plus bas).
     if (state.shapeKind !== undefined && !state.previewMode) {
         if (e.button === 0) {
-            beginShapeGesture(e)
+            if (state.shapeAnchorModel) {
+                // 2e clic : valide la forme.
+                commitShapeGesture(e)
+            } else {
+                // 1er clic : pose l'ancre, attend les mousemove.
+                beginShapeGesture(e)
+            }
             return
         }
         if (e.button === 2) {
@@ -370,13 +383,13 @@ document.addEventListener('mouseup', (e) => {
     // de depart se fige sur la derniere valeur du curseur observee
     // avant le relachement, ce qui est la semantique souhaitee par le
     // cahier des charges).
-    // Forme predéfinie armee : le relachement du clic gauche commite la
-    // forme (taille = coin oppose ou rayon au release). Retour avant la
-    // logique de selection-box (jamais armee en mode forme). Inchange.
-    if (state.shapeKind !== undefined && !state.previewMode && e.button === 0) {
-        commitShapeGesture(e)
-        return
-    }
+    // Forme predéfinie armee : le relachement du clic gauche ne commite
+    // PLUS la forme (evolution « generaliser la creation des formes » :
+    // le geste suit le modele du cercle en 2 clics — le 1er clic pose
+    // l'ancre, le 2e mousedown valide, cf. mousedown ci-dessus). Le
+    // mouseup est donc noop en mode forme, comme en mode cercle/étoile.
+    // Retour avant la logique de selection-box (jamais armee en mode
+    // forme).
     const boardTarget = e.target && e.target.id === 'board'
     if (state.isSelectingBox) {
         if (boardTarget && state.selectionBoxStart && state.selectionBoxCurrent) {

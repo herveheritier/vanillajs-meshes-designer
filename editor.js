@@ -885,12 +885,14 @@ export const createStar = (center, radius, offsetAngle = 0, innerRatio = SHAPE_S
 // exterieur / Echap) listant des formes prédéfinies : rectangle,
 // carre, polygones reguliers (triangle, pentagone, hexagone) et
 // etoile. Choisir une forme arme l'outil (bouton en accent vert +
-// libellé, panneau ferme) : le geste clic + glisser sur le canvas
-// pose l'ancre (1er coin pour rect/carre, centre pour les autres)
-// puis la taille ; le relâchement genere la forme (points + triangles)
-// et desarme l'outil (comme le cercle). Echap ferme le panneau ou
-// desarme l'outil sans creer ; clic droit / Backspace annulent le
-// trace en cours sans desarmer.
+// libellé, panneau ferme) : le geste suit le modele du cercle —
+// 1er clic = ancre (1er coin pour rect/carre, centre pour les
+// polygones), mouvement = taille ET orientation (angle du sommet 0
+// vers la souris pour les polygones reguliers), 2e clic = valide
+// (le relâchement du 1er clic ne cree rien). La forme est generee
+// (points + triangles) et l'outil desarme (comme le cercle). Echap
+// ferme le panneau ou desarme l'outil sans creer ; clic droit /
+// Backspace annulent le trace en cours sans desarmer.
 
 // Positionne un panneau flottant juste sous le bouton declencheur en
 // le gardant ENTIEREMENT dans la fenetre : si le bouton est proche du
@@ -957,9 +959,10 @@ export const armShapeTool = (kind) => {
     state.shapeAnchorModel = undefined
     state.shapeCurrentModel = undefined
     state.shapeRadiusModel = 0
+    state.shapeOffsetAngle = 0
     state.currentAction = ACTION_NONE
     updateShapesButton()
-    log(`Forme armee : ${SHAPE_DEFS[kind].label} (clic + glisser pour la taille)`)
+    log(`Forme armee : ${SHAPE_DEFS[kind].label} (1er clic = ancre, mouvement = taille${kind === 'rect' || kind === 'square' ? '' : ' + orientation'}, 2e clic = valider)`)
     requestDraw()
 }
 
@@ -969,6 +972,7 @@ export const disarmShapeTool = () => {
     state.shapeAnchorModel = undefined
     state.shapeCurrentModel = undefined
     state.shapeRadiusModel = 0
+    state.shapeOffsetAngle = 0
     updateShapesButton()
     log('Outil forme desarme')
     requestDraw()
@@ -985,6 +989,7 @@ export const beginShapeGesture = (e) => {
     state.shapeAnchorModel = { x: anchor.x, y: anchor.y }
     state.shapeCurrentModel = { x: anchor.x, y: anchor.y }
     state.shapeRadiusModel = 0
+    state.shapeOffsetAngle = 0
     // Meme sync que beginCircleGesture : le curseur est repeint par
     // renderTransient au drawBoard differe, il faut donc pointer
     // lastMousePos sur la position du 1er clic (pointeur visible meme
@@ -1002,6 +1007,18 @@ const updateShapeGesture = (mouseScreen) => {
         current.x - state.shapeAnchorModel.x,
         current.y - state.shapeAnchorModel.y,
     )
+    // Orientation par souris des polygones reguliers (tri / penta /
+    // hexa), meme convention que le cercle : angle evalue en coords
+    // MODEL (le Y-flip de modelToScreen n'est compte qu'une fois) pour
+    // que le sommet 0 du polygone pointe vers la souris. rect / carre
+    // restent axis-aligned (taille seule) — leur angle n'est pas
+    // reglable, la preview rect est inchangee.
+    if (state.shapeKind !== 'rect' && state.shapeKind !== 'square') {
+        state.shapeOffsetAngle = Math.atan2(
+            current.y - state.shapeAnchorModel.y,
+            current.x - state.shapeAnchorModel.x,
+        )
+    }
     requestDraw()
 }
 
@@ -1009,6 +1026,7 @@ export const cancelShapeGesture = () => {
     state.shapeAnchorModel = undefined
     state.shapeCurrentModel = undefined
     state.shapeRadiusModel = 0
+    state.shapeOffsetAngle = 0
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
 }
@@ -1024,9 +1042,11 @@ export const commitShapeGesture = (e) => {
     const anchor = state.shapeAnchorModel
     const current = state.shapeCurrentModel
     const radius = state.shapeRadiusModel
+    const offsetAngle = state.shapeOffsetAngle
     state.shapeAnchorModel = undefined
     state.shapeCurrentModel = undefined
     state.shapeRadiusModel = 0
+    state.shapeOffsetAngle = 0
     const minSizePx = CIRCLE_MIN_RADIUS_PX
     if (kind === 'rect' || kind === 'square') {
         const dx = current.x - anchor.x
@@ -1048,7 +1068,7 @@ export const commitShapeGesture = (e) => {
             requestDraw()
             return
         }
-        createShape(kind, anchor, undefined, radius)
+        createShape(kind, anchor, undefined, radius, offsetAngle)
     }
 }
 
@@ -1056,8 +1076,11 @@ export const commitShapeGesture = (e) => {
 // tris de la geometrie du kind (indices decales du nombre de points
 // existants) + entry d'historique replaceShape (meme pattern que
 // createCircle / deleteSelectedPoint), puis desarme automatiquement
-// (un geste = une forme, comme le cercle).
-export const createShape = (kind, anchor, current, radius) => {
+// (un geste = une forme, comme le cercle). `offsetAngle` (defaut 0)
+// est transmis a circleGeometry pour les polygones reguliers : le
+// sommet 0 pointe vers la souris (orientation du 2e temps du geste,
+// cf. updateShapeGesture).
+export const createShape = (kind, anchor, current, radius, offsetAngle = 0) => {
     const shapeIdx = state.activeShapeIndex
     const shape = activeShape()
     const clonedBefore = cloneShape(shape)
@@ -1068,7 +1091,7 @@ export const createShape = (kind, anchor, current, radius) => {
         geometry = starGeometry(anchor, radius, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO)
     } else {
         const n = { tri: 3, penta: 5, hexa: 6 }[kind]
-        geometry = circleGeometry(anchor, radius, n)
+        geometry = circleGeometry(anchor, radius, n, offsetAngle)
     }
     const base = shape.pointList.length
     for (let i = 0; i < geometry.pointList.length; i++) {

@@ -580,14 +580,17 @@ const drawShapeToolPreview = () => {
         return
     }
     // Polygones reguliers (triangle, pentagone, hexagone) : meme
-    // preview que le cercle avec N fixe.
+    // preview que le cercle avec N fixe, orientation par souris incluse
+    // (shapeOffsetAngle, meme convention que drawCirclePreview : le
+    // sommet 0 — et la ligne de rayon — pointent vers la souris).
     const n = { tri: 3, penta: 5, hexa: 6 }[kind]
+    const offset = typeof state.shapeOffsetAngle === 'number' ? state.shapeOffsetAngle : 0
     const rim = []
     for (let i = 0; i < n; i++) {
-        const a = (i / n) * TAU
+        const a = (i / n) * TAU + offset
         rim.push(modelToScreen({ x: anchor.x + radius * Math.cos(a), y: anchor.y + radius * Math.sin(a) }))
     }
-    drawRadialBase(anchor, radius)
+    drawRadialBase(anchor, radius, offset)
     strokeScreenPolyline(rim)
 }
 

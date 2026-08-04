@@ -75,7 +75,9 @@ const cycleMode = async (n) => {
     }
 }
 
-// Rectangle 2 coins (500,400) -> (700,550) via le panneau #shapes.
+// Rectangle 2 coins (500,400) -> (700,550) via le panneau #shapes,
+// geste en 2 temps (evolution « generaliser la creation des formes ») :
+// 1er clic = 1er coin, mouvement = taille, 2e clic = valide.
 const createRect = async () => {
     await page.click('#shapes')
     await page.waitForTimeout(100)
@@ -84,6 +86,8 @@ const createRect = async () => {
     await page.mouse.move(500, 400)
     await page.mouse.down()
     await page.mouse.move(700, 550, { steps: 6 })
+    await page.mouse.up()
+    await page.mouse.down()
     await page.mouse.up()
     await page.waitForTimeout(150)
 }

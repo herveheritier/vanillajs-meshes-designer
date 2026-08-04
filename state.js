@@ -107,6 +107,12 @@ export const state = {
     shapeAnchorModel: undefined,
     shapeCurrentModel: undefined,
     shapeRadiusModel: 0,
+    // Orientation par souris des polygones reguliers (tri / penta /
+    // hexa) : angle de depart du sommet 0 en radians, calcule en coords
+    // model comme le cercle (le sommet 0 pointe vers la souris).
+    // rect / square restent axis-aligned (taille seule). Initie a 0
+    // a chaque armement / debut / annulation / fin de geste.
+    shapeOffsetAngle: 0,
 
     // ===== Scene baseline (dirty reconciliation) =====
     // Fingerprint JSON de `state.shapes` capture a chaque evenement
