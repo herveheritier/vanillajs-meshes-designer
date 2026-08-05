@@ -33,14 +33,14 @@ import {
     restoreEditingMode, restoreSelectionMode, wireSelectionModeControl,
     restoreFpsVisible, wireFpsControl, toggleFps, updateFpsButton,
     wireGridControl, togglePreview, wirePreviewControl, wireCircleWheelControl,
-    restoreCircleSegments,
+    restoreCircleSegments, wireMergeDropWheelControl, restoreMergeDropRadius,
 } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
 import { showHelp, hideHelp, wireHelpModal, showResetModal, hideResetModal, wireResetModal } from './modals.js'
 import {
     prevShape, nextShape, addShape, deleteShape, hideDeleteShapeModal, wireDeleteShapeModal,
 } from './shapes.js'
-import { mergeSelectedPoints, wireMergeErrorModal, hideMergeErrorModal } from './merge.js'
+import { mergeSelectedPoints, wireMergeErrorModal, hideMergeErrorModal, attemptDropMerge } from './merge.js'
 import { log } from './log.js'
 
 // ===== Init DOM refs et canvas =====
@@ -135,12 +135,14 @@ restoreReticleMode()
     restoreConsoleVisible()
     restoreFpsVisible()
     restoreCircleSegments()
+    restoreMergeDropRadius()
     restoreColorPalette()
 
 // ===== Branchement des listeners "locaux" =====
 
 wireGridControl()
     wireCircleWheelControl()
+    wireMergeDropWheelControl()
     wireReticleControl()
     wireSelectionModeControl()
     wireConsoleToggle()
@@ -407,7 +409,14 @@ document.addEventListener('mousemove', (e) => {
 
 document.addEventListener('mouseup', (e) => {
     const wasGrabbing = grabbed()
-    if (wasGrabbing) endGrabbing(e)
+    const grabMoved = wasGrabbing ? endGrabbing(e) : false
+    // Fusion par déplacement (2e fonction du bouton Fusionner, cf.
+    // DESIGN.md §7.11) : après un drag droit qui a RÉELLEMENT bougé le
+    // point sélectionné unique (mode armé), le relâchement tente la
+    // fusion avec le point le plus proche dans la limite prédéfinie.
+    // endGrabbing retourne movedScene pour exclure le clic droit simple
+    // (sélection pure, qui aurait pu changer la sélection avant ce point).
+    if (wasGrabbing && grabMoved) attemptDropMerge()
     if (state.isPanning && e.button === 1) endPan()
     // Mode cercle : le mouseup gauche NE valide plus le cercle (cf.
     // evolution orientation par souris : c'est le 2e mousedown qui

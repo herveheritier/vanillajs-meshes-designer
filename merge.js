@@ -4,7 +4,7 @@ import { state } from './state.js'
 import { activeTriangles, adjacentPoints } from './geometry.js'
 import { ACTION_NONE } from './constants.js'
 import { drawBoard, requestDraw } from './draw.js'
-import { updateSelectionHud } from './hud.js'
+import { updateSelectionHud, updateMergeButtonState } from './hud.js'
 import { saveState, replaceShapePatch, cloneShape } from './history.js'
 import { persistState } from './io.js'
 import { updateMouseHover } from './editor.js'
@@ -139,12 +139,38 @@ export const mergeSelectedPoints = () => {
     const selected = state.selectedPoints
 
     if (selected.length < 2) {
+        // 2e fonction du bouton (cf. DESIGN.md §7.11) : avec exactement
+        // 1 point sélectionné, le clic ARME la fusion par déplacement au
+        // lieu de signaler une sélection insuffisante.
+        if (selected.length === 1) return toggleMergeOnDrop()
         showMergeErrorModal(
             `Sélection insuffisante : la fusion nécessite au moins 2 points.\n` +
             `Sélection actuelle : ${selected.length}.`
         )
         return false
     }
+
+    // La fusion classique désarme la fusion par déplacement si elle
+    // était encore armée (défensif : la garde d'updateSelectionHud l'a
+    // déjà désarmée dès que la sélection a dépassé 1 point).
+    disarmMergeOnDrop()
+
+    const clusters = clusterSelected(selected)
+    const centroid = computeMergeCentroid(clusters)
+    return applyMergeToSelection(centroid, 'Fusion')
+}
+
+// Coeur commun des deux fonctions de fusion (classique et par
+// déplacement, cf. DESIGN.md §7.11) : fusionne state.selectedPoints
+// vers un survivant unique (plus petit indice) posé sur `mergePos`. Les
+// slots de tous les triangles référençant un point sélectionné sont
+// redirigés vers le survivant, le compactage immédiat (Q2a) supprime
+// les autres entrées, et l'historique enregistre un replaceShapePatch
+// (before/after clone). La seule différence entre les deux chemins est
+// la position du survivant : centroid des positions uniques (bouton) vs
+// position de la cible (relâchement du drag armé).
+const applyMergeToSelection = (mergePos, label) => {
+    const selected = state.selectedPoints
 
     const conflicting = findMergeConflicts()
     if (conflicting.length > 0) {
@@ -181,21 +207,13 @@ export const mergeSelectedPoints = () => {
         Number.MAX_SAFE_INTEGER
     )
 
-    // Centroid moyen sur les positions uniques (1 par cluster dedup).
-    // Note : on autorise deliberement le cas single-cluster (= toutes les
-    // selections au meme coord, ex: ctrl-click ou lasso resserré). Dans
-    // ce cas le centroid est geometriquement inchange, mais le
-    // compactage immediat (Q2a) elimine les entrees pointList
-    // redondantes pour ramener l'etat a 1 entree canonique. C'est le
-    // comportement de cleanup prevu par Q2a (le user pouvait avoir
-    // plusieurs refs par erreur sur un meme sommet ; la fusion dedup).
-    const clusters = clusterSelected(selected)
-    const centroid = computeMergeCentroid(clusters)
-
-    // Mutation 1 : la position du survivant devient le centroid. Tous
-    // les slots concernes referent cette entree partagee.
-    pointList[survivor].x = centroid.x
-    pointList[survivor].y = centroid.y
+    // Mutation 1 : la position du survivant devient mergePos (centroid
+    // pour le bouton, position de la CIBLE pour la fusion par
+    // déplacement — le point déplacé « entre » dans la cible, il ne
+    // crée pas de position intermédiaire). Tous les slots concernes
+    // referent cette entree partagee.
+    pointList[survivor].x = mergePos.x
+    pointList[survivor].y = mergePos.y
 
     // Mutation 2 : remplacer t.pX par survivor pour toute slot dont
     // l'indice est selectionne. Le survivant lui-meme -> survivor est un
@@ -268,6 +286,10 @@ export const mergeSelectedPoints = () => {
     state.eachShapeRotateTimer = undefined
     state.isEachShapeRotating = false
     state.moveAllActive = false
+    // Candidat de la fusion par déplacement (cf. §7.11) : consommé par
+    // attemptDropMerge avant d'arriver ici ; nettoyé pour ne pas laisser
+    // un index obsolète pointer vers le pointList compacté.
+    state.mergeDropCandidate = undefined
 
     // (delta) capture post-mutation et saveState avec replaceShapePatch.
     const clonedShapeAfter = cloneShape(shape)
@@ -284,8 +306,95 @@ export const mergeSelectedPoints = () => {
     updateSelectionHud()
     persistState()
     log(
-        `Fusion : ${selected.length} ref(s) -> 1 point cible au centroid ` +
-        `(${centroid.x.toFixed(2)}, ${centroid.y.toFixed(2)})`
+        `${label} : ${selected.length} ref(s) -> 1 point cible en ` +
+        `(${mergePos.x.toFixed(2)}, ${mergePos.y.toFixed(2)})`
     )
     return true
+}
+
+// ===== Fusion par déplacement (2e fonction du bouton #mergePoints) =====
+// Rationale : voir DESIGN.md §7.11
+//
+// Le bouton Fusionner porte deux fonctions :
+//   1. Fusion « classique » : >= 2 points sélectionnés → ils
+//      convergent vers le centroid des positions uniques.
+//   2. Fusion « par déplacement » : exactement 1 point sélectionné →
+//      le clic ARME le mode (bouton en accent vert, log explicatif).
+//      Glisser le point sélectionné (clic droit + drag, le geste de
+//      déplacement habituel) puis le RELÂCHER près d'un autre point
+//      (rayon MERGE_DROP_RADIUS_PX en pixels écran, indépendant du
+//      zoom) le fusionne avec le point le plus proche : la position de
+//      la CIBLE est conservée, le point déplacé disparaît et ses
+//      références triangle sont redirigées vers la cible.
+// Le mode se désarme : après une fusion réussie, au re-clic du bouton
+// (toggle), ou dès que la sélection n'est plus un point unique (garde
+// dans updateSelectionHud, hud.js).
+
+// Arme / désarme la fusion par déplacement (toggle). N'arme QUE si
+// exactement 1 point est sélectionné (la fonction n'est utilisable que
+// dans ce cas, cf. cahier des charges) ; sinon, désarme silencieusement.
+export const toggleMergeOnDrop = () => {
+    if (state.mergeOnDropActive) {
+        disarmMergeOnDrop()
+        log('Fusion par déplacement desarmée')
+        return false
+    }
+    if (state.selectedPoints.length !== 1) {
+        showMergeErrorModal(
+            `Sélection insuffisante : la fusion par déplacement nécessite exactement 1 point sélectionné.\n` +
+            `Sélection actuelle : ${state.selectedPoints.length}.`
+        )
+        return false
+    }
+    state.mergeOnDropActive = true
+    updateMergeButtonState()
+    log(`Fusion par déplacement armée : glissez le point sélectionné puis relâchez-le près d'un autre point ` +
+        `(rayon ${state.mergeDropRadius} px a l'ecran, independant du zoom — molette sur ce bouton pour le régler) ` +
+        `pour le fusionner avec lui. Re-clic sur Fusionner = desarmer.`)
+    return true
+}
+
+export const disarmMergeOnDrop = () => {
+    if (!state.mergeOnDropActive) return
+    state.mergeOnDropActive = false
+    state.mergeDropCandidate = undefined
+    updateMergeButtonState()
+}
+
+// Tentée par main.js au mouseup d'un grab armé qui a réellement
+// déplacé la géométrie : fusionne le point déplacé avec le candidat
+// cible calculé par updateMergeDropCandidate (editor.js) au dernier
+// tick du drag. Un clic droit simple (pas de drag) ne déclenche jamais
+// cette fonction (endGrabbing retourne movedScene=false dans ce cas).
+export const attemptDropMerge = () => {
+    if (!state.mergeOnDropActive) return false
+    if (state.selectedPoints.length !== 1) return false
+    const draggedIdx = state.selectedPoints[0]
+    const targetIdx = state.mergeDropCandidate
+    state.mergeDropCandidate = undefined
+    if (typeof targetIdx !== 'number' || targetIdx === draggedIdx) return false
+    const shape = activeShape()
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    const targetPt = pointList[targetIdx]
+    if (!targetPt) return false
+    // Fusion du point déplacé DANS la cible : la position de la cible
+    // est conservée (le déplacement du point sélectionné s'est déjà
+    // produit pendant le drag ; la fusion ne doit pas le faire
+    // « rebondir » vers un centroïde intermédiaire).
+    const previousSelection = state.selectedPoints
+    state.selectedPoints = [draggedIdx, targetIdx]
+    const merged = applyMergeToSelection(
+        { x: targetPt.x, y: targetPt.y },
+        'Fusion par déplacement'
+    )
+    if (merged) {
+        disarmMergeOnDrop()
+    } else {
+        // Échec (conflit topologique : la cible et le point déplacé
+        // partagent un triangle) : la sélection utilisateur est
+        // restaurée et le mode reste armé pour permettre un nouvel
+        // essai.
+        state.selectedPoints = previousSelection
+    }
+    return merged
 }

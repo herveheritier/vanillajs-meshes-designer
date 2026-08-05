@@ -925,6 +925,37 @@
                 border-color: rgba(55, 194, 0, 0.45);
             }
 
+            /* Bouton Fusionner : état armé de la fusion par déplacement
+               (2e fonction du bouton, cf. DESIGN.md §7.11) — même langage
+               d'état actif que #fps.fps-active / #preview.preview-active :
+               accent vert quand le mode est armé (exactement 1 point
+               sélectionné + clic sur le bouton). Libellé du rayon
+               (#mergeDropText, « 20px ») : même structure que #grid /
+               #gridText — monospace 11px atténué par défaut, vert accent
+               quand le mode est armé. */
+            #mergePoints {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+            }
+            #mergePoints #mergeDropText {
+                font-family: monospace;
+                font-size: 11px;
+                line-height: 1;
+                font-style: normal;
+                color: rgba(220, 220, 220, 0.55);
+                pointer-events: none;
+                transition: color 0.12s;
+            }
+            #toolbar #mergePoints.merge-armed {
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border-color: rgba(55, 194, 0, 0.45);
+            }
+            #mergePoints.merge-armed #mergeDropText {
+                color: rgb(55, 194, 0);
+            }
+
             /* Bouton Formes : ouvre le panneau des formes prédéfinies.
                Deux etats distincts (cf. updateShapesButton) : panneau
                ouvert (bordure inset verte, comme
@@ -1392,18 +1423,25 @@
                 <button id="selectionMode" title="Mode de sélection (cycle) : sommet / segment / triangle" aria-label="Mode de sélection : sommet, segment ou triangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="8" y1="2.5" x2="8" y2="4.5"/><line x1="8" y1="11.5" x2="8" y2="13.5"/><line x1="2.5" y1="8" x2="4.5" y2="8"/><line x1="11.5" y1="8" x2="13.5" y2="8"/></svg><span id="selectionModeText">sommet</span></button>
                 <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
                 <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
-                <!-- Bouton fusion : consomme state.selectedPoints (>=2)
-                     pour les faire converger vers une cible (selected[0])
-                     amenee au centroid des POSITIONS UNIQUES (dedup tol
-                     0.01). Redirige dans chaque triangle de la forme
-                     active les slots selectionnes vers la cible. La
-                     fusion est refusee (modale informative) si un
-                     triangle de la forme active contient plusieurs
-                     refs de point distinctes dans la selection. Place
-                     dans le groupe SELECTION (apres #selectAll, avant
-                     #selectionCount) pour rester thematiquement cohere
-                     avec les outils qui operent sur la selection. -->
-                <button id="mergePoints" title="Fusionner les points sélectionnés vers une position commune (le centroid). La fusion est annulée si un triangle contient plusieurs de vos points sélectionnés."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3" cy="4" r="1.4"/><circle cx="3" cy="12" r="1.4"/><circle cx="13" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="4.4" y1="4" x2="6.8" y2="7"/><line x1="4.4" y1="12" x2="6.8" y2="9"/><line x1="11.6" y1="8" x2="9.5" y2="8"/></svg></button>
+                <!-- Bouton fusion : deux fonctions (cf. DESIGN.md §7.11).
+                     1) >= 2 points selectionnes : les faire converger
+                     vers une cible (selected[0]) amenee au centroid des
+                     POSITIONS UNIQUES (dedup tol 0.01). Redirige dans
+                     chaque triangle de la forme active les slots
+                     selectionnes vers la cible. La fusion est refusee
+                     (modale informative) si un triangle de la forme
+                     active contient plusieurs refs de point distinctes
+                     dans la selection.
+                     2) exactement 1 point selectionne : arme la « fusion
+                     par déplacement » (bouton en accent vert, avec le
+                     rayon en px) — glisser le point puis le relâcher
+                     près d'un autre point (rayon réglable à la molette
+                     sur ce bouton, 20 px par défaut, 8-64 px à l'écran)
+                     le fusionne avec lui. Place dans le groupe SELECTION
+                     (apres #selectAll, avant #selectionCount) pour
+                     rester thematiquement cohere avec les outils qui
+                     operent sur la selection. -->
+                <button id="mergePoints" title="Fusionner les points sélectionnés vers une position commune (le centroid). Avec un seul point sélectionné : arme la fusion par déplacement (glisser le point puis le relâcher près d'un autre le fusionne avec lui ; la molette sur ce bouton règle le rayon, 20 px par défaut). La fusion est annulée si un triangle contient plusieurs de vos points sélectionnés."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3" cy="4" r="1.4"/><circle cx="3" cy="12" r="1.4"/><circle cx="13" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="4.4" y1="4" x2="6.8" y2="7"/><line x1="4.4" y1="12" x2="6.8" y2="9"/><line x1="11.6" y1="8" x2="9.5" y2="8"/></svg><span id="mergeDropText"></span></button>
                 <!-- Compteur de points selectionnes : miroite le pattern
                      des autres pills read-only (#shapeLabel, #undoCount)
                      mais pour la selection courante. Placer APRES
@@ -1637,6 +1675,7 @@
                          sans armer de déplacement. -->
                     <div class="help-row"><kbd class="kbd">Ctrl/Cmd</kbd><kbd class="kbd wide">Clic droit sur point</kbd><span>ajouter le point à la sélection sans le déplacer. <kbd class="kbd">Maj</kbd>+clic gauche = toggle. Clic gauche simple = remplace la sélection ; clic droit simple sélectionne et remplace la sélection.</span></div>
                     <div class="help-row"><kbd class="kbd wide">Anneau orange</kbd><span>autour d'un sommet : plusieurs points sont superposés à cette position (doublons de scènes importées). Cliquer dessus (mode sommet) les sélectionne tous, puis le bouton Fusionner les regroupe en un seul.</span></div>
+                    <div class="help-row"><kbd class="kbd wide">Fusion par déplacement</kbd><span>2e fonction du bouton Fusionner, utilisable si et seulement si un seul point est sélectionné : le clic arme le mode (bouton en vert, avec le rayon en px). Glisser le point sélectionné puis le relâcher près d'un autre point le fusionne avec lui ; la molette sur le bouton règle le rayon de fusion quand le mode est armé (20 px par défaut, 8 à 64 px, indépendant du zoom). Re-cliquer pour désarmer.</span></div>
                     <div class="help-row"><kbd class="kbd wide">Palette de couleurs</kbd><span>le bouton Peinture ouvre la palette : clic sur un swatch = peindre ; le curseur Opacité règle l'opacité appliquée à chaque peinture (elle reste à votre dernière valeur, d'une session à l'autre) ; Ajouter enregistre la couleur du picker ; clic droit sur un swatch = le retirer ; double-clic = le modifier (Entrée valide, Échap annule) ; Défauts restaure les 8 couleurs d'origine. La palette est conservée d'une session à l'autre.</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu + drag</kbd><span>deplacer le viewCenter dans le sens du drag (pan)</span></div>
                     <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Clic-droit + drag</kbd><span>deplacer toutes les formes ensemble (meme delta, quasi-mode). AltGr (Right Alt) declenche Ctrl+Alt sur la plupart des claviers.</span></div>

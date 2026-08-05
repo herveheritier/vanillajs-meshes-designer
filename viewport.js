@@ -3,6 +3,8 @@ import {
     MIN_ZOOM, MAX_ZOOM, ZOOM_STEP_FACTOR, ROTATE_STEP,
     DEFAULT_GRID_STEP, MIN_GRID_STEP, MAX_GRID_STEP,
     CIRCLE_MIN_SEGMENTS, CIRCLE_MAX_SEGMENTS, CIRCLE_SEGMENTS_STORAGE_KEY,
+    MERGE_DROP_RADIUS_DEFAULT_PX, MERGE_DROP_RADIUS_MIN_PX, MERGE_DROP_RADIUS_MAX_PX,
+    MERGE_DROP_RADIUS_STEP_PX, MERGE_DROP_RADIUS_STORAGE_KEY,
     RETICLE_MODE_STORAGE_KEY, SELECTION_MODE_STORAGE_KEY, SELECTION_MODES,
     EDITING_MODE_STORAGE_KEY, EDITING_MODES,
     CONSOLE_VISIBLE_STORAGE_KEY,
@@ -10,7 +12,7 @@ import {
 } from './constants.js'
 import { drawBoard, requestDraw, consumeDrawStats } from './draw.js'
 import { screenToModel } from './geometry.js'
-import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateShapesButton } from './hud.js'
+import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateShapesButton, updateMergeButtonState } from './hud.js'
 import { persistState, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
@@ -456,6 +458,64 @@ export const wireCircleWheelControl = () => {
         if (!state.circleMode && !state.annulusMode) return
         e.preventDefault()
         adjustCircleSegments(e.deltaY < 0 ? 1 : -1)
+    }, { passive: false })
+}
+
+// ===== Rayon de la fusion par déplacement (molette sur #mergePoints) =====
+
+// Reglage du rayon de la fusion par déplacement (cf. DESIGN.md §7.11).
+// Partage par la molette sur le bouton #mergePoints quand le mode est
+// armé (meme langage que adjustCircleSegments / le pas de grille : le
+// bouton affiche « 20px ») — un seul chemin de verite pour le clamp et
+// le refresh (libellé + title via updateMergeButtonState).
+const adjustMergeDropRadius = (delta) => {
+    state.mergeDropRadius = Math.min(
+        MERGE_DROP_RADIUS_MAX_PX,
+        Math.max(MERGE_DROP_RADIUS_MIN_PX, state.mergeDropRadius + delta),
+    )
+    updateMergeButtonState()
+    requestDraw()
+    // Preference persistée (comme le nombre de cotes du cercle) : le
+    // choix de l'utilisateur survit au rechargement. Ecriture directe
+    // (meme pattern que CIRCLE_SEGMENTS_STORAGE_KEY dans
+    // adjustCircleSegments) — pas de transit par persistState, le
+    // reglage est volontairement hors du wire format des fichiers
+    // exportes.
+    try { localStorage.setItem(MERGE_DROP_RADIUS_STORAGE_KEY, String(state.mergeDropRadius)) } catch (e) { /* ignore */ }
+}
+
+// Restaure le rayon mémorisé (preference de session, comme
+// circleSegments) : valeur stockée clampée dans les bornes
+// [MERGE_DROP_RADIUS_MIN_PX, MERGE_DROP_RADIUS_MAX_PX] ; sinon le
+// defaut (déjà posé dans state.js) reste applique.
+export const restoreMergeDropRadius = () => {
+    try {
+        const stored = localStorage.getItem(MERGE_DROP_RADIUS_STORAGE_KEY)
+        if (stored !== null) {
+            const parsed = parseInt(stored, 10)
+            if (Number.isInteger(parsed)) {
+                state.mergeDropRadius = Math.min(
+                    MERGE_DROP_RADIUS_MAX_PX,
+                    Math.max(MERGE_DROP_RADIUS_MIN_PX, parsed),
+                )
+            }
+        }
+    } catch (e) { /* ignore */ }
+}
+
+// Molette sur le bouton #mergePoints quand la fusion par déplacement
+// est armée : reglage du rayon de fusion (8-64 px) — meme langage que
+// la molette sur le bouton grille pour le pas / sur #shapes pour le
+// nombre de cotes du cercle (sans effet hors mode armé).
+// `{ passive: false }` pour pouvoir preventDefault (sinon le scroll
+// vertical de la toolbar avalerait l'evenement).
+export const wireMergeDropWheelControl = () => {
+    const btn = document.querySelector('#mergePoints')
+    if (!btn) return
+    btn.addEventListener('wheel', (e) => {
+        if (!state.mergeOnDropActive) return
+        e.preventDefault()
+        adjustMergeDropRadius(e.deltaY < 0 ? MERGE_DROP_RADIUS_STEP_PX : -MERGE_DROP_RADIUS_STEP_PX)
     }, { passive: false })
 }
 

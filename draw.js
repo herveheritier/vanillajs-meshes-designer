@@ -4,6 +4,7 @@ import { state } from './state.js'
 import { modelToScreen, screenToModel, getMultiPointIndices } from './geometry.js'
 import {
     TAU,
+    ACTION_GRABBING,
     COLOR_AXIS,
     COLOR_LINES,
     COLOR_LINES_INACTIVE,
@@ -395,6 +396,31 @@ const renderTransient = () => {
     // Forme predéfinie armee (panneau #shapes) : meme principe —
     // previsualisation transitoire du geste en cours.
     if (state.shapeKind !== undefined && state.shapeAnchorModel) drawShapeToolPreview()
+    // Fusion par déplacement (2e fonction de #mergePoints, cf. §7.11) :
+    // pendant un drag armé, anneau orange en pointillés autour du
+    // candidat cible (le point qui fusionnera au relâchement). Même
+    // couleur que le marqueur des sommets multi-points (COLOR_MULTI_POINT)
+    // pour un langage visuel « fusion » unique. Le rayon de l'anneau est
+    // le rayon de fusion COURANT (state.mergeDropRadius, réglable à la
+    // molette sur le bouton) : le cercle matérialise la zone de capture
+    // — le réglage de la molette devient visible en direct pendant le
+    // drag, pas seulement via le libellé du bouton. Le candidat est
+    // calculé par editor.js à chaque tick (state.mergeDropCandidate) ;
+    // la garde currentAction === ACTION_GRABBING évite d'afficher un
+    // candidat périmé hors drag.
+    if (state.mergeOnDropActive && typeof state.mergeDropCandidate === 'number' && state.currentAction === ACTION_GRABBING) {
+        const shape = state.shapes[state.activeShapeIndex]
+        const pt = shape && Array.isArray(shape.pointList) ? shape.pointList[state.mergeDropCandidate] : undefined
+        if (pt) {
+            const sp = modelToScreen(pt)
+            state._ctx.setLineDash([3, 3])
+            state._ctx.strokeStyle = COLOR_MULTI_POINT
+            state._ctx.beginPath()
+            state._ctx.arc(sp.x, sp.y, state.mergeDropRadius, 0, TAU)
+            state._ctx.stroke()
+            state._ctx.setLineDash([])
+        }
+    }
     // Curseur (drawMouse) : overlay post-blit par nature (le board a
     // `cursor: none`, la croix blanche est peinte pixel-par-pixel). Il
     // doit etre repeint a CHAQUE drawBoard, comme le reticule, et pas

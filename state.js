@@ -1,6 +1,6 @@
 // Rationale : voir DESIGN.md §1.1
 
-import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_INNER_RATIO, ANNULUS_INNER_RATIO_DEFAULT, TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_DEFAULT_ALPHA } from './constants.js'
+import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_INNER_RATIO, ANNULUS_INNER_RATIO_DEFAULT, TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_DEFAULT_ALPHA, MERGE_DROP_RADIUS_DEFAULT_PX } from './constants.js'
 
 export const state = {
     // ===== Scene / viewport =====
@@ -259,6 +259,25 @@ export const state = {
     grabHistorySaved: false,
     hasDragged: false,
     activeConstructionTriangle: undefined,
+    // (fusion par déplacement, cf. DESIGN.md §7.11) — 2e fonction du
+    // bouton #mergePoints, armée quand exactement 1 point est
+    // sélectionné : glisser ce point puis le relâcher près d'un autre
+    // point (rayon MERGE_DROP_RADIUS_PX en pixels écran) le fusionne
+    // avec lui. mergeOnDropActive = le mode est armé (bouton en accent
+    // vert) ; mergeDropCandidate = index pointList du point cible le
+    // plus proche pendant le drag armé (undefined = aucun candidat
+    // dans la limite), calculé à chaque tick par editor.js
+    // (updateMergeDropCandidate), affiché par draw.js (renderTransient,
+    // anneau orange) et consommé par merge.js (attemptDropMerge) au
+    // relâchement.
+    mergeOnDropActive: false,
+    mergeDropCandidate: undefined,
+    // Rayon courant de la fusion par déplacement (px écran), réglé à la
+    // molette sur le bouton Fusionner quand le mode est armé (même
+    // statut de préférence que circleSegments : clampé [MIN, MAX],
+    // persisté dans MERGE_DROP_RADIUS_STORAGE_KEY, restauré au boot
+    // par restoreMergeDropRadius). Cf. DESIGN.md §7.11.
+    mergeDropRadius: MERGE_DROP_RADIUS_DEFAULT_PX,
 
     // ===== Move-all (AltGr grab) =====
     moveAllActive: false,

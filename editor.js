@@ -1964,6 +1964,10 @@ export const beginGrabbing = (e) => {
     // _pendingGrabPatch orphelin qui pourrait être commité à tort
     // par un grab futur. Reset pour partir propre.
     state._pendingGrabPatch = null
+    // Candidat de fusion par déplacement (§7.11) : effacé en tête de
+    // grab pour qu'un candidat périmé du drag précédent ne s'affiche
+    // pas sur le premier tick du nouveau drag (avant le recalcul).
+    state.mergeDropCandidate = undefined
 
     if (isAltGrDown) {
         state.currentAction = ACTION_GRABBING
@@ -2122,6 +2126,42 @@ export const beginGrabbing = (e) => {
     return true
 }
 
+// ===== Fusion par déplacement (2e fonction de #mergePoints) =====
+// Rationale : voir DESIGN.md §7.11
+// Pendant un drag armé (bouton Fusionner actif avec 1 point
+// sélectionné), on calcule à chaque tick le candidat cible : le point
+// le plus proche du point déplacé, s'il est dans la limite prédéfinie
+// (MERGE_DROP_RADIUS_PX en pixels écran, converti via le zoom comme
+// les tolérances de hit-testing §1.4). Le résultat est stocké dans
+// state.mergeDropCandidate (index pointList, undefined = aucun) :
+// renderTransient (draw.js) l'affiche en anneau orange et
+// merge.js.attemptDropMerge le consomme au relâchement. Même
+// conversion px-écran → unités modèle que les tolérances de
+// hit-testing (modelToleranceForPixels, §1.4). Le rayon vient de
+// state.mergeDropRadius (réglable à la molette sur le bouton Fusionner,
+// cf. §7.11) : lu à chaque tick, un changement de rayon pendant le
+// drag est pris en compte immédiatement.
+const mergeDropRadiusModel = () => modelToleranceForPixels(state.mergeDropRadius)
+const updateMergeDropCandidate = () => {
+    state.mergeDropCandidate = undefined
+    if (!state.mergeOnDropActive || state.selectedPoints.length !== 1) return
+    const idx = state.selectedPoints[0]
+    const shape = activeShape()
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    const dragged = pointList[idx]
+    if (!dragged) return
+    const limit = mergeDropRadiusModel()
+    let best = undefined
+    for (let i = 0; i < pointList.length; i++) {
+        if (i === idx) continue
+        const p = pointList[i]
+        if (!p) continue
+        const d = Math.hypot(p.x - dragged.x, p.y - dragged.y)
+        if (d <= limit && (!best || d < best.d)) best = { i, d }
+    }
+    state.mergeDropCandidate = best ? best.i : undefined
+}
+
 // Q2c : nouvelle structure d'entree — {shapeIndex, pointIndex,
 // triangleIndex, slotId, startX, startY} plus de selectedPointRef (la
 // coherence avec state.selectedPoints est assuree par construction :
@@ -2187,6 +2227,11 @@ export const endGrabbing = (e) => {
     state.board.style.cursor = 'none'
     state.moveAllActive = false
     persistState()
+    // Retourne true si le geste a réellement déplacé la géométrie (vs
+    // simple clic droit de sélection) : main.js s'en sert pour tenter la
+    // fusion par déplacement (2e fonction de #mergePoints, §7.11) — qui
+    // ne doit jamais se déclencher sur un clic droit simple.
+    return movedScene
 }
 
 export const resolveMouseMoveOnBoard = (e) => {
@@ -2314,6 +2359,13 @@ export const resolveMouseMoveOnBoard = (e) => {
             // nouvelle position invisible. Le rAF interne a requestDraw
             // coalescera les 60+ ticks de drag en au plus 1 paint / frame.
             requestDraw()
+            // (fusion par déplacement, §7.11) candidat cible du drag
+            // armé : recalculé à chaque tick pour refléter la position
+            // courante du point déplacé (l'anneau orange le suit en
+            // direct). Le dernier tick du geste — le resolveMouseMoveOnBoard
+            // de endGrabbing — laisse le candidat à la position finale,
+            // celle que attemptDropMerge (merge.js) lira au relâchement.
+            updateMergeDropCandidate()
         }
     }
 

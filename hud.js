@@ -20,8 +20,44 @@ export const updateUndoRedoHud = () => {
 
 export const updateSelectionHud = () => {
     const countEl = document.querySelector('#selectionCount')
-    if (!countEl) return
-    countEl.textContent = state.selectedPoints.length
+    if (countEl) countEl.textContent = state.selectedPoints.length
+    // (fusion par déplacement, cf. DESIGN.md §7.11) la 2e fonction du
+    // bouton Fusionner n'est utilisable que si exactement 1 point est
+    // sélectionné ; toute autre taille de sélection la désarme
+    // immédiatement. Garde locale à hud.js (pas d'import de merge.js,
+    // qui importerait hud.js en retour — cycle interdit, cf. §1.1).
+    if (state.mergeOnDropActive && state.selectedPoints.length !== 1) {
+        state.mergeOnDropActive = false
+        state.mergeDropCandidate = undefined
+        updateMergeButtonState()
+    }
+}
+
+// (fusion par déplacement, cf. DESIGN.md §7.11) — état visuel du
+// bouton #mergePoints : accent vert (même langage que #fps.fps-active /
+// #preview.preview-active) quand le mode est armé + libellé du rayon
+// (#mergeDropText, « 20px » — même langage que #gridText) + title qui
+// décrit le geste à effectuer. state.mergeOnDropActive / state.mergeDropRadius
+// sont les sources de vérité ; classes/attributs/textes ne font que les
+// refléter.
+export const updateMergeButtonState = () => {
+    const btn = document.querySelector('#mergePoints')
+    if (!btn) return
+    const armed = !!state.mergeOnDropActive
+    btn.classList.toggle('merge-armed', armed)
+    btn.setAttribute('aria-pressed', armed ? 'true' : 'false')
+    btn.setAttribute('title', armed
+        ? `Fusion par déplacement armée : glissez le point sélectionné puis relâchez-le près d'un autre point ` +
+          `(rayon ${state.mergeDropRadius} px à l'écran, indépendant du zoom — molette sur ce bouton pour le régler) ` +
+          `pour le fusionner avec lui. Re-cliquez pour désarmer.`
+        : 'Fusionner les points sélectionnés vers une position commune (le centroid). ' +
+          'Avec un seul point sélectionné : arme la fusion par déplacement ' +
+          '(glisser le point puis le relâcher près d\'un autre le fusionne avec lui ; ' +
+          `la molette sur ce bouton règle le rayon, actuellement ${state.mergeDropRadius} px à l'écran).`)
+    // Libellé du rayon, vide hors mode armé (même comportement que
+    // #shapesText qui n'affiche « cercle N » que quand le mode est actif).
+    const text = btn.querySelector('#mergeDropText')
+    if (text) text.textContent = armed ? `${state.mergeDropRadius}px` : ''
 }
 
 export const updateGridButtonText = () => {

@@ -1433,6 +1433,83 @@ scènes importées avec doublons en affichent un par position dupliquée,
 et la fusion réduit le compte à zéro (contre-épreuve couverte par
 `scripts/smoke-multipoint.mjs`).
 
+### §7.11 Fusion par déplacement (2e fonction de `#mergePoints`)
+
+Le bouton Fusionner porte deux fonctions :
+1. **Fusion classique** (>= 2 points sélectionnés) : les points
+   convergent vers le centroid des positions uniques.
+2. **Fusion par déplacement** (exactement 1 point sélectionné) : le
+   clic ARME le mode au lieu de signaler une sélection insuffisante.
+   Déplacer le point sélectionné (clic droit + drag, le geste de
+   déplacement habituel) puis le RELÂCHER près d'un autre point le
+   fusionne avec lui. Le mode se désarme au re-clic (toggle), après
+   une fusion réussie, ou dès que la sélection n'est plus un point
+   unique (garde dans `updateSelectionHud`, hud.js).
+
+**Limite réglable** : `state.mergeDropRadius` (pixels écran, défaut
+`MERGE_DROP_RADIUS_DEFAULT_PX = 20`, bornes 8–64, pas ±2 px par cran),
+convertie en unités modèle via le zoom — même convention que les
+tolérances de hit-testing (§1.4) : la zone de fusion reste constante à
+l'écran quel que soit le zoom. Réglée à la molette sur le bouton
+Fusionner QUAND le mode est armé (même langage que le nombre de côtés
+du cercle : le bouton affiche « 20px », `wireMergeDropWheelControl` /
+`adjustMergeDropRadius` dans viewport.js, sans effet hors mode).
+Préférence de session persistée hors wire format (clé
+`meshesDesigner.mergeDropRadius`, restaurée au boot par
+`restoreMergeDropRadius`) — même statut que `circleSegments`. La borne
+basse (8 px) reste volontairement serrée : la fusion doit demeurer un
+geste délibéré.
+
+**Sémantique de la fusion** : le point DÉPLACÉ fusionne DANS la cible
+(le point le plus proche dans la limite) — la position de la cible est
+conservée, pas un centroïde intermédiaire. Le mécanisme commun
+`applyMergeToSelection` (survivant = plus petit indice, redirection des
+slots, compactage immédiat Q2a, ré-indexation) est partagé avec la
+fusion classique : la seule différence est la position du survivant
+(centroid vs position de la cible) et le libellé du log.
+
+**Déroulement du geste** :
+1. `mergeSelectedPoints` (merge.js) : 1 seul point → `toggleMergeOnDrop`
+   arme le mode (bouton `.merge-armed`, log explicatif). 0 point →
+   modale « Sélection insuffisante » (inchangé). >= 2 → fusion
+   classique.
+2. `beginGrabbing` / `resolveMouseMoveOnBoard` (editor.js) : pendant
+   le drag, `updateMergeDropCandidate` calcule à chaque tick le point
+   le plus proche du point déplacé dans la limite →
+   `state.mergeDropCandidate` (index pointList, undefined sinon) ;
+   `renderTransient` (draw.js) l'affiche en anneau orange en pointillés
+   (même couleur que le marqueur multi-points §7.10) AU RAYON COURANT
+   `state.mergeDropRadius` — le cercle matérialise la zone de capture,
+   le réglage de la molette est donc visible en direct pendant le drag.
+   Gardé par `currentAction === ACTION_GRABBING` pour ne jamais montrer
+   un candidat périmé hors drag.
+3. `endGrabbing` (editor.js) retourne `movedScene` ; main.js n'appelle
+   `attemptDropMerge` (merge.js) QUE si le geste a réellement déplacé
+   la géométrie — un clic droit simple reste sélection pure
+   (`processRightClickSelection`), jamais une fusion (la sélection
+   aurait pu changer entre le mousedown et le mouseup).
+4. `attemptDropMerge` : lit `state.mergeDropCandidate` (calculé au
+   dernier tick du drag, y compris par le `resolveMouseMoveOnBoard`
+   final de `endGrabbing`), pose `selectedPoints = [déplacé, cible]` et
+   délègue à `applyMergeToSelection(position de la cible)`. Conflit
+   topologique (un triangle contient les deux points) → modale d'erreur
+   et restauration de la sélection utilisateur (le mode reste armé,
+   le déplacement reste annulable). Succès → désarmement.
+
+**Historique** : le geste produit 2 entrées undo (déplacement puis
+fusion), chacune annulable séparément (Ctrl+Z une fois = retour à la
+position de dépôt sans fusion ; Ctrl+Z deux fois = retour à la position
+d'origine). Le patch déplacement est commité par `endGrabbing` avant la
+tentative de fusion ; le patch fusion est un `replaceShapePatch`
+before/after classique.
+
+**Anti-régression** : un drag AltGr (mouvement global) vide la
+sélection dans `beginGrabbing` → la garde « 1 point sélectionné »
+d'`attemptDropMerge` ne peut pas se déclencher. Le candidat est effacé
+en tête de `beginGrabbing` (pas de résidu d'un drag précédent) et à
+chaque mutation de sélection non-singleton. Couvert par
+`scripts/smoke-mergedrop.mjs`.
+
 ---
 
 ## §8. Pile d'historique avec stockage delta

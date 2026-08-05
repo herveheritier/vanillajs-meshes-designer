@@ -156,6 +156,25 @@ export const SELECTION_MODES = ['vertex', 'segment', 'triangle']
 export const POINT_HIT_RADIUS_PX = 36
 export const LINE_HIT_RADIUS_PX = 60
 export const TRIANGLE_CENTROID_HIT_RADIUS_PX = 20
+// Limite de la « fusion par déplacement » (2e fonction du bouton
+// #mergePoints, cf. DESIGN.md §7.11) : distance maximale entre le
+// point relâché et un autre point pour que la fusion s'opère au
+// relâchement du drag. Exprimée en pixels écran (convertie en unités
+// modèle via le zoom, comme les tolérances de hit-testing §1.4) pour
+// une sensation constante à tous les niveaux de zoom. Réglable à la
+// molette sur le bouton Fusionner quand le mode est armé (même langage
+// que le nombre de côtés du cercle : libellé « 20px » sur le bouton).
+// Bornes volontairement serrées (8-64 px) : la fusion doit rester un
+// geste délibéré. Valeur courante dans state.mergeDropRadius,
+// préférence de session persistée (clé MERGE_DROP_RADIUS_STORAGE_KEY),
+// hors du wire format des fichiers exportés.
+export const MERGE_DROP_RADIUS_DEFAULT_PX = 20
+export const MERGE_DROP_RADIUS_MIN_PX = 8
+export const MERGE_DROP_RADIUS_MAX_PX = 64
+// Pas de la molette (en px) par cran de rotation — proportionné à la
+// plage (8-64 px), comme le pas ±4 de la grille sur sa plage (8-128).
+export const MERGE_DROP_RADIUS_STEP_PX = 2
+export const MERGE_DROP_RADIUS_STORAGE_KEY = 'meshesDesigner.mergeDropRadius'
 
 // Stable envelope for exported JSON scenes. Legacy payloads without these
 // fields remain readable for backwards compatibility.
