@@ -13,7 +13,7 @@ import {
     selectAllPoints, deleteSelectedPoint, deleteSelectedSegment, deleteSelectedTriangle,
     endGrabbing, grabbed, resolveMouseMoveOnBoard, beginGrabbing,
     processMouseUpSelection, processRightClickSelection, wireBoardDrop,    wireTriangleColorPanel,
-    hideTriangleColorPanel,
+    hideTriangleColorPanel, restoreColorPalette, cancelPaletteEdit,
     paintTriangleAtCursor,
     toggleCircleMode, beginCircleGesture, commitCircleGesture, cancelCircleGesture, exitCircleMode,
     beginStarGesture, lockStarRadius, commitStarGesture, cancelStarGesture, exitStarMode,
@@ -135,6 +135,7 @@ restoreReticleMode()
     restoreConsoleVisible()
     restoreFpsVisible()
     restoreCircleSegments()
+    restoreColorPalette()
 
 // ===== Branchement des listeners "locaux" =====
 
@@ -574,6 +575,16 @@ document.addEventListener('keydown', (e) => {
         if (isResetOpen) hideResetModal()
         if (isDeleteShapeOpen) hideDeleteShapeModal()
         if (isMergeErrorOpen) hideMergeErrorModal()
+    }
+    // Palette : Echap en mode edition (double-clic sur un swatch) =
+    // annuler l'edition (retour a la couleur d'origine) SANS fermer
+    // le panneau — il ne se ferme qu'au second Echap. Gere AVANT la
+    // branche hideTriangleColorPanel pour intercepter le premier
+    // Echap.
+    if (e.code === 'Escape' && !e.repeat && state.colorPaletteEditingIndex != null) {
+        e.preventDefault()
+        cancelPaletteEdit()
+        return
     }
     if (e.code === 'Escape' && !e.repeat && state.isTriangleColorPanelOpen && !isHelpOpen && !isResetOpen && !isDeleteShapeOpen && !isMergeErrorOpen) {
         e.preventDefault()

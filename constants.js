@@ -162,18 +162,54 @@ export const TRIANGLE_CENTROID_HIT_RADIUS_PX = 20
 export const SCENE_FORMAT = 'meshes-designer'
 export const SCENE_FORMAT_VERSION = 1
 // Rationale : voir DESIGN.md §7.3
-const triangleAlpha = 0.45
+// Opacite UNIQUE appliquee a toute peinture de triangle (evolution
+// « l'opacite choisie par l'utilisateur est conservee et appliquee a
+// chaque fois que l'on peint un triangle », cf. DESIGN.md §7.3.2) :
+// le curseur #colorAlpha du panneau la regle (persistee
+// manuellement), et chaque couleur de la palette est peinte a cette
+// opacite — la palette ne stocke que des couleurs (hex), pas
+// d'alpha par swatch.
+export const TRIANGLE_COLOR_DEFAULT_ALPHA = 0.45
 export const TRIANGLE_COLOR_PRESETS = [
-    { bg: '#E53935', fill: `rgba(229, 57, 53, ${triangleAlpha})` },
-    { bg: '#FB8C00', fill: `rgba(251, 140, 0, ${triangleAlpha})` },
-    { bg: '#FDD835', fill: `rgba(253, 216, 53, ${triangleAlpha})` },
-    { bg: '#43A047', fill: `rgba(67, 160, 71, ${triangleAlpha})` },
-    { bg: '#00ACC1', fill: `rgba(0, 172, 193, ${triangleAlpha})` },
-    { bg: '#1E88E5', fill: `rgba(30, 136, 229, ${triangleAlpha})` },
-    { bg: '#8E24AA', fill: `rgba(142, 36, 170, ${triangleAlpha})` },
-    { bg: '#FFFFFF', fill: `rgba(255, 255, 255, ${triangleAlpha})` },
+    { bg: '#E53935', fill: `rgba(229, 57, 53, ${TRIANGLE_COLOR_DEFAULT_ALPHA})` },
+    { bg: '#FB8C00', fill: `rgba(251, 140, 0, ${TRIANGLE_COLOR_DEFAULT_ALPHA})` },
+    { bg: '#FDD835', fill: `rgba(253, 216, 53, ${TRIANGLE_COLOR_DEFAULT_ALPHA})` },
+    { bg: '#43A047', fill: `rgba(67, 160, 71, ${TRIANGLE_COLOR_DEFAULT_ALPHA})` },
+    { bg: '#00ACC1', fill: `rgba(0, 172, 193, ${TRIANGLE_COLOR_DEFAULT_ALPHA})` },
+    { bg: '#1E88E5', fill: `rgba(30, 136, 229, ${TRIANGLE_COLOR_DEFAULT_ALPHA})` },
+    { bg: '#8E24AA', fill: `rgba(142, 36, 170, ${TRIANGLE_COLOR_DEFAULT_ALPHA})` },
+    { bg: '#FFFFFF', fill: `rgba(255, 255, 255, ${TRIANGLE_COLOR_DEFAULT_ALPHA})` },
 ]
 export const TRIANGLE_COLOR_CLEAR = '__default__'
+
+// (evolution palette persitee + opacite globale, cf. DESIGN.md
+// §7.3.1 / §7.3.2) : construit le fill rgba depuis un hex #rrggbb
+// (ou #rgb, expandu) et une alpha (defaut TRIANGLE_COLOR_DEFAULT_ALPHA,
+// meme semantique que les presets). Sert aux couleurs de la palette
+// (fill derive au chargement et a chaque changement d'opacite) ET au
+// pinceau (le curseur d'opacite arme le pinceau avec bg + alpha
+// courante). Retourne bg tel quel si le parse echoue (defense — la
+// valeur transiterait telle quelle vers t.fill). L'alpha est clamplee
+// [0, 1] : un alpha hors bornes rendrait le canvas silencieusement
+// avec une couleur invalide (et passerait tel quel dans le wire
+// format des scenes).
+export const triangleFillFromBg = (bg, alpha = TRIANGLE_COLOR_DEFAULT_ALPHA) => {
+    if (typeof bg !== 'string') return bg
+    let hex = bg.trim()
+    if (/^#[0-9a-f]{3}$/i.test(hex)) {
+        hex = '#' + hex.slice(1).split('').map(c => c + c).join('')
+    }
+    const m = /^#([0-9a-f]{6})$/i.exec(hex)
+    if (!m) return bg
+    const n = parseInt(m[1], 16)
+    // null / undefined / NaN / Infinity tombent sur le defaut plutot
+    // que sur un alpha invalide (une couleur transparente silencieuse
+    // serait un piege). Les valeurs numeriques valides sont clamplees
+    // [0, 1].
+    const numeric = alpha == null ? TRIANGLE_COLOR_DEFAULT_ALPHA : Number(alpha)
+    const a = Math.max(0, Math.min(1, Number.isFinite(numeric) ? numeric : TRIANGLE_COLOR_DEFAULT_ALPHA))
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`
+}
 export const CONSOLE_VISIBLE_STORAGE_KEY = 'meshesDesigner.consoleVisible'
 export const CONSOLE_FRAME_STORAGE_KEY = 'meshesDesigner.consoleFrame'
 export const IMPORT_MODE_STORAGE_KEY = 'mesh-designer-import-mode'
@@ -181,3 +217,17 @@ export const FPS_VISIBLE_STORAGE_KEY = 'meshesDesigner.fpsVisible'
 // Nombre de cotes du cercle persiste (meme statut de preference que
 // GRID_STEP / reticleMode : restauré au boot, reglé a la molette).
 export const CIRCLE_SEGMENTS_STORAGE_KEY = 'meshesDesigner.circleSegments'
+// Palette de couleurs des triangles (evolution « palette modifiable /
+// enrichie, conservee en localhost ») : liste des `bg` hex #rrggbb,
+// persisee comme preference (meme statut que consoleVisible /
+// reticleMode), restauree au boot par restoreColorPalette (editor.js)
+// et ecrite a chaque mutation (persistColorPalette).
+export const COLOR_PALETTE_STORAGE_KEY = 'meshesDesigner.colorPalette'
+// Opacite de travail du curseur #colorAlpha (evolution « l'opacite
+// choisie par l'utilisateur est conservee et appliquee a chaque fois
+// que l'on peint un triangle », cf. DESIGN.md §7.3.2) : nombre [0,1],
+// persise comme preference. Elle n'est persistee QUE quand
+// l'utilisateur deplace le curseur lui-meme — les synchronisations
+// d'affichage (clic swatch, Reset, Defauts...) ne doivent pas ecraser
+// le reglage manuel.
+export const COLOR_ALPHA_STORAGE_KEY = 'meshesDesigner.colorAlpha'

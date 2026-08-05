@@ -691,14 +691,18 @@
             /* Panneau popover ancre sous le bouton #triangleColor.
                Style coherent avec les autres overlays (#toolbar,
                #messageBoard) : fond sombre, bordure subtile, border-radius.
-               rganisation verticale :
-                 - 1 rangee de swatches preset (ronds colores
-                   definis en JS depuis TRIANGLE_COLOR_PRESETS)
+               rganisation verticale :                 - 1 rangee de swatches (la palette persitee, cf.
+                   DESIGN §7.3.1 — construite en JS depuis
+                   state.colorPalette) : clic = peindre, clic droit =
+                   retirer, double-clic = modifier
                  - 1 rangee "custom" avec <input type="color">
-                   (taille reduite + label texte court)
-                 - 1 bouton "Reset" (clear = supprime t.fill)
-               Le panneau est affiche/masque par
-               toggleTriangleColorPanel (editor.js). */
+                   (taille reduite + label texte court) + bouton
+                   Ajouter (enregistre la couleur du picker dans la
+                   palette persitee)
+                 - 1 rangee d'actions : Reset (desarme le pinceau)
+                   + Defauts (restaure les 8 couleurs d'origine)
+                 Le panneau est affiche/masque par
+                 toggleTriangleColorPanel (editor.js). */
             #triangleColorPanel {
                 position: absolute;
                 /* top / left sont regles par JS au moment de
@@ -754,6 +758,14 @@
                 border-color: rgb(55, 194, 0);
                 box-shadow: 0 0 0 2px rgba(55, 194, 0, 0.45);
             }
+            /* Swatch en cours d'edition (double-clic) : anneau blanc
+               distinct du vert .swatch-active — signale que le picker
+               pilote ce swatch en direct (modifications WYSIWYG,
+               Entree valide, Echap annule). */
+            #triangleColorSwatches .swatch.swatch-editing {
+                border-color: #FFFFFF;
+                box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.65);
+            }
             /* Rangee custom : input color natif au look subtil.
                Le picker par defaut (Webkit / Chromium) est ~40x25
                ; on le rebadige pour qu'il s'integre au theme
@@ -775,11 +787,49 @@
                 background-color: rgba(0, 0, 0, 0.4);
                 cursor: pointer;
             }
-            /* Bouton Reset : meme langage btn secondaire que la
-               toolbar (fond gris fonce, bordure subtile). Click =
-               clear la couleur (supprime t.fill sur les triangles
-               selectionnes). */
-            #triangleColorReset {
+            /* Rangee opacite : curseur range + pourcentage (canal
+               alpha, cf. DESIGN.md §7.3.2). Pilote l'opacite de la
+               couleur courante — swatch en edition (double-clic,
+               WYSIWYG) OU pinceau direct (le picker arme bg + alpha).
+               Mise en evidence verte du slider (accent-color) pour
+               rester dans le langage visuel de la toolbar. */
+            #triangleColorAlpha {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 11px;
+                color: rgba(220, 220, 220, 0.85);
+            }
+            #triangleColorAlpha label {
+                min-width: 44px;
+            }
+            #colorAlpha {
+                flex: 1;
+                min-width: 60px;
+                accent-color: rgb(55, 194, 0);
+                cursor: pointer;
+            }
+            #colorAlphaValue {
+                min-width: 32px;
+                text-align: right;
+                font-family: monospace;
+            }
+            /* Rangee d'actions du panneau (Reset + Defauts) : les
+               deux boutons sur une meme ligne pour ne pas allonger
+               le panneau verticalement. */
+            .color-actions {
+                display: flex;
+                gap: 8px;
+            }
+            /* Boutons secondaires du panneau (Reset / Ajouter /
+               Defauts) : meme langage btn secondaire que la toolbar
+               (fond gris fonce, bordure subtile). Reset desarme le
+               pinceau (evolution peinture) ; Ajouter enregistre la
+               couleur du picker dans la palette ; Defauts restaure
+               les 8 couleurs d'origine. */
+            #triangleColorReset,
+            #colorPaletteAdd,
+            #colorPaletteRestore {
                 font-family: monospace;
                 font-size: 11px;
                 padding: 4px 10px;
@@ -790,12 +840,16 @@
                 cursor: pointer;
                 transition: background-color 0.10s, border-color 0.10s, color 0.10s;
             }
-            #triangleColorReset:hover {
+            #triangleColorReset:hover,
+            #colorPaletteAdd:hover,
+            #colorPaletteRestore:hover {
                 background-color: rgba(255, 255, 255, 0.12);
                 border-color: rgba(255, 255, 255, 0.40);
                 color: rgb(255, 255, 255);
             }
-            #triangleColorReset:active {
+            #triangleColorReset:active,
+            #colorPaletteAdd:active,
+            #colorPaletteRestore:active {
                 color: rgb(55, 194, 0);
                 border-color: rgb(55, 194, 0);
             }
@@ -1480,8 +1534,17 @@
             <div id="triangleColorSwatches"></div>
             <div id="triangleColorCustom">
                 <input id="triangleColorInput" type="color" value="#ff5555" title="Couleur personnalisée (cliqué pour le picker natif)"/>
+                <button id="colorPaletteAdd" type="button" title="Ajouter la couleur du picker à la palette (conservée d'une session à l'autre)">Ajouter</button>
             </div>
-            <button id="triangleColorReset" type="button" title="Effacer la couleur personnalisée">Reset</button>
+            <div id="triangleColorAlpha">
+                <label for="colorAlpha">Opacité</label>
+                <input id="colorAlpha" type="range" min="0" max="100" step="1" value="45" title="Opacité de la couleur (0-100%) — s'applique au pinceau et aux couleurs de la palette"/>
+                <span id="colorAlphaValue">45%</span>
+            </div>
+            <div class="color-actions">
+                <button id="triangleColorReset" type="button" title="Désarmer le pinceau (le panneau reste ouvert)">Reset</button>
+                <button id="colorPaletteRestore" type="button" title="Restaurer la palette de couleurs par défaut (8 presets)">Défauts</button>
+            </div>
         </div>
         <!-- Panneau des formes prédéfinies : liste verticale de boutons
              icone + libellé, chacun armant l'outil correspondant
@@ -1574,6 +1637,7 @@
                          sans armer de déplacement. -->
                     <div class="help-row"><kbd class="kbd">Ctrl/Cmd</kbd><kbd class="kbd wide">Clic droit sur point</kbd><span>ajouter le point à la sélection sans le déplacer. <kbd class="kbd">Maj</kbd>+clic gauche = toggle. Clic gauche simple = remplace la sélection ; clic droit simple sélectionne et remplace la sélection.</span></div>
                     <div class="help-row"><kbd class="kbd wide">Anneau orange</kbd><span>autour d'un sommet : plusieurs points sont superposés à cette position (doublons de scènes importées). Cliquer dessus (mode sommet) les sélectionne tous, puis le bouton Fusionner les regroupe en un seul.</span></div>
+                    <div class="help-row"><kbd class="kbd wide">Palette de couleurs</kbd><span>le bouton Peinture ouvre la palette : clic sur un swatch = peindre ; le curseur Opacité règle l'opacité appliquée à chaque peinture (elle reste à votre dernière valeur, d'une session à l'autre) ; Ajouter enregistre la couleur du picker ; clic droit sur un swatch = le retirer ; double-clic = le modifier (Entrée valide, Échap annule) ; Défauts restaure les 8 couleurs d'origine. La palette est conservée d'une session à l'autre.</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu + drag</kbd><span>deplacer le viewCenter dans le sens du drag (pan)</span></div>
                     <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Clic-droit + drag</kbd><span>deplacer toutes les formes ensemble (meme delta, quasi-mode). AltGr (Right Alt) declenche Ctrl+Alt sur la plupart des claviers.</span></div>
                     <!-- Raccourci ergonomique en mode triangle / segment :

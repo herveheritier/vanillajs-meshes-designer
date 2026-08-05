@@ -1,6 +1,6 @@
 // Rationale : voir DESIGN.md §1.1
 
-import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_INNER_RATIO, ANNULUS_INNER_RATIO_DEFAULT } from './constants.js'
+import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_INNER_RATIO, ANNULUS_INNER_RATIO_DEFAULT, TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_DEFAULT_ALPHA } from './constants.js'
 
 export const state = {
     // ===== Scene / viewport =====
@@ -215,6 +215,38 @@ export const state = {
     isTriangleColorPanelOpen: false,
     brushMode: false,
     brushColor: undefined,
+
+    // (evolution palette persitee + opacite unique, cf. DESIGN.md
+    // §7.3.1 / §7.3.2) — la palette est une PREFERENCE utilisateur :
+    // tableau de { bg, fill } initialise aux presets historiques
+    // (TRIANGLE_COLOR_PRESETS), remplace au boot par
+    // restoreColorPalette (editor.js) si une sauvegarde existe dans
+    // COLOR_PALETTE_STORAGE_KEY, et re-ecrit a chaque mutation
+    // (ajout / retrait / edition / restauration des defauts). La
+    // palette ne stocke QUE des couleurs (bg) — l'opacite de peinture
+    // est UNIQUE et globale (state.colorAlpha, curseur #colorAlpha) ;
+    // fill est TOUJOURS derive du couple (bg, colorAlpha) par
+    // triangleFillFromBg (refreshPaletteFills a chaque changement
+    // d'opacite). Contrairement a brushMode/brushColor (session
+    // seule), la palette survit aux rechargements.
+    // colorPaletteEditingIndex : index du swatch en cours d'edition
+    // (double-clic) — tant qu'il est defini, le picker met a jour la
+    // couleur du swatch en direct. colorPaletteEditingBefore : bg
+    // d'origine du swatch edite, pour annuler (Echap).
+    colorPalette: TRIANGLE_COLOR_PRESETS.map(p => ({ bg: p.bg, fill: p.fill })),
+    colorPaletteEditingIndex: undefined,
+    colorPaletteEditingBefore: undefined,
+
+    // colorAlpha : opacite de travail du curseur #colorAlpha ([0,1],
+    // defaut TRIANGLE_COLOR_DEFAULT_ALPHA) — l'opacite APPLIQUEE a
+    // chaque peinture, quelle que soit la couleur armee (swatch ou
+    // picker). Valeur de SESSION synchronisee par
+    // setColorAlphaSlider ; la valeur PERSISTEE
+    // (COLOR_ALPHA_STORAGE_KEY) n'est mise a jour que par un reglage
+    // MANUEL du curseur (drag) — cliquer un swatch ne remplace pas la
+    // preference de l'utilisateur (cf. DESIGN §7.3.2). Restauree au
+    // boot par restoreColorPalette (editor.js).
+    colorAlpha: TRIANGLE_COLOR_DEFAULT_ALPHA,
 
     // ===== Selection / box =====
     selectedPoints: [],

@@ -6,7 +6,8 @@ import {
     COLOR_HOVER_NEAREST_LINE, LINE_WIDTH_HOVER_NEAREST_LINE,
     COLOR_HOVER_NEAREST_POINT,
     COLOR_HOVER_NEAREST_TRIANGLE_STROKE, COLOR_HOVER_NEAREST_TRIANGLE_FILL,
-    TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TAU,
+    TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TRIANGLE_COLOR_DEFAULT_ALPHA, TAU,
+    COLOR_PALETTE_STORAGE_KEY, COLOR_ALPHA_STORAGE_KEY, triangleFillFromBg,
     POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
     CIRCLE_MIN_RADIUS_PX, CIRCLE_DEFAULT_SEGMENTS,
     SHAPE_DEFS, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO,
@@ -2491,6 +2492,275 @@ const setActiveSwatch = (host, dataIndex) => {
     if (target) target.classList.add('swatch-active')
 }
 
+// ===== Palette persistee et editable + opacite unique (cf. DESIGN.md §7.3.1 / §7.3.2) =====
+//
+// La palette des triangles est une PREFERENCE utilisateur : initialisee
+// aux presets historiques (TRIANGLE_COLOR_PRESETS), restauree au boot
+// depuis COLOR_PALETTE_STORAGE_KEY et re-ecrite a chaque mutation.
+// Interactions :
+//   - Ajouter : le bouton #colorPaletteAdd enregistre la couleur
+//     courante du picker (#triangleColorInput) comme nouveau swatch.
+//   - Retirer : clic droit sur un swatch (garde : au moins 1 couleur).
+//   - Modifier : double-clic sur un swatch = mode edition — le picker
+//     prend sa couleur et met a jour le swatch EN DIRECT (WYSIWYG) ;
+//     Entree valide, Echap annule (retour a la couleur d'origine, le
+//     panneau reste ouvert).
+//   - Restaurer : le bouton #colorPaletteRestore revient aux 8
+//     presets d'origine.
+//
+// La palette ne stocke QUE des couleurs (bg hex). L'opacite de
+// peinture est UNIQUE et GLOBALE (state.colorAlpha, curseur
+// #colorAlpha) : le fill de chaque couleur est derive du couple
+// (bg, colorAlpha) par triangleFillFromBg et est applique a CHAQUE
+// peinture, quel que soit le swatch clique (cf. §7.3.2).
+
+// Sync le curseur d'opacite du panneau (#colorAlpha) avec une valeur
+// d'alpha [0,1] : valeur du range (0..100) + libelle % a cote + etat
+// de session state.colorAlpha. N'ecrit PAS localStorage — seule la
+// manipulation MANUELLE du curseur persiste (cf. persistColorAlpha) :
+// les synchronisations d'affichage (clic swatch, edition, Echap,
+// Reset...) ne doivent pas ecraser la preference de l'utilisateur.
+const setColorAlphaSlider = (alpha) => {
+    const a = Math.max(0, Math.min(1, alpha))
+    state.colorAlpha = a
+    const slider = document.querySelector('#colorAlpha')
+    const label = document.querySelector('#colorAlphaValue')
+    const pct = Math.round(a * 100)
+    if (slider) slider.value = String(pct)
+    if (label) label.textContent = pct + '%'
+}
+
+// Lit l'opacite de travail courante ([0,1]) : la valeur de session
+// state.colorAlpha, mise a jour par setColorAlphaSlider. Defense :
+// valeur absente / non-finite = alpha par defaut.
+const getColorAlphaSlider = () => {
+    const a = state.colorAlpha
+    return typeof a === 'number' && Number.isFinite(a) ? Math.max(0, Math.min(1, a)) : TRIANGLE_COLOR_DEFAULT_ALPHA
+}
+
+// Persiste l'opacite de travail (COLOR_ALPHA_STORAGE_KEY) comme
+// PREFERENCE utilisateur. Appele UNIQUEMENT sur un reglage manuel du
+// curseur (drag #colorAlpha) : c'est la garantie « l'opacite reste a
+// la derniere valeur fixee par l'utilisateur » — cliquer un swatch ou
+// annuler une edition affiche une autre opacite sans ecraser la
+// preference persistee.
+const persistColorAlpha = () => {
+    try {
+        localStorage.setItem(COLOR_ALPHA_STORAGE_KEY, JSON.stringify(getColorAlphaSlider()))
+    } catch (e) { /* ignore */ }
+}
+
+// Recalcule le fill de TOUTES les entrees de la palette a l'opacite
+// de travail courante (state.colorAlpha) : la palette ne stocke que
+// des couleurs (bg), le fill « pret a peindre » est derive du couple
+// (bg, colorAlpha). Appele a chaque changement d'opacite (drag du
+// curseur) et au boot — les swatches affichent ainsi l'apercu
+// WYSIWYG de la peinture.
+const refreshPaletteFills = () => {
+    const a = getColorAlphaSlider()
+    state.colorPalette.forEach(p => { p.fill = triangleFillFromBg(p.bg, a) })
+}
+
+// Valide une entree persistee de la palette : soit un hex #rrggbb
+// (format courant et legacy), soit un objet { bg: hex } (format
+// intermediaire — les anciennes clefs { bg, alpha } sont acceptees,
+// l'alpha est simplement ignore a la conversion : l'opacite est
+// globale, pas par swatch).
+const isValidPaletteEntry = (c) => {
+    if (typeof c === 'string') return /^#[0-9a-f]{6}$/i.test(c)
+    return !!c && typeof c === 'object' && typeof c.bg === 'string' &&
+        /^#[0-9a-f]{6}$/i.test(c.bg)
+}
+
+// Convertit une entree persistee en { bg, fill } : le fill est
+// derive au chargement a l'opacite de travail courante (jamais
+// persiste — fonction pure du couple bg/colorAlpha).
+const toPaletteEntry = (c) => {
+    const bg = typeof c === 'string' ? c : c.bg
+    return { bg, fill: triangleFillFromBg(bg, getColorAlphaSlider()) }
+}
+
+// Restaure la palette ET l'opacite de travail depuis localStorage.
+// L'opacite est restauree EN PREMIER : les fills de la palette en
+// sont derives (la palette ne stocke que des couleurs). Cle absente,
+// JSON invalide ou liste vide / mal formee = defaults presets ; cle
+// d'opacite absente / invalide = defaut (TRIANGLE_COLOR_DEFAULT_ALPHA).
+export const restoreColorPalette = () => {
+    try {
+        const raw = localStorage.getItem(COLOR_ALPHA_STORAGE_KEY)
+        if (raw !== null) {
+            const a = Number(raw)
+            if (Number.isFinite(a)) setColorAlphaSlider(a)
+        }
+    } catch (e) { /* ignore */ }
+    let palette = TRIANGLE_COLOR_PRESETS.map(p => ({ bg: p.bg, fill: triangleFillFromBg(p.bg, getColorAlphaSlider()) }))
+    try {
+        const raw = localStorage.getItem(COLOR_PALETTE_STORAGE_KEY)
+        if (raw) {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(isValidPaletteEntry)) {
+                palette = parsed.map(toPaletteEntry)
+            }
+        }
+    } catch (e) { /* ignore */ }
+    state.colorPalette = palette
+}
+
+// Ecrit la palette (liste des bg hex) dans localStorage. Le fill
+// n'est jamais persiste (derive au chargement et a chaque changement
+// d'opacite). N'est jamais appelee sans mutation (pas de debounce
+// necessaire : les edits sont des actions discretes, pas des drags
+// continus).
+export const persistColorPalette = () => {
+    try {
+        localStorage.setItem(COLOR_PALETTE_STORAGE_KEY, JSON.stringify(state.colorPalette.map(p => p.bg)))
+    } catch (e) { /* ignore */ }
+}
+
+// Termine le mode edition (Entree / clic ailleurs) : nettoie l'index
+// et la surbrillance .swatch-editing, sans toucher a la couleur
+// (l'edition en cours a deja ete commitee en direct par le picker).
+const endPaletteEdit = () => {
+    if (state.colorPaletteEditingIndex == null) return
+    state.colorPaletteEditingIndex = undefined
+    state.colorPaletteEditingBefore = undefined
+    const host = document.querySelector('#triangleColorSwatches')
+    if (host) host.querySelectorAll('.swatch').forEach(s => s.classList.remove('swatch-editing'))
+}
+
+// Annule le mode edition (Echap) : retour a la couleur d'origine du
+// swatch edite (colorPaletteEditingBefore), restauration visuelle du
+// swatch et du picker, puis fin du mode. Le panneau reste ouvert —
+// main.js intercepte Echap avant la branche hideTriangleColorPanel.
+// brushColor est resynchronise sur le fill restaure : pendant
+// l'edition, chaque input du picker l'armait avec la couleur EDITEE —
+// sans cette resync, un Echap laisserait le pinceau arme avec la
+// couleur annulee alors que le swatch affiche la couleur d'origine
+// (le prochain clic gauche peindrait la mauvaise couleur).
+export const cancelPaletteEdit = () => {
+    const idx = state.colorPaletteEditingIndex
+    const before = state.colorPaletteEditingBefore
+    if (idx != null && before && state.colorPalette[idx]) {
+        const entry = state.colorPalette[idx]
+        entry.bg = before
+        refreshPaletteFills()
+        state.brushColor = entry.fill
+        const host = document.querySelector('#triangleColorSwatches')
+        const sw = host && host.querySelector('.swatch[data-index="' + String(idx) + '"]')
+        if (sw) sw.style.backgroundColor = entry.fill
+        const input = document.querySelector('#triangleColorInput')
+        if (input) input.value = before
+        persistColorPalette()
+    }
+    endPaletteEdit()
+    log('Edition de couleur annulee')
+}
+
+// Entre en mode edition sur le swatch `index` (double-clic) : le
+// picker reflete sa couleur, le pinceau est arme avec, et chaque
+// input suivant mettra a jour le swatch en direct. Le curseur
+// d'opacite n'est PAS touche : l'opacite est globale (cf. §7.3.2).
+const startPaletteEdit = (index) => {
+    const entry = state.colorPalette[index]
+    if (!entry) return
+    endPaletteEdit()
+    state.colorPaletteEditingIndex = index
+    state.colorPaletteEditingBefore = entry.bg
+    state.brushColor = entry.fill
+    state.brushMode = true
+    const input = document.querySelector('#triangleColorInput')
+    if (input) {
+        input.value = entry.bg
+        input.focus()
+    }
+    const host = document.querySelector('#triangleColorSwatches')
+    setActiveSwatch(host, index)
+    if (host) {
+        const target = host.querySelector('.swatch[data-index="' + String(index) + '"]')
+        if (target) target.classList.add('swatch-editing')
+    }
+    log('Edition de la couleur ' + index + ' : modifiez le picker, Entree valide, Echap annule')
+    updateColorButtonState()
+}
+
+// Ajoute la couleur courante du picker comme nouveau swatch (dedup
+// case-insensitive sur le bg : une couleur deja presente est un
+// no-op arme). Persiste puis rearme le pinceau sur la nouvelle
+// entree (peinte a l'opacite de travail courante).
+const addPaletteColorFromPicker = () => {
+    const input = document.querySelector('#triangleColorInput')
+    if (!input) return
+    const hex = input.value
+    const exists = state.colorPalette.some(p => p.bg.toLowerCase() === hex.toLowerCase())
+    if (exists) {
+        state.brushColor = triangleFillFromBg(hex, getColorAlphaSlider())
+        state.brushMode = true
+        log('Couleur deja dans la palette : ' + hex)
+        updateColorButtonState()
+        return
+    }
+    state.colorPalette.push({ bg: hex, fill: triangleFillFromBg(hex, getColorAlphaSlider()) })
+    persistColorPalette()
+    const host = document.querySelector('#triangleColorSwatches')
+    buildColorSwatches()
+    const newIndex = state.colorPalette.length - 1
+    state.brushColor = state.colorPalette[newIndex].fill
+    state.brushMode = true
+    setActiveSwatch(host, newIndex)
+    log('Couleur ajoutee a la palette : ' + hex)
+    updateColorButtonState()
+}
+
+// Retire le swatch `index` (clic droit). Garde : impossible de
+// retirer la DERNIERE couleur (la palette ne doit jamais etre vide —
+// showTriangleColorPanel et les re-armements en dependent).
+// Rearme le pinceau sur la couleur qui a pris la place.
+const removePaletteColor = (index) => {
+    if (state.colorPalette.length <= 1) {
+        log('Retrait impossible : gardez au moins une couleur dans la palette')
+        return
+    }
+    if (state.colorPaletteEditingIndex === index) endPaletteEdit()
+    state.colorPalette.splice(index, 1)
+    persistColorPalette()
+    const host = document.querySelector('#triangleColorSwatches')
+    buildColorSwatches()
+    const activeIdx = Math.min(index, state.colorPalette.length - 1)
+    const entry = state.colorPalette[activeIdx]
+    if (entry) {
+        state.brushColor = entry.fill
+        state.brushMode = true
+        setActiveSwatch(host, activeIdx)
+    }
+    log('Couleur retiree de la palette')
+    updateColorButtonState()
+}
+
+// Revient aux 8 presets d'origine (bouton #colorPaletteRestore).
+// L'opacite de travail de l'utilisateur n'est PAS touchee : les
+// fills des presets sont derives a cette opacite — « Defauts »
+// restaure les COULEURS, pas la preference d'opacite (cf. §7.3.2).
+const restoreDefaultPalette = () => {
+    state.colorPalette = TRIANGLE_COLOR_PRESETS.map(p => ({ bg: p.bg }))
+    // Les fills sont derives a l'opacite de travail courante (meme
+    // chemin que refreshPaletteFills — la derive est centralisee).
+    refreshPaletteFills()
+    endPaletteEdit()
+    persistColorPalette()
+    const host = document.querySelector('#triangleColorSwatches')
+    buildColorSwatches()
+    const first = state.colorPalette[0]
+    if (first) {
+        state.brushColor = first.fill
+        state.brushMode = true
+        setActiveSwatch(host, 0)
+        const input = document.querySelector('#triangleColorInput')
+        if (input) input.value = first.bg
+    }
+    log('Palette restauree aux couleurs par defaut')
+    updateColorButtonState()
+}
+
 // (evolution peinture) le panneau est un toggle panel :
 //   - ouvert une fois : le pinceau est immédiatement armé avec une
 //     couleur par défaut (1er preset, swatch visuellement
@@ -2533,22 +2803,26 @@ export const showTriangleColorPanel = () => {
     // l'ouverture : des que le panneau est visible, l'utilisateur
     // peut peindre. Le 1er swatch est mis en surbrillance via la
     // classe .swatch-active et le color input picker est
-    // resynchronise sur la valeur hex correspondante (les affinités
-    // swatch <-> picker ne sont pas strictement symétriques : le
-    // picker travaille en #rrggbb, les swatches en rgba avec alpha
-    // alpha definie dans TRIANGLE_COLOR_PRESETS, intentionnellement
-    // non persistee dans le color picker — on accepte que le
-    // passage picker -> preset ne preserve pas l'alpha, comme
-    // avant).
+    // resynchronise sur sa valeur hex. Le pinceau est armé à
+    // l'opacité de travail courante (cf. §7.3.2) : l'opacité choisie
+    // par l'utilisateur s'applique dès la première peinture.
     positionPanelUnderButton(btn, panel)
     state.isTriangleColorPanelOpen = true
     btn.classList.add('color-panel-open')
-    const firstPreset = TRIANGLE_COLOR_PRESETS[0]
-    state.brushColor = firstPreset.fill
+    const firstPreset = state.colorPalette[0]
+    if (!firstPreset) return
+    // Le pinceau est arme avec la couleur du 1er preset A L'OPACITE DE
+    // TRAVAIL courante (et non l'alpha propre du preset) : l'opacite
+    // fixee par l'utilisateur survit ainsi a chaque ouverture du
+    // panneau — c'est la garantie « l'opacite reste a la derniere
+    // valeur » (cf. DESIGN.md §7.3.2).
+    state.brushColor = triangleFillFromBg(firstPreset.bg, getColorAlphaSlider())
     state.brushMode = true
     setActiveSwatch(document.querySelector('#triangleColorSwatches'), 0)
     const input = document.querySelector('#triangleColorInput')
-    if (input && firstPreset) input.value = firstPreset.bg
+    if (input) input.value = firstPreset.bg
+    // Le curseur DOM est deja aligne sur state.colorAlpha (restaure au
+    // boot / synchronise par setColorAlphaSlider) — pas de resync ici.
     updateColorButtonState()
 }
 
@@ -2561,6 +2835,10 @@ export const hideTriangleColorPanel = () => {
     // évolution). On purge aussi brushColor pour que le prochain
     // show reparte proprement d'un état vierge (pas de couleur
     // orpheline si l'utilisateur a bricolé le picker entre-temps).
+    // Une edition en cours est abandonnee (la couleur deja commitee
+    // en direct reste, c'est le comportement le moins surprenant a
+    // la fermeture du panneau).
+    endPaletteEdit()
     state.brushMode = false
     state.brushColor = undefined
     if (btn) btn.classList.remove('color-panel-open')
@@ -2630,16 +2908,29 @@ export const paintTriangleAtCursor = (e) => {
     log(`Peinture : triangle ${nt.triangleIndex}`)
 }
 
+// Construit les swatches depuis state.colorPalette (la palette
+// persitee, cf. §7.3.1). Trois gestes par swatch :
+//   - clic gauche : arme le pinceau avec la couleur (comportement
+//     historique) ET termine une edition en cours le cas echeant ;
+//   - clic droit : retire la couleur de la palette (contextmenu
+//     intercepte, pas de menu natif) ;
+//   - double-clic : entre en mode edition (le picker reflete la
+//     couleur, modifs en direct, Entree/Echap).
 const buildColorSwatches = () => {
     const host = document.querySelector('#triangleColorSwatches')
     if (!host) return
     while (host.firstChild) host.removeChild(host.firstChild)
-    TRIANGLE_COLOR_PRESETS.forEach((preset, i) => {
+    state.colorPalette.forEach((preset, i) => {
         const sw = document.createElement('button')
         sw.type = 'button'
         sw.className = 'swatch'
-        sw.style.backgroundColor = preset.bg
-        sw.title = 'Peindre avec ' + preset.bg
+        // Le swatch affiche le fill (bg a l'opacite de travail
+        // courante) : apercu WYSIWYG de la peinture — ce que l'on
+        // voit sur le swatch est exactement ce qui sera peint
+        // (refreshPaletteFills recalcule ces fills a chaque drag du
+        // curseur d'opacite).
+        sw.style.backgroundColor = preset.fill
+        sw.title = 'Peindre avec ' + preset.bg + ' — clic droit : retirer de la palette, double-clic : modifier'
         sw.dataset.index = String(i)
         sw.addEventListener('click', (e) => {
             if (e.button !== 0) return
@@ -2648,12 +2939,23 @@ const buildColorSwatches = () => {
             // sélection est orthogonale au pinceau : si elle contient
             // des triangles, on ne les peint PAS automatiquement,
             // l'utilisateur le fera au clic gauche sur chaque tri.
+            // L'opacite n'est PAS touchee : la couleur est peinte a
+            // l'opacite de travail de l'utilisateur (cf. §7.3.2).
             state.brushColor = preset.fill
             state.brushMode = true
             setActiveSwatch(host, i)
             const input = document.querySelector('#triangleColorInput')
             if (input) input.value = preset.bg
+            endPaletteEdit()
             updateColorButtonState()
+        })
+        sw.addEventListener('contextmenu', (e) => {
+            e.preventDefault()
+            removePaletteColor(i)
+        })
+        sw.addEventListener('dblclick', (e) => {
+            e.preventDefault()
+            startPaletteEdit(i)
         })
         host.appendChild(sw)
     })
@@ -2664,28 +2966,90 @@ export const wireTriangleColorPanel = () => {
     const panel = document.querySelector('#triangleColorPanel')
     const input = document.querySelector('#triangleColorInput')
     const resetBtn = document.querySelector('#triangleColorReset')
-    if (!btn || !panel || !input || !resetBtn) return
+    const addBtn = document.querySelector('#colorPaletteAdd')
+    const restoreBtn = document.querySelector('#colorPaletteRestore')
+    const alphaSlider = document.querySelector('#colorAlpha')
+    const alphaLabel = document.querySelector('#colorAlphaValue')
+    if (!btn || !panel || !input || !resetBtn || !addBtn || !restoreBtn || !alphaSlider || !alphaLabel) return
     buildColorSwatches()
     btn.addEventListener('click', (e) => {
         if (e.button !== 0) return
         toggleTriangleColorPanel()
     })
     input.addEventListener('input', () => {
-        // Le picker natif renvoie toujours du #rrggbb (alpha 1
-        // implicite) : la conversion vers rgba avec alpha 0.45
-        // comme les presets est possible mais perdrait l'intent
-        // utilisateur (il peut vouloir une couleur opaque).
-        // On respecte donc sa valeur hex telle quelle et on arme
-        // le pinceau directement avec.
-        state.brushColor = input.value
+        // Deux chemins selon l'etat d'edition :
+        //   - mode edition (double-clic sur un swatch) : le picker
+        //     met a jour la couleur du swatch EN DIRECT (bg, le fill
+        //     derive a l'opacite de travail courante, WYSIWYG) et
+        //     persiste a chaque tick — l'utilisateur voit le swatch
+        //     changer pendant qu'il drague le picker natif.
+        //   - hors edition : le picker arme le pinceau DIRECTEMENT
+        //     avec sa valeur hex a l'opacite de travail courante
+        //     (une couleur libre n'est pas forcement destinee a la
+        //     palette, mais l'opacite de l'utilisateur s'applique
+        //     toujours, cf. §7.3.2).
         state.brushMode = true
-        // Swatch actif : on cherche un preset dont le .bg matche la
-        // valeur hex du picker (comparaison case-insensitive). Si
-        // la couleur custom n'est pas un preset, on desactive tous
-        // les swatches (couleur libre active mais aucun preset ne
-        // matche).
-        const matchIdx = TRIANGLE_COLOR_PRESETS.findIndex(p => p.bg.toLowerCase() === input.value.toLowerCase())
+        if (state.colorPaletteEditingIndex != null && state.colorPalette[state.colorPaletteEditingIndex]) {
+            const entry = state.colorPalette[state.colorPaletteEditingIndex]
+            entry.bg = input.value
+            entry.fill = triangleFillFromBg(input.value, getColorAlphaSlider())
+            state.brushColor = entry.fill
+            const host = document.querySelector('#triangleColorSwatches')
+            const sw = host && host.querySelector('.swatch[data-index="' + String(state.colorPaletteEditingIndex) + '"]')
+            if (sw) sw.style.backgroundColor = entry.fill
+            persistColorPalette()
+        } else {
+            state.brushColor = triangleFillFromBg(input.value, getColorAlphaSlider())
+        }
+        // Swatch actif : on cherche une couleur de la palette dont
+        // le .bg matche la valeur hex du picker (comparaison
+        // case-insensitive). Si la couleur custom n'est pas dans la
+        // palette, on desactive tous les swatches (couleur libre
+        // active mais aucun preset ne matche).
+        const matchIdx = state.colorPalette.findIndex(p => p.bg.toLowerCase() === input.value.toLowerCase())
         setActiveSwatch(document.querySelector('#triangleColorSwatches'), matchIdx >= 0 ? matchIdx : null)
+        updateColorButtonState()
+    })
+    input.addEventListener('keydown', (e) => {
+        if (state.colorPaletteEditingIndex == null) return
+        if (e.key === 'Enter') {
+            e.preventDefault()
+            endPaletteEdit()
+            log('Couleur modifiee dans la palette')
+        }
+        // Echap est gere au niveau document (main.js) : annule
+        // l'edition sans fermer le panneau.
+    })
+    // (evolution opacite unique, cf. DESIGN.md §7.3.2) Le curseur
+    // d'opacite regle l'opacite de travail GLOBALE : TOUTES les
+    // couleurs de la palette (et le pinceau) sont peintes a cette
+    // opacite. A chaque drag : on recalcule les fills de la palette
+    // (apercu WYSIWYG des swatches), on arme le pinceau avec la
+    // couleur courante a la nouvelle opacite, et on persiste la
+    // preference (UNIQUEMENT ici — c'est un reglage MANUEL de
+    // l'utilisateur ; les synchronisations d'affichage comme le clic
+    // swatch ne doivent pas ecraser la preference).
+    alphaSlider.addEventListener('input', () => {
+        const pct = parseInt(alphaSlider.value, 10)
+        const alpha = Number.isFinite(pct) ? Math.max(0, Math.min(1, pct / 100)) : TRIANGLE_COLOR_DEFAULT_ALPHA
+        setColorAlphaSlider(alpha)
+        persistColorAlpha()
+        refreshPaletteFills()
+        buildColorSwatches()
+        state.brushMode = true
+        state.brushColor = triangleFillFromBg(input.value, alpha)
+        const host = document.querySelector('#triangleColorSwatches')
+        // Le rebuild des swatches efface les surbrillances : on
+        // restaure le swatch ACTIF (la couleur armee — valeur du
+        // picker — matche un swatch de la palette) et la surbrillance
+        // d'edition le cas echeant (l'edition porte sur la couleur,
+        // pas l'opacite).
+        const matchIdx = state.colorPalette.findIndex(p => p.bg.toLowerCase() === input.value.toLowerCase())
+        setActiveSwatch(host, matchIdx >= 0 ? matchIdx : null)
+        if (host && state.colorPaletteEditingIndex != null) {
+            const target = host.querySelector('.swatch[data-index="' + String(state.colorPaletteEditingIndex) + '"]')
+            if (target) target.classList.add('swatch-editing')
+        }
         updateColorButtonState()
     })
     resetBtn.addEventListener('click', (e) => {
@@ -2695,15 +3059,32 @@ export const wireTriangleColorPanel = () => {
         // Le panneau reste ouvert pour permettre a l'utilisateur
         // de choisir une nouvelle couleur. On enleve la
         // surbrillance des swatches (aucune couleur n'est active)
-        // et on remet la valeur du picker au preset[0] (cohérent
-        // avec l'ancien comportement : picker "fraichement
-        // initialisé" apres un reset). Pas de requestDraw /
-        // persistState ici : on ne mute pas la scene.
+        // et on remet la valeur du picker a la 1re couleur de la
+        // palette (cohérent avec l'ancien comportement : picker
+        // "fraichement initialisé" apres un reset). Termine aussi
+        // une edition en cours. Pas de requestDraw / persistState
+        // ici : on ne mute pas la scene.
+        endPaletteEdit()
         state.brushMode = false
         state.brushColor = undefined
         setActiveSwatch(document.querySelector('#triangleColorSwatches'), null)
-        input.value = TRIANGLE_COLOR_PRESETS[0].bg
+        // Reset ne touche pas au curseur d'opacite : l'opacite de
+        // travail de l'utilisateur n'est pas une couleur, elle reste
+        // telle quelle (cf. §7.3.2).
+        if (state.colorPalette[0]) input.value = state.colorPalette[0].bg
         updateColorButtonState()
+    })
+    // (evolution palette persitee) Ajouter : enregistre la couleur
+    // courante du picker comme nouveau swatch de la palette.
+    addBtn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        addPaletteColorFromPicker()
+    })
+    // (evolution palette persitee) Defauts : restaure les 8 presets
+    // d'origine (ecrase la palette persitee).
+    restoreBtn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        restoreDefaultPalette()
     })
     document.addEventListener('mousedown', (e) => {
         if (!state.isTriangleColorPanelOpen) return

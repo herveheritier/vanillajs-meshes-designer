@@ -1147,6 +1147,104 @@ Le blanc du preset correspond visuellement au fill par défaut
 `COLOR_TRIANGLE_FILL_ACTIVE` (rgba blanc 0.1) — "pas de couleur custom"
 équivalent.
 
+### §7.3.1 Palette persistée, modifiable et enrichissable (`meshesDesigner.colorPalette`)
+
+Evolution « la palette de couleur peut être modifiée et enrichie ; elle est
+conservée en localhost ». La palette passe du statut de **constante**
+(`TRIANGLE_COLOR_PRESETS`, figée au boot) à celui de **préférence
+utilisateur** : `state.colorPalette` est un tableau de `{ bg, fill }`
+initialisé aux 8 presets historiques, remplacé au boot par
+`restoreColorPalette` (editor.js) si une sauvegarde existe, et ré-écrit à
+chaque mutation via `persistColorPalette`.
+
+**Format persisté** : liste JSON de strings hex `#rrggbb` (le `fill` est
+TOUJOURS dérivé du couple `(bg, colorAlpha)` par `triangleFillFromBg` —
+le `fill` est une fonction pure de la couleur ET de l'opacité globale
+§7.3.2, il n'a pas de raison d'être persisté ; la clé reste compacte et la
+désynchronisation `bg`/`fill` impossible). Les **anciennes sauvegardes**
+restent lisibles : liste de strings hex (format historique) ou liste
+d'objets `{ bg }` / `{ bg, alpha }` (format intermédiaire, l'alpha par
+swatch est ignoré : l'opacité est désormais globale). Clé absente, JSON
+invalide, liste vide ou entrée mal formée → fallback sur les defaults.
+
+**Statut de préférence (vs scène)** : comme `consoleVisible` /
+`reticleMode` / `circleSegments`, la palette est restaurée au boot mais ne
+fait PAS passer la scène à « modifiée » — elle n'entre pas dans le wire
+format exporté (`serializeState` ne la sérialise pas, la palette ne doit
+jamais transiter par un fichier de scène).
+
+**Interactions du panneau `#triangleColor`** :
+
+- **Ajouter** (`#colorPaletteAdd`) : enregistre la couleur courante du
+  picker (`#triangleColorInput`) comme nouveau swatch — dédup
+  case-insensitive sur le `bg` (une couleur déjà présente = no-op armé).
+- **Retirer** : clic droit sur un swatch (`removePaletteColor`) — garde :
+  la palette ne doit JAMAIS être vide (`showTriangleColorPanel` et les
+  ré-armements du pinceau lisent `colorPalette[0]` ; une palette vide
+  casserait l'ouverture du panneau). Le pinceau est ré-armé sur la couleur
+  qui a pris la place de celle retirée.
+- **Modifier** : double-clic sur un swatch (`startPaletteEdit`) = mode
+  édition — le picker prend sa couleur, et chaque `input` du picker met à
+  jour le swatch EN DIRECT (WYSIWYG, commit + persistance à chaque tick).
+  Entrée = fin de mode (la couleur déjà committée reste), Échap =
+  annulation (`cancelPaletteEdit`, retour à `colorPaletteEditingBefore`
+  — la couleur d'origine est re-committée et re-persistée). Le curseur
+  d'opacité n'est PAS touché par le mode édition (opacité globale).
+- **Restaurer** (`#colorPaletteRestore`) : revient aux 8 presets
+  d'origine (`TRIANGLE_COLOR_PRESETS`).
+
+**Priorité d'interception d'Échap** (main.js keydown) : en mode édition,
+le premier Échap annule l'édition SANS fermer le panneau (le panneau ne
+se ferme qu'au second Échap). La branche `colorPaletteEditingIndex != null`
+est donc placée AVANT la branche `hideTriangleColorPanel`.
+
+**Coexistence avec le pinceau direct** : hors mode édition, le picker
+conserve son usage historique — sa valeur hex + l'opacité de travail
+courante arment le pinceau DIRECTEMENT, sans passer par la palette (une
+couleur libre n'est pas forcément destinée à la palette ; l'intention
+utilisateur — y compris l'opacité — est préservée, cf. §7.3.2). En mode
+édition au contraire, le picker pilote le swatch. Les deux chemins sont
+distingués par `state.colorPaletteEditingIndex`.
+
+### §7.3.2 Opacité unique appliquée à chaque peinture (curseur `#colorAlpha`)
+
+L'opacité de peinture est **unique et globale** : le curseur `#colorAlpha`
+(range 0..100, libellé `#colorAlphaValue` en %) du panneau fixe
+`state.colorAlpha` ([0,1], défaut `TRIANGLE_COLOR_DEFAULT_ALPHA = 0.45`),
+le fill de CHAQUE couleur de la palette étant dérivé du couple
+`(bg, colorAlpha)` par `triangleFillFromBg`. Conséquence directe :
+« l'opacité choisie par l'utilisateur est appliquée à chaque fois que l'on
+peint un triangle » — cliquer un swatch choisit la COULEUR, l'opacité
+reste celle de l'utilisateur (le curseur ne bouge pas au clic).
+
+- **Armement** : toute armée du pinceau (clic swatch, picker hors
+  édition, ouverture du panneau, « Défauts », drag du curseur) produit
+  `fill = triangleFillFromBg(bg, colorAlpha)`. Le swatch affiche ce fill
+  (aperçu WYSIWYG de la peinture sur le fond sombre du panneau).
+- **Drag du curseur** : `setColorAlphaSlider` + `refreshPaletteFills`
+  (recalcul de tous les fills → les swatches montrent la nouvelle
+  translucidité EN DIRECT) + ré-armement du pinceau + `buildColorSwatches`.
+- **Édition (double-clic)** : porte sur la COULEUR uniquement (picker →
+  swatch en direct) ; l'opacité est hors du mode édition.
+- **Reset / Défauts** : ne touchent pas à l'opacité de travail (ils
+  restaurent des couleurs, pas la préférence d'opacité).
+
+**Persistance** (`meshesDesigner.colorAlpha`) : l'opacité est une
+**préférence utilisateur** (restaurée au boot par `restoreColorPalette`
+— AVANT la palette, dont les fills en sont dérivés — jamais sérialisée en
+scène). Règle : « l'opacité reste à la dernière valeur fixée par
+l'utilisateur ». Seul un réglage **manuel** du curseur (drag `#colorAlpha`)
+persiste la valeur (`persistColorAlpha`) ; les synchronisations
+d'affichage (clic swatch, Reset, Défauts) ne réécrivent jamais la
+préférence — au prochain rechargement, c'est le dernier réglage manuel
+qui revient et qui s'applique à la peinture. `state.colorAlpha` porte la
+valeur de session ; le curseur DOM n'est qu'un miroir synchronisé par
+`setColorAlphaSlider`.
+
+`triangleFillFromBg` clample l'alpha dans [0,1] (défense : un alpha hors
+bornes produirait un rendu canvas silencieusement invalide et passerait
+tel quel dans le wire format des scènes).
+
 ### §7.4 Feedback hover (3 modes de sélection)
 
 - **vertex** : point vert oversized 5 px (`#00FF00`) au sommet le + proche.
