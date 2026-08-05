@@ -1,9 +1,11 @@
 # evolutions
 ## évolutions à réaliser sur l'application
 - différents boutons pour forcer l'alignement et la répartition des points sélectionnés
-- ajouter une distinction visuelle pour les sommets qui correspondent à plusieurs points afin de faciliter leur regroupement
 - la palette de couleur peut être modifiée et enrichie ; elle est conservée en localhost
+- pour l'enregistrement de la scene, ouvrir une fenêtre de sélection de l'emplacement avec possibilité de renommage ; se positionner sur l'emplacement précédent
+- le bouton de fusion de points doit avoir une 2ème fonction qui est utilisable si et seulement si un seul point est sélectionné ; dans ce cas le déplacement puis le relacement du point sélectionné va entrainer sa fusion avec le point le plus proche dont la distance est inférieure à une limite prédéfinie
 ## évolutions effectuées sur l'application (date, id de commit)
+- 05/08/2026 (4bdf434) : distinction visuelle des sommets qui correspondent à plusieurs points (anneau orange autour du sommet) afin de faciliter leur regroupement — un clic (mode sommet) sélectionne tout le cluster de doublons, le bouton Fusionner les regroupe en un seul point
 - 04/08/2026 (f538544) : création d'un cercle percé d'un trou (anneau) en 3 clics : 1er = centre, 2e = verrouille rayon externe + angle, mouvement = taille du trou, 3e = valider (molette = nombre de côtés)
 - 04/08/2026 (1e75148) : la forme triangle est désormais composée d'un seul triangle (3 sommets, sans point central) au lieu de trois
 - 04/08/2026 (896e553) : généralisation de la création des formes sur le modèle du cercle : 1er clic = pose l'ancre (coin pour rectangle/carré, centre pour les polygones), mouvement = taille et orientation (le sommet 0 pointe vers la souris), 2e clic = valide
