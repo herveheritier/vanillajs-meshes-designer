@@ -1,10 +1,10 @@
 # evolutions
 ## évolutions à réaliser sur l'application
 - différents boutons pour forcer l'alignement et la répartition des points sélectionnés
-- la palette de couleur peut être modifiée et enrichie ; elle est conservée en localhost
 - pour l'enregistrement de la scene, ouvrir une fenêtre de sélection de l'emplacement avec possibilité de renommage ; se positionner sur l'emplacement précédent
 - le bouton de fusion de points doit avoir une 2ème fonction qui est utilisable si et seulement si un seul point est sélectionné ; dans ce cas le déplacement puis le relacement du point sélectionné va entrainer sa fusion avec le point le plus proche dont la distance est inférieure à une limite prédéfinie
 ## évolutions effectuées sur l'application (date, id de commit)
+- 05/08/2026 (456bac2) : la palette de couleurs peut être modifiée et enrichie (Ajouter enregistre la couleur du picker, clic droit sur un swatch = le retirer, double-clic = le modifier avec Entrée valide / Échap annule, Défauts restaure les 8 couleurs d'origine) ; elle est conservée en localhost d'une session à l'autre (clé `meshesDesigner.colorPalette`, liste d'hex ; les anciennes clés restent lisibles). L'opacité de peinture est UNIQUE et GLOBALE : le curseur Opacité du panneau (45% par défaut) est appliqué à CHAQUE peinture — cliquer un swatch choisit la couleur sans changer l'opacité (les swatches en montrent l'aperçu en direct). Elle est conservée d'une session à l'autre (`meshesDesigner.colorAlpha`) : seul un réglage MANUEL du curseur la persiste, et elle s'applique dès la réouverture du panneau
 - 05/08/2026 (4bdf434) : distinction visuelle des sommets qui correspondent à plusieurs points (anneau orange autour du sommet) afin de faciliter leur regroupement — un clic (mode sommet) sélectionne tout le cluster de doublons, le bouton Fusionner les regroupe en un seul point
 - 04/08/2026 (f538544) : création d'un cercle percé d'un trou (anneau) en 3 clics : 1er = centre, 2e = verrouille rayon externe + angle, mouvement = taille du trou, 3e = valider (molette = nombre de côtés)
 - 04/08/2026 (1e75148) : la forme triangle est désormais composée d'un seul triangle (3 sommets, sans point central) au lieu de trois
