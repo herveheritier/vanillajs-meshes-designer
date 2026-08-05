@@ -1,7 +1,7 @@
 // Rationale : voir DESIGN.md §2.3
 
 import { state } from './state.js'
-import { modelToScreen, screenToModel } from './geometry.js'
+import { modelToScreen, screenToModel, getMultiPointIndices } from './geometry.js'
 import {
     TAU,
     COLOR_AXIS,
@@ -16,6 +16,8 @@ import {
     COLOR_TRIANGLE_FILL_ACTIVE,
     COLOR_SELECTED_POINT,
     COLOR_SELECTED_POINT_DIMMED,
+    COLOR_MULTI_POINT,
+    MULTI_POINT_RADIUS,
     COLOR_SELECTION_BOX_FILL,
     COLOR_SELECTION_BOX_STROKE,
     COLOR_CIRCLE_PREVIEW,
@@ -351,7 +353,10 @@ const renderSceneToOffscreen = () => {
             drawAxis()
         }
         drawShapes()
-        if (!state.previewMode) drawSelectedPoints()
+        if (!state.previewMode) {
+            drawSelectedPoints()
+            drawMultiPointMarkers()
+        }
     } finally {
         state._ctx = visibleCtx
     }
@@ -700,6 +705,28 @@ export const drawSelectedPoints = () => {
         resolved.push(p)
     })
     drawPointsBatch(resolved, 6, color)
+}
+
+// Marqueur des sommets multi-points (cf. DESIGN.md §7.10) : anneau
+// orange autour des positions de la FORME ACTIVE portant plusieurs
+// entrees pointList (doublons de scenes legacy/importees) — candidats
+// a la fusion #mergePoints. Rendu dans la scene stable (offscreen)
+// APRES drawSelectedPoints pour rester visible meme quand le sommet
+// est selectionne (le cercle cyan r6 l'ecraserait sinon). Gate preview
+// comme les autres aides d'edition (points de controle). Over-stroke
+// inoffensif : N entrees au meme sommet dessinent N anneaux
+// identiques superposes = un seul anneau visible (batches via
+// drawPointsBatch = 1 beginPath/stroke).
+export const drawMultiPointMarkers = () => {
+    const shape = state.shapes[state.activeShapeIndex]
+    const multi = getMultiPointIndices(shape)
+    if (multi.size === 0) return
+    const points = []
+    multi.forEach((idx) => {
+        const p = shape.pointList[idx]
+        if (p) points.push(p)
+    })
+    drawPointsBatch(points, MULTI_POINT_RADIUS, COLOR_MULTI_POINT)
 }
 
 export const drawSelectionBox = (p1, p2) => {

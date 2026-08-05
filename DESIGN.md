@@ -1276,6 +1276,65 @@ Quand le sommet surve a plusieurs refs (cluster §3.2 ou topologie de mesh dense
 
 **Edge case (filet défensif non appliqué)** : `getStackTriangleRefs` peut retourner plusieurs entrées pour le même `triangleIndex` si 2+ slots du même triangle sont adjacents au point (cas dégénéré topologique). Une dedup par référence (`!refs.some(r => r.ref === entry.ref)`) serait plus robuste mais n'est pas appliquée (dette technique consignée ; nit reviewer du commit `2c586fa`). Le slotId est identifié via la position de l'index dans le tableau `tris[k]` : `triangle.tris[k].p1` → slotId `"p1"`, etc. — le format affiche `{triangleIndex}.{slotId}` (cf. spec §3.10).
 
+### §7.10 Marqueur des sommets multi-points (anneau orange)
+
+Evolution « ajouter une distinction visuelle pour les sommets qui
+correspondent à plusieurs points afin de faciliter leur regroupement ».
+
+**Sémantique** : un **sommet multi-points** est une position physique
+portant **plusieurs entrées `pointList`** dans la forme active (cluster
+§3.2, tolérance 0.01) — autrement dit des **doublons** : des points
+distincts superposés au même endroit, chacun référencé par ses propres
+slots triangles. C'est le cas des scènes legacy / importées (le wire
+format déduplique par coord exacte à l'import, mais les fichiers JSON
+anciens — p.ex. un dump d'avant la restructuration `{pointList, tris}`
+— peuvent porter des coords identiques en doublon ; `validateShape`
+les signale en log soft sous l'invariant I3). Ces sommets sont les
+**vrais candidats à la fusion** `#mergePoints` : cliquer dessus en
+mode vertex sélectionne TOUT le cluster (`getIndicesAtSamePosition`),
+puis le bouton Fusionner les regroupe en une seule entrée au centroid.
+
+**Distinction avec §7.9** : `getStackTriangleRefs` (pill `stack (N)`
+au survol) compte les **slots triangles** partageant la position — y
+compris la topologie dense légitime (centre d'un éventail de cercle,
+sommet partagé par N triangles), qui n'a rien à fusionner. Le
+marqueur §7.10 compte les **entrées `pointList`** (les « points » au
+sens de l'édition) : c'est la multiplicité que l'utilisateur peut
+vraiment réduire par la fusion. Un cercle généré par l'app ne porte
+donc AUCUN marqueur (un seul `pointList` par coord, invariant I3).
+
+**Rendu** : anneau **orange** (`COLOR_MULTI_POINT = #FFA500`, rayon
+`MULTI_POINT_RADIUS = 5`) autour du point jaune (rayon 2). Orange
+choisi pour rester distinct à tous les états : jaune des points actifs
+(#FFFF00), cyan de sélection (#00FFFF), vert de hover (#00FF00),
+blanc du curseur (#FFFFFF). Il est dessiné dans la **scène stable**
+(offscreen, `drawMultiPointMarkers` appelé dans
+`renderSceneToOffscreen` **après** `drawSelectedPoints`) : un sommet
+sélectionné garde son anneau visible au-dessus du cercle cyan r6.
+Batching via `drawPointsBatch` (1 beginPath/stroke) ; l'over-stroke de
+N anneaux identiques sur la même position est inoffensif (un seul
+anneau visible). Masqué en preview, comme tous les points de contrôle.
+
+**Forme active uniquement** : `mergeSelectedPoints` n'agit que sur la
+forme active (et §7.8/§7.9 sont déjà actives-shape-only) — les
+marqueurs guident la fusion là où elle s'applique, sans bruit sur les
+formes inactives grisées. À la navigation de forme, les marqueurs
+suivent la forme active.
+
+**Complexité** : `getMultiPointIndices(shape)` (geometry.js) trie les
+indices par x puis balaye une fenêtre glissante — break dès que
+`dx >= 0.01` (la tolérance exigeant les deux axes, toute paire au-delà
+est non-adjacente par construction). O(N log N) en cas normal, au
+lieu du O(N²) naïf de `validateShape` ; le pire cas (N points de même
+x) retombe sur O(N²), borne déjà acceptée pour I3. Recalculé à chaque
+re-render offscreen, donc jamais sur le chemin chaud du blit.
+
+**Anti-régression** : le marqueur ne doit apparaître que pour de VRAIS
+doublons — une scène dessinée par l'app (I3) n'en affiche aucun ; les
+scènes importées avec doublons en affichent un par position dupliquée,
+et la fusion réduit le compte à zéro (contre-épreuve couverte par
+`scripts/smoke-multipoint.mjs`).
+
 ---
 
 ## §8. Pile d'historique avec stockage delta

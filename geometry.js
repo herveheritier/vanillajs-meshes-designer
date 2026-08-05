@@ -110,6 +110,47 @@ export const getIndicesAtSamePosition = (p, tolerance = 0.01) => {
     return result
 }
 
+// (evolution « sommets multi-points », cf. DESIGN.md §7.10) : indices
+// pointList de `shape` dont la position physique est partagee avec au
+// moins une AUTRE entree (tol §3.2 0.01). Ce sont les vrais candidats
+// a la fusion mergeSelectedPoints (plusieurs entrees au meme sommet =
+// doublons de scenes legacy/importees) — distinct de getStackTriangleRefs
+// (count de SLOTS triangles, topologie dense legitime).
+//
+// Implementation : tri des indices par x + fenetre glissante — on
+// break des que dx >= 0.01 (la tolerance exigeant les DEUX axes, toute
+// paire au-dela est non-adjacente par construction). Exactement la
+// meme semantique qu'adjacentPoints (strict < 0.01) : aucune paire
+// adjacente echappee, aucun faux positif de bucketing arrondi. O(N log N)
+// au lieu du O(N²) naif de validateShape — le marqueur est recalcule a
+// chaque re-render offscreen, la fenetre ne s'etend reellement que sur
+// des doublons (rares) ; le pire cas (N points de meme x) retombe sur
+// O(N²), meme borne que validateShape deja accepte.
+export const getMultiPointIndices = (shape) => {
+    const multi = new Set()
+    if (!shape || !Array.isArray(shape.pointList)) return multi
+    const pointList = shape.pointList
+    const ordered = []
+    for (let i = 0; i < pointList.length; i++) {
+        const p = pointList[i]
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
+        ordered.push({ idx: i, p })
+    }
+    ordered.sort((a, b) => a.p.x - b.p.x)
+    for (let i = 0; i < ordered.length; i++) {
+        const a = ordered[i]
+        for (let j = i + 1; j < ordered.length; j++) {
+            const b = ordered[j]
+            if (b.p.x - a.p.x >= 0.01) break
+            if (adjacentPoints(a.p, b.p, 0.01)) {
+                multi.add(a.idx)
+                multi.add(b.idx)
+            }
+        }
+    }
+    return multi
+}
+
 // Liste des slots (triangleIndex, slotId) qui portent une ref
 // adjacente a `p`. Utilise par §7.9 pour enumerer les doublons
 // quand plusieurs refs distinctes partagent la meme position

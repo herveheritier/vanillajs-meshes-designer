@@ -22,6 +22,17 @@ export const COLOR_SELECTED_POINT = '#00FFFF'
 export const COLOR_SELECTED_POINT_DIMMED = 'rgba(0, 255, 255, 0.6)'
 export const COLOR_SELECTION_BOX_FILL = 'rgba(0, 255, 255, 0.15)'
 export const COLOR_SELECTION_BOX_STROKE = '#00FFFF'
+// Rationale : voir DESIGN.md §7.10
+// Marqueur des sommets multi-points : anneau orange autour des
+// positions portant PLUSIEURS entrees pointList (doublons de scenes
+// legacy/importees) — candidats a la fusion #mergePoints. Orange
+// (#FFA500) choisi pour rester distinct a tous les etats : du jaune
+// des points actifs (#FFFF00), du cyan de selection (#00FFFF), du
+// vert de hover (#00FF00) et du blanc du curseur (#FFFFFF). Rayon
+// situe entre le cercle de hover (5 px) et celui de selection (6 px)
+// pour un anneau lisible autour du point jaune (rayon 2).
+export const COLOR_MULTI_POINT = '#FFA500'
+export const MULTI_POINT_RADIUS = 5
 // Rationale : voir DESIGN.md §8
 export const COLOR_CURSOR = '#FFFFFF'
 export const COLOR_RETICLE = '#FFFFFF'
