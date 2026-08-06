@@ -219,6 +219,60 @@ try {
     check('D : Supprimer remplace par une scène vide', info.points === 0 && info.tris === 0)
     check('D : undoCount (4) après suppression', (await undoCount()) === '(4)')
 
+    // ===================== E. Fenêtre d'enregistrement =====================
+    // Évolution « enregistrement scène » : #export (et Ctrl+S, cf.
+    // smoke-edit) ouvre une fenêtre de sélection de l'emplacement
+    // (liste des scènes déjà sauvegardées) avec possibilité de
+    // renommage, positionnée sur l'emplacement précédent. Valider
+    // télécharge « <nom>.json » et mémorise l'emplacement.
+    await draw(TRIANGLE)
+    info = await sceneInfo()
+    check('E : triangle redessiné', info.points === 3 && info.tris === 1)
+
+    // E1. Ouverture via le bouton #export (première sauvegarde :
+    // nom courant proposé, liste vide).
+    await page.click('#export')
+    check('E : #export ouvre la fenêtre', await modalVisible('#saveModal'))
+    check('E : focus dans le champ nom', (await activeId()) === 'saveName')
+    check('E : nom courant pré-rempli', (await page.locator('#saveName').inputValue()) === 'nouvelleScene')
+    check('E : aucune rangée (première sauvegarde)', (await page.locator('#saveSlots .save-slot').count()) === 0)
+
+    // E2. Renommage + enregistrement : fichier « <nom>.json »,
+    // emplacement mémorisé en tête de liste.
+    await page.keyboard.type('sceneTest')
+    const saveDownload = page.waitForEvent('download')
+    await page.click('#saveModalValidate')
+    const sd = await saveDownload
+    check('E : téléchargement « sceneTest.json »', sd && sd.suggestedFilename() === 'sceneTest.json')
+    check('E : fenêtre fermée après enregistrement', await modalHidden('#saveModal'))
+    const savedNames = () => page.evaluate(() => {
+        try { return JSON.parse(localStorage.getItem('meshesDesigner.savedScenes') || '[]') } catch (e) { return [] }
+    })
+    check('E : emplacement mémorisé', (await savedNames()).length === 1 && (await savedNames())[0] === 'sceneTest')
+
+    // E3. Ré-ouverture : positionnée sur l'emplacement précédent
+    // (champ pré-rempli + rangée « précédent » active).
+    await page.click('#export')
+    check('E : fenêtre rouverte', await modalVisible('#saveModal'))
+    check('E : positionné sur l\'emplacement précédent', (await page.locator('#saveName').inputValue()) === 'sceneTest')
+    check('E : rangée « précédent » active',
+        (await page.locator('#saveSlots .save-slot.current').count()) === 1
+        && (await page.locator('#saveSlots .save-slot.current .save-slot-name').textContent()) === 'sceneTest')
+
+    // E4. Clic sur une rangée : le champ reprend l'emplacement.
+    await page.locator('#saveSlots .save-slot').click()
+    check('E : clic rangée remplit le champ', (await page.locator('#saveName').inputValue()) === 'sceneTest')
+
+    // E5. Nom vide : enregistrement refusé, la fenêtre reste ouverte
+    // et le champ reprend le focus ; Echap referme sans sauvegarder.
+    await page.locator('#saveName').fill('')
+    await page.click('#saveModalValidate')
+    check('E : nom vide → fenêtre ouverte', await modalVisible('#saveModal'))
+    check('E : focus re-posé sur le champ', (await activeId()) === 'saveName')
+    await page.keyboard.press('Escape')
+    check('E : Echap ferme la fenêtre', await modalHidden('#saveModal'))
+    check('E : scène intacte', (await sceneInfo()).points === 3)
+
     check('aucune erreur JS sur tout le parcours', errors.length === 0)
 } catch (err) {
     check('parcours sans exception', false)

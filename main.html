@@ -1290,6 +1290,97 @@
                 border-color: rgb(80, 220, 25);
             }
 
+            /* ========= Modal d'enregistrement : specifique ========= */
+            /* Fenêtre de sélection de l'emplacement (évolution
+               « enregistrement scène ») : un champ de renommage
+               (#saveName) + la liste des emplacements déjà utilisés
+               (#saveSlots, noms de scènes sauvegardées du plus récent
+               au plus ancien). L'emplacement précédent (= le plus
+               récent) est présélectionné (classe .save-slot.current)
+               et le champ est focus avec le texte sélectionné pour
+               renommer immédiatement. Même charte que les autres
+               modales (.modal-box, .modal-primary). */
+            .save-name-label {
+                display: block;
+                font-size: 11px;
+                color: rgba(220, 220, 220, 0.75);
+                margin-bottom: 4px;
+            }
+            #saveName {
+                width: 100%;
+                box-sizing: border-box;
+                font-family: monospace;
+                font-size: 13px;
+                padding: 6px 8px;
+                background-color: #1c1c1c;
+                color: rgb(230, 230, 230);
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                border-radius: 3px;
+                margin-bottom: 12px;
+            }
+            #saveName:focus {
+                outline: none;
+                border-color: rgb(55, 194, 0);
+            }
+            .save-slots {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                margin-bottom: 14px;
+                max-height: 180px;
+                overflow-y: auto;
+            }
+            /* Rangée d'emplacement : nom + badge « précédent » pour le
+               plus récent. Clic = reprendre cet emplacement (remplit
+               le champ). La rangée courante (.current) reprend le
+               langage vert accent de la charte. */
+            .save-slot {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                width: 100%;
+                font-family: monospace;
+                font-size: 12px;
+                text-align: left;
+                padding: 5px 8px;
+                background-color: rgba(255, 255, 255, 0.04);
+                color: rgb(220, 220, 220);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 3px;
+                cursor: pointer;
+                transition: background-color 0.10s, border-color 0.10s, color 0.10s;
+            }
+            .save-slot:hover {
+                background-color: rgba(255, 255, 255, 0.10);
+                border-color: rgba(255, 255, 255, 0.35);
+                color: rgb(255, 255, 255);
+            }
+            .save-slot .save-slot-name {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .save-slot .save-slot-rank {
+                font-size: 10px;
+                color: rgba(220, 220, 220, 0.5);
+                flex-shrink: 0;
+            }
+            .save-slot.current {
+                border-color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.12);
+                color: rgb(80, 220, 25);
+            }
+            .save-slot.current .save-slot-rank {
+                color: rgb(55, 194, 0);
+            }
+            .save-slots-empty {
+                font-size: 11px;
+                color: rgba(220, 220, 220, 0.55);
+                padding: 4px 2px;
+                margin-bottom: 12px;
+            }
+
             /* ========= Modal d'aide raccourcis : specifique ========= */
             /* Reprend la classe .modal-box partagee ci-dessus ; seuls
                les styles de liste de raccourcis sont specifiques. */
@@ -1820,6 +1911,30 @@
                 <div id="mergeErrorModalInfo" class="modal-info">—</div>
                 <div class="modal-buttons">
                     <button id="mergeErrorModalClose" class="modal-primary" type="button">OK</button>
+                </div>
+            </div>
+        </div>
+        <!-- Modale d'enregistrement de la scène (évolution
+             « enregistrement scène ») : fenêtre de sélection de
+             l'emplacement avec possibilité de renommage. Le champ
+             #saveName contient le nom de l'emplacement précédent
+             (texte sélectionné pour renommer directement), la liste
+             #saveSlots affiche les emplacements déjà utilisés (noms
+             de scènes sauvegardées, du plus récent au plus ancien) —
+             un clic sur un emplacement le reprend. Le nom choisi
+             devient le nom de la scène (HUD + wire format) et le
+             fichier téléchargé est « <nom>.json ». -->
+        <div id="saveModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="saveTitle" aria-hidden="true" hidden>
+            <div class="modal-backdrop" data-save-close></div>
+            <div class="modal-box">
+                <div id="saveTitle" class="modal-title">Enregistrer la scène</div>
+                <div id="saveModalInfo" class="modal-info">—</div>
+                <label for="saveName" class="save-name-label">Nom de la scène</label>
+                <input id="saveName" type="text" autocomplete="off" spellcheck="false" aria-label="Nom de la scène" />
+                <div id="saveSlots" class="save-slots"></div>
+                <div class="modal-buttons">
+                    <button id="saveModalCancel" type="button">Annuler</button>
+                    <button id="saveModalValidate" class="modal-primary" type="button">Enregistrer</button>
                 </div>
             </div>
         </div>

@@ -250,3 +250,15 @@ export const COLOR_PALETTE_STORAGE_KEY = 'meshesDesigner.colorPalette'
 // d'affichage (clic swatch, Reset, Defauts...) ne doivent pas ecraser
 // le reglage manuel.
 export const COLOR_ALPHA_STORAGE_KEY = 'meshesDesigner.colorAlpha'
+// Emplacements d'enregistrement de la scène (évolution « enregistrement
+// scène ») : noms des scènes déjà sauvegardées, du plus récent au plus
+// ancien, persistés comme préférence (même statut que consoleVisible /
+// colorPalette). C'est la liste affichée par la fenêtre d'enregistrement
+// (sélection de l'emplacement + renommage), qui se positionne sur
+// l'emplacement précédent (= le plus récent). Hors du wire format des
+// fichiers exportés.
+export const SAVED_SCENES_STORAGE_KEY = 'meshesDesigner.savedScenes'
+// Nombre maximal d'emplacements mémorisés : la liste reste lisible dans
+// la fenêtre d'enregistrement (une liste démesurée deviendrait
+// inutilisable à parcourir).
+export const MAX_SAVED_SCENES = 20

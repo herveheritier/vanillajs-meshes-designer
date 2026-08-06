@@ -36,7 +36,11 @@ import {
     restoreCircleSegments, wireMergeDropWheelControl, restoreMergeDropRadius,
 } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
-import { showHelp, hideHelp, wireHelpModal, showResetModal, hideResetModal, wireResetModal } from './modals.js'
+import {
+    showHelp, hideHelp, wireHelpModal,
+    showResetModal, hideResetModal, wireResetModal,
+    showSaveModal, hideSaveModal, wireSaveModal,
+} from './modals.js'
 import {
     prevShape, nextShape, addShape, deleteShape, hideDeleteShapeModal, wireDeleteShapeModal,
 } from './shapes.js'
@@ -152,6 +156,10 @@ wireGridControl()
     wireClearConsole()
 wireHelpModal()
 wireResetModal(() => resetAll())
+// La fenêtre d'enregistrement (évolution « enregistrement scène ») :
+// valider transmet le nom choisi à saveMesh, qui télécharge
+// « <nom>.json », adopte ce nom de scène et enregistre l'emplacement.
+wireSaveModal((name) => saveMesh(name))
 wireDeleteShapeModal()
 wireMergeErrorModal()
 wireBoardDrop()
@@ -171,7 +179,17 @@ const wireButton = (id, handler) => {
     })
 }
 
-wireButton('export', () => saveMesh())
+// La sauvegarde (bouton #export ET Ctrl+S) ouvre la fenêtre de
+// sélection de l'emplacement avec renommage (modals.js), positionnée
+// sur l'emplacement précédent. En preview la chrome (et donc les
+// modales) est masquée : on sort d'abord de la preview pour que la
+// fenêtre soit visible — le geste est non-mutant pour la scène.
+const openSaveModal = () => {
+    if (state.previewMode) togglePreview()
+    showSaveModal()
+}
+
+wireButton('export', () => openSaveModal())
 wireButton('reset', () => showResetModal())
 wireButton('selectAll', () => selectAllPoints())
 wireButton('helpBtn', () => showHelp())
@@ -536,9 +554,11 @@ document.addEventListener('keydown', (e) => {
     const resetM = document.querySelector('#resetModal')
     const deleteShapeM = document.querySelector('#deleteShapeModal')
     const mergeErrorM = document.querySelector('#mergeErrorModal')
+    const saveM = document.querySelector('#saveModal')
     const isResetOpen = resetM && !resetM.hidden
     const isDeleteShapeOpen = deleteShapeM && !deleteShapeM.hidden
     const isMergeErrorOpen = mergeErrorM && !mergeErrorM.hidden
+    const isSaveOpen = saveM && !saveM.hidden
     // Escape : en preview, priorite absolue — on quitte la preview
     // avant toute consideration de modale (la chrome est masquee, un
     // modal ouvert n'a pas de sens a l'ecran).
@@ -578,11 +598,12 @@ document.addEventListener('keydown', (e) => {
         else disarmShapeTool()
         return
     }
-    if (e.code === 'Escape' && !e.repeat && (isHelpOpen || isResetOpen || isDeleteShapeOpen || isMergeErrorOpen)) {
+    if (e.code === 'Escape' && !e.repeat && (isHelpOpen || isResetOpen || isDeleteShapeOpen || isSaveOpen || isMergeErrorOpen)) {
         e.preventDefault()
         if (isHelpOpen) hideHelp()
         if (isResetOpen) hideResetModal()
         if (isDeleteShapeOpen) hideDeleteShapeModal()
+        if (isSaveOpen) hideSaveModal()
         if (isMergeErrorOpen) hideMergeErrorModal()
     }
     // Palette : Echap en mode edition (double-clic sur un swatch) =
@@ -595,7 +616,7 @@ document.addEventListener('keydown', (e) => {
         cancelPaletteEdit()
         return
     }
-    if (e.code === 'Escape' && !e.repeat && state.isTriangleColorPanelOpen && !isHelpOpen && !isResetOpen && !isDeleteShapeOpen && !isMergeErrorOpen) {
+    if (e.code === 'Escape' && !e.repeat && state.isTriangleColorPanelOpen && !isHelpOpen && !isResetOpen && !isDeleteShapeOpen && !isSaveOpen && !isMergeErrorOpen) {
         e.preventDefault()
         hideTriangleColorPanel()
     }
@@ -623,8 +644,10 @@ document.addEventListener('keydown', (e) => {
     }
     // Preview = visualisation seule : undo/redo sont des mutations de
     // scene — elles resteraient invisibles a l'ecran (geometrie
-    // masquee) et sont donc ignorees. Ctrl+S (export) et Ctrl+0
-    // (reset zoom) restent disponibles : non-mutants de la scene.
+    // masquee) et sont donc ignorees. Ctrl+0 (reset zoom) reste
+    // disponible (non-mutant). Ctrl+S sort d'abord de la preview pour
+    // ouvrir la fenêtre d'enregistrement (la chrome — et donc les
+    // modales — est masquée en preview, cf. openSaveModal).
     if (!state.previewMode && (e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z')) {
         e.preventDefault()
         redo()
@@ -636,7 +659,7 @@ document.addEventListener('keydown', (e) => {
         redo()
     } else if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.key === 's' || e.key === 'S')) {
         e.preventDefault()
-        saveMesh()
+        openSaveModal()
     } else if ((e.ctrlKey || e.metaKey) && (e.code === 'Digit0' || e.key === '0')) {
         if (e.repeat) return
         e.preventDefault()

@@ -8,6 +8,7 @@ import {
     IMPORT_MODE_STORAGE_KEY, TAU,
     SCENE_FORMAT, SCENE_FORMAT_VERSION,
     MAX_HISTORY, UNDO_STORAGE_KEY,
+    SAVED_SCENES_STORAGE_KEY, MAX_SAVED_SCENES,
 } from './constants.js'
 import { drawBoard, requestDraw } from './draw.js'
 // updateZoomDisplay est appele dans resetAll (rafraichit le HUD zoom
@@ -634,19 +635,97 @@ export const wireBeforeUnload = () => {
     window.addEventListener('beforeunload', onBeforeUnload)
 }
 
-// ===== Save (export fichier) =====
+// ===== Emplacements d'enregistrement =====
+//
+// Évolution « enregistrement scène » : l'enregistrement passe par une
+// fenêtre de sélection de l'emplacement (modale #saveModal, modals.js)
+// qui se positionne sur l'emplacement PRÉCÉDENT. Un emplacement est un
+// nom de scène déjà sauvegardé ; la liste est persistée comme
+// préférence (clé SAVED_SCENES_STORAGE_KEY, JSON array de strings,
+// plus récent en premier, dédupliquée, bornée à MAX_SAVED_SCENES) et
+// n'entre JAMAIS dans le wire format des fichiers exportés.
 
-export const saveMesh = () => {
+export const getSavedSceneNames = () => {
     try {
+        const raw = localStorage.getItem(SAVED_SCENES_STORAGE_KEY)
+        const arr = raw ? JSON.parse(raw) : []
+        if (!Array.isArray(arr)) return []
+        return arr
+            .filter(n => typeof n === 'string' && n.trim().length > 0)
+            .slice(0, MAX_SAVED_SCENES)
+    } catch (e) {
+        return []
+    }
+}
+
+const persistSavedSceneNames = (names) => {
+    try {
+        localStorage.setItem(SAVED_SCENES_STORAGE_KEY, JSON.stringify(names))
+    } catch (e) {
+        // Quota dépassé typiquement : l'emplacement s'oublie, l'export
+        // fichier (action principale) passe — dégradation silencieuse.
+    }
+}
+
+// Enregistre un emplacement après une sauvegarde réussie : le nom passe
+// en tête de liste (plus récent), les doublons sont retirés, la liste
+// est bornée.
+export const recordSavedSceneName = (name) => {
+    const trimmed = typeof name === 'string' ? name.trim() : ''
+    if (!trimmed) return
+    const names = getSavedSceneNames().filter(n => n !== trimmed)
+    names.unshift(trimmed)
+    persistSavedSceneNames(names.slice(0, MAX_SAVED_SCENES))
+}
+
+// Nom de fichier sûr pour le téléchargement : le nom de scène saisi
+// peut contenir des caractères interdits dans les noms de fichiers
+// (/, \, :, *, ?, ", <, >, | et les contrôles) — remplacés par « - ».
+// Seul le nom du fichier téléchargé est assaini ; le nom « propre »
+// (saisi dans la fenêtre) reste le nom de scène (HUD + wire format).
+const sanitizeFileName = (name) => {
+    const cleaned = String(name == null ? '' : name)
+        .trim()
+        .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
+    return cleaned.length > 0 ? cleaned : 'scene'
+}
+
+// ===== Save (export fichier) =====
+//
+// `name` (optionnel) est l'emplacement choisi dans la fenêtre
+// d'enregistrement : il devient le nom de la scène (le wire format
+// embarqué porte le même nom que le fichier téléchargé) et le fichier
+// est téléchargé sous « <nom>.json ». Sans argument (back-compat,
+// appels programmatiques), le nom courant de la scène est utilisé.
+export const saveMesh = (name) => {
+    try {
+        const trimmed = typeof name === 'string' ? name.trim() : ''
+        const current = (typeof state.sceneName === 'string' && state.sceneName.trim().length > 0)
+            ? state.sceneName.trim()
+            : 'nouvelleScene'
+        const baseName = trimmed.length > 0 ? trimmed : current
+        // Le nom de scène adopte l'emplacement AVANT la sérialisation :
+        // serializeState embarque `name` dans le wire format — le
+        // fichier écrit et la scène restaurée doivent porter le même
+        // nom que l'emplacement choisi.
+        state.sceneName = baseName
+        // La scène locale (localStorage) est réécrite avec le nouveau
+        // nom : un rechargement immédiat après la sauvegarde restaure
+        // le nom choisi (cohérence avec l'emplacement enregistré).
+        // Sans cette écriture, seul le prochain zoom/pan/édition
+        // persisterait le nom — le reload retomberait sur l'ancien.
+        persistState()
+        const fileName = sanitizeFileName(baseName)
         const blob = new Blob([serializeState()], { type: 'application/json' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = 'mesh-' + Date.now() + '.json'
+        a.download = fileName + '.json'
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
+        recordSavedSceneName(baseName)
         // saveMesh pose la baseline sur la scene qui vient d'etre
         // exportee en fichier (dirty = false jusqu'à modification).
         // Equivaut a captureSceneBaseline() mais apres avoir
@@ -654,7 +733,8 @@ export const saveMesh = () => {
         // disque n'est plus le baseline courant). On capture
         // directement pour eviter une race avec une mutation
         // pendante qui aurait pu modifier state.shapes entre
-        // serializeState et updateSceneStatus.
+        // serializeState et updateSceneStatus. captureSceneBaseline
+        // appelle updateSceneStatus : le HUD affiche le nouveau nom.
         captureSceneBaseline()
         log('Export OK: ' + a.download)
     } catch (e) {
