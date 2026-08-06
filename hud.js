@@ -34,6 +34,29 @@ export const updateSelectionHud = () => {
         state.mergeDropCandidate = undefined
         updateMergeButtonState()
     }
+    // (évolution « couper, copier, coller les éléments sélectionnés »)
+    // les boutons #copy / #cut / #paste dépendent de la sélection et du
+    // presse-papiers : resynchronisés à chaque mutation de sélection
+    // (et par les fonctions presse-papiers de editor.js).
+    updateClipboardButtons()
+}
+
+// (évolution « couper, copier, coller les éléments sélectionnés ») —
+// état disabled des boutons #copy / #cut / #paste : Couper/Copier
+// nécessitent une sélection non vide, Coller un presse-papiers rempli
+// (state.clipboard avec des points). Ne lit QUE state (pas d'import de
+// editor.js — cycle interdit, cf. §1.1) ; appelée par updateSelectionHud
+// et par copySelection / cutSelection / pasteClipboard (editor.js).
+export const updateClipboardButtons = () => {
+    const copyBtn = document.querySelector('#copy')
+    const cutBtn = document.querySelector('#cut')
+    const pasteBtn = document.querySelector('#paste')
+    const hasSelection = state.selectedPoints.length > 0
+    if (copyBtn) copyBtn.disabled = !hasSelection
+    if (cutBtn) cutBtn.disabled = !hasSelection
+    const clip = state.clipboard
+    const hasClipboard = !!clip && Array.isArray(clip.points) && clip.points.length > 0
+    if (pasteBtn) pasteBtn.disabled = !hasClipboard
 }
 
 // (fusion par déplacement, cf. DESIGN.md §7.11) — état visuel du

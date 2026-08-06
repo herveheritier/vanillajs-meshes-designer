@@ -1537,6 +1537,64 @@ en tête de `beginGrabbing` (pas de résidu d'un drag précédent) et à
 chaque mutation de sélection non-singleton. Couvert par
 `scripts/smoke-mergedrop.mjs`.
 
+### §7.12 Presse-papiers interne : couper / copier / coller (`#copy` / `#cut` / `#paste`, Ctrl+C / Ctrl+X / Ctrl+V)
+
+(évolution « couper, copier, coller les éléments sélectionnés »)
+
+**Périmètre** : les opérations portent sur la sélection de la FORME
+ACTIVE — les points de `state.selectedPoints` + les triangles de la
+forme active ENTIÈREMENT contenus (les 3 slots `pX` sont des indices
+sélectionnés). Les triangles partiels (`pX` undefined, construction en
+cours) ne sont jamais copiés. Le `fill` des triangles est conservé
+(propriété du triangle, même convention que `compactPointList`).
+
+**Presse-papiers interne, pas `navigator.clipboard`** : le contenu est
+un sous-ensemble du modèle `{pointList, tris}` — format interne que le
+presse-papiers système ne transporte pas fidèlement, et l'accès async +
+permissions serait fragile sous `file://` (build portable).
+`state.clipboard = { points: [{x,y}…], tris: [{p1,p2,p3,fill}…],
+offset }` ; `offset` = compteur de collages de la chaîne courante
+(réinitialisé à 0 à chaque copier/couper, incrémenté après chaque
+coller). Non persisté en localStorage (session seule, comme la preview).
+
+**Copier** (`copySelection`, editor.js) : `captureClipboard` lit les
+coords des points sélectionnés + les triangles contenus, ré-indexés en
+indices RELATIFS à la liste copiée (le collage re-base sur
+`pointList.length` de la forme active au moment du collé). La sélection
+est conservée.
+
+**Couper** (`cutSelection`) : copie puis supprime la sélection via
+`deleteSelectedPoint` (même sémantique que Backspace : tris à < 2
+survivants filtrés, compactage I2, `replaceShapePatch` before/after —
+un seul chemin de vérité pour la suppression). Le presse-papiers reste
+rempli pour coller.
+
+**Coller** (`pasteClipboard`) : append les points à la fin du
+`pointList` de la FORME ACTIVE (coords absolues), re-indexe les
+triangles dessus (base = longueur pré-mutation), sélectionne la copie
+collée. **Décalage de collage** : chaque collage décale d'un demi-pas
+de grille (`GRID_STEP / 2`) supplémentaire depuis la source (cumulé via
+`clipboard.offset`), pour que les copies successives se cascadent
+visuellement et restent distinctes de la source — grabbables sans
+ambiguïté malgré les doublons de position (les doublons restent de
+toute façon signalés par l'anneau orange §7.10).
+
+**Boutons & raccourcis** : `#copy` / `#cut` / `#paste` dans le groupe
+sélection de la toolbar (après `#selectionCount`), désactivés sans
+sélection / sans presse-papiers (`updateClipboardButtons`, hud.js —
+appelé par `updateSelectionHud` et par les fonctions presse-papiers).
+Ctrl+C / Ctrl+X / Ctrl+V (main.js) passent par les MÊMES fonctions — un
+seul chemin de vérité. Garde `typing` : indispensable pour Ctrl+V, sans
+elle le coller interne intercepte la frappe dans un champ (ex. champ de
+renommage de la fenêtre d'enregistrement) et casserait le collage natif
+du navigateur. Ignorés en preview (mutations de scène, même politique
+que undo/redo).
+
+**Historique** : couper et coller produisent chacun UNE entry undo
+(`replaceShapePatch`) — Ctrl+Z annule le collage (les points collés
+disparaissent, la sélection revient), Ctrl+Z après un couper restaure
+les points supprimés. Couvert par `scripts/smoke-clipboard.mjs`.
+
 ---
 
 ## §8. Pile d'historique avec stockage delta

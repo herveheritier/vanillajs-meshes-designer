@@ -289,6 +289,29 @@ export const state = {
     // par restoreMergeDropRadius). Cf. DESIGN.md §7.11.
     mergeDropRadius: MERGE_DROP_RADIUS_DEFAULT_PX,
 
+    // ===== Presse-papiers interne (couper / copier / coller) =====
+    // (évolution « couper, copier, coller les éléments sélectionnés »)
+    // Contenu du presse-papiers INTERNE de l'application — pas l'API
+    // navigateur navigator.clipboard : le contenu est un sous-ensemble
+    // du modèle {pointList, tris} (format interne que le presse-papiers
+    // système ne transporte pas fidèlement, et accès async + permissions
+    // fragiles sous file:// — cf. build portable). Non persisté en
+    // localStorage (session seule, comme la preview).
+    // Shape : { points: [{x, y}...], tris: [{p1, p2, p3, fill}...],
+    // offset: n }.
+    //   - points = coords (model) des points copiés de la forme active.
+    //   - tris = les triangles ENTIÈREMENT contenus dans la sélection,
+    //     ré-indexés en indices RELATIFS à la liste points copiée (le
+    //     collage re-base sur la longueur de pointList de la forme
+    //     active au moment du collé).
+    //   - offset = compteur de collages de la chaîne courante,
+    //     réinitialisé à 0 à chaque copier/couper et incrémenté après
+    //     chaque coller — le décalage de collage (un demi-pas de grille
+    //     par collage, cf. editor.js pasteClipboard) fait cascader les
+    //     copies successives et les distingue visuellement de la source.
+    // undefined = presse-papiers vide (bouton Coller désactivé).
+    clipboard: undefined,
+
     // ===== Move-all (AltGr grab) =====
     moveAllActive: false,
 

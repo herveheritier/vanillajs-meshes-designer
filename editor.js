@@ -15,7 +15,7 @@ import {
     ANNULUS_INNER_RATIO_MIN, ANNULUS_INNER_RATIO_MAX, ANNULUS_INNER_RATIO_DEFAULT,
 } from './constants.js'
 import { drawBoard, drawPoint, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
-import { updateSelectionHud, updateColorButtonState, updateShapesButton } from './hud.js'
+import { updateSelectionHud, updateColorButtonState, updateShapesButton, updateClipboardButtons } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
 import {
@@ -485,6 +485,149 @@ export const selectAllPoints = () => {
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     updateColorButtonState()
+}
+
+// ===== Presse-papiers interne : couper / copier / coller =====
+//
+// (évolution « couper, copier, coller les éléments sélectionnés »)
+// Le presse-papiers est INTERNE à l'application (pas navigator.clipboard)
+// : le contenu est un sous-ensemble du modèle {pointList, tris} — format
+// interne que le presse-papiers système ne sait pas transporter, et
+// l'accès async + permissions serait fragile sous file:// (build
+// portable). state.clipboard = { points, tris, offset } (cf. state.js).
+// Le copier/couper capture les points sélectionnés de la FORME ACTIVE +
+// les triangles ENTIÈREMENT contenus (les 3 slots pX sont des indices
+// sélectionnés ; les triangles partiels, pX undefined, sont de la
+// construction en cours et ne sont jamais copiés). Le fill des triangles
+// survit (propriété du triangle, même convention que compactPointList /
+// cloneShape). Le coller cible TOUJOURS la forme active (les coords sont
+// absolues) : il append les points à la fin de son pointList, re-indexe
+// les triangles dessus (base = longueur pré-mutation) et sélectionne la
+// copie collée. Chaque collage décale d'un demi-pas de grille
+// (GRID_STEP / 2) par rapport à la source, cumulé via clipboard.offset,
+// pour que les copies successives se cascadent visuellement et restent
+// distinctes de la source (grabbables sans ambiguïté malgré les
+// doublons de position).
+
+// Capture (sans log ni effet de bord) du contenu de la sélection
+// courante : { points, tris } ou null si rien à copier. Les tris sont
+// ré-indexés en indices RELATIFS à la liste points copiée (le coller
+// re-base sur pointList.length de la forme active).
+const captureClipboard = () => {
+    if (state.selectedPoints.length === 0) return null
+    const shape = activeShape()
+    if (!shape) return null
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    const selectedSet = new Set(state.selectedPoints)
+    const rel = new Map()
+    const points = []
+    state.selectedPoints.forEach((idx, relIdx) => {
+        const p = pointList[idx]
+        if (!p) return
+        rel.set(idx, relIdx)
+        points.push({ x: p.x, y: p.y })
+    })
+    if (points.length === 0) return null
+    const tris = (Array.isArray(shape.tris) ? shape.tris : [])
+        .filter(t => Number.isInteger(t.p1) && Number.isInteger(t.p2) && Number.isInteger(t.p3)
+            && selectedSet.has(t.p1) && selectedSet.has(t.p2) && selectedSet.has(t.p3)
+            // Garde défensive : un indice de sélection périmé (hors
+            // bornes de pointList) reste dans selectedSet mais n'a pas
+            // d'entrée `rel` — le tri serait copié avec des slots
+            // undefined. On exige que les 3 slots aient une image
+            // relative valide.
+            && rel.has(t.p1) && rel.has(t.p2) && rel.has(t.p3))
+        .map(t => ({
+            p1: rel.get(t.p1),
+            p2: rel.get(t.p2),
+            p3: rel.get(t.p3),
+            // Le fill est une propriété du TRIANGLE : il survit au
+            // copier/coller (même convention que compactPointList).
+            fill: typeof t.fill === 'string' ? t.fill : undefined,
+        }))
+    return { points, tris }
+}
+
+// Copie la sélection dans le presse-papiers interne (la sélection est
+// conservée). Raccourci Ctrl+C + bouton #copy.
+export const copySelection = () => {
+    const captured = captureClipboard()
+    if (!captured) return false
+    state.clipboard = { points: captured.points, tris: captured.tris, offset: 0 }
+    log(`Copie : ${captured.points.length} point${captured.points.length > 1 ? 's' : ''}, ${captured.tris.length} triangle${captured.tris.length > 1 ? 's' : ''}`)
+    updateClipboardButtons()
+    return true
+}
+
+// Coupe la sélection : copie dans le presse-papiers puis suppression.
+// deleteSelectedPoint partage déjà la sémantique exacte (tris à < 2
+// survivants filtrés, compactage I2, replaceShapePatch before/after,
+// HUD + persist) — un seul chemin de vérité pour la suppression. Le
+// presse-papiers reste rempli pour coller. Raccourci Ctrl+X + bouton
+// #cut. Annulable en une étape (Ctrl+Z).
+export const cutSelection = () => {
+    const captured = captureClipboard()
+    if (!captured) return false
+    state.clipboard = { points: captured.points, tris: captured.tris, offset: 0 }
+    deleteSelectedPoint()
+    updateClipboardButtons()
+    log(`Coupe : ${captured.points.length} point${captured.points.length > 1 ? 's' : ''}, ${captured.tris.length} triangle${captured.tris.length > 1 ? 's' : ''}`)
+    return true
+}
+
+// Colle le presse-papiers dans la FORME ACTIVE : les points sont
+// appendés à la fin de son pointList (décalés d'un demi-pas de grille
+// par collage depuis la source), les triangles ré-indexés dessus, et la
+// copie collée devient la sélection courante. Raccourci Ctrl+V + bouton
+// #paste. Annulable en une étape (Ctrl+Z).
+export const pasteClipboard = () => {
+    const clip = state.clipboard
+    if (!clip || !Array.isArray(clip.points) || clip.points.length === 0) return false
+    const shape = activeShape()
+    if (!shape) return false
+    const shapeIdx = state.activeShapeIndex
+    const clonedBefore = cloneShape(shape)
+    // Décalage de collage : un demi-pas de grille par collage cumulé
+    // (premier collage = +GRID_STEP/2, deuxième = +GRID_STEP, …) pour
+    // cascader les copies et les distinguer de la source.
+    const shift = (clip.offset + 1) * (state.GRID_STEP / 2)
+    const base = (Array.isArray(shape.pointList) ? shape.pointList : []).length
+    for (const p of clip.points) {
+        shape.pointList.push({ x: p.x + shift, y: p.y + shift })
+    }
+    const clipTris = Array.isArray(clip.tris) ? clip.tris : []
+    for (const t of clipTris) {
+        shape.tris.push({
+            p1: Number.isInteger(t.p1) ? t.p1 + base : undefined,
+            p2: Number.isInteger(t.p2) ? t.p2 + base : undefined,
+            p3: Number.isInteger(t.p3) ? t.p3 + base : undefined,
+            fill: typeof t.fill === 'string' ? t.fill : undefined,
+        })
+    }
+    const clonedAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            clonedBefore.pointList, clonedBefore.tris,
+            clonedAfter.pointList, clonedAfter.tris,
+        )],
+    })
+    clip.offset++
+    // La copie collée devient la sélection courante (prête à déplacer).
+    const pasted = []
+    for (let i = 0; i < clip.points.length; i++) pasted.push(base + i)
+    state.selectedPoints = pasted
+    state.selectedTriangles = []
+    state.nearestPoint = undefined
+    state.nearestLine = undefined
+    state.activeConstructionTriangle = undefined
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+    updateSelectionHud()
+    updateColorButtonState()
+    log(`Collage : ${clip.points.length} point${clip.points.length > 1 ? 's' : ''}, ${clipTris.length} triangle${clipTris.length > 1 ? 's' : ''}`)
+    persistState()
+    return true
 }
 
 // ===== Creation d'un cercle (outil cercle) =====

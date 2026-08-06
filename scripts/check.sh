@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validation complète : syntaxe JS (node --check) + les 12 suites smoke.
+# Validation complète : syntaxe JS (node --check) + les 13 suites smoke.
 #
 # Usage :
 #   npm run check          # lance tout ; le serveur dev est démarré
@@ -10,7 +10,7 @@
 #      depuis Node 24 la détection automatique du type de module est
 #      activée par défaut — le flag --experimental-default-type=module,
 #      obligatoire sous Node 18, a disparu de Node 24) + les scripts smoke.
-#   2. npm run smoke (les 12 suites headless).
+#   2. npm run smoke (les 13 suites headless).
 #
 # Serveur : on réutilise un serveur déjà actif sur :8000 (probe curl
 # -sf = échec sur HTTP ≥ 400, pour ne pas confondre un autre service),

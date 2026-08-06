@@ -908,6 +908,13 @@ const resetEphemeralState = (clearHistory = true) => {
     if (clearHistory) {
         state.historyStack = []
         state.redoStack = []
+        // (évolution « couper, copier, coller les éléments sélectionnés »)
+        // Le presse-papiers interne est une capture de la scène courante :
+        // un import REPLACE (nouvelle scène) le rend périmé — le vider
+        // évite de coller de la géométrie fantôme d'une scène remplacée.
+        // Le MERGE (clearHistory=false) le conserve (la scène courante
+        // reste présente, coller dedans reste légitime).
+        state.clipboard = undefined
     }
     state.selectedPoints = []
     state.selectedTriangles = []
@@ -1028,6 +1035,10 @@ export const resetAll = () => {
     state.selectedTriangles = []
     state.historyStack = []
     state.redoStack = []
+    // (évolution « couper, copier, coller les éléments sélectionnés »)
+    // Le reset complet vide aussi le presse-papiers interne (capture de
+    // l'ancienne scène, périmée) — même politique que l'historique.
+    state.clipboard = undefined
     state.nearestPoint = undefined
     state.nearestLine = undefined
     state.activeConstructionTriangle = undefined

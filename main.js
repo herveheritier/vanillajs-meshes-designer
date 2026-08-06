@@ -20,6 +20,7 @@ import {
     beginAnnulusGesture, lockAnnulusRadius, commitAnnulusGesture, cancelAnnulusGesture, exitAnnulusMode,
     wireShapesPanel, beginShapeGesture, commitShapeGesture, cancelShapeGesture,
     disarmShapeTool, closeShapesPanel,
+    copySelection, cutSelection, pasteClipboard,
 } from './editor.js'
 import { undo, redo } from './history.js'
 import {
@@ -192,6 +193,9 @@ const openSaveModal = () => {
 wireButton('export', () => openSaveModal())
 wireButton('reset', () => showResetModal())
 wireButton('selectAll', () => selectAllPoints())
+wireButton('copy', () => copySelection())
+wireButton('cut', () => cutSelection())
+wireButton('paste', () => pasteClipboard())
 wireButton('helpBtn', () => showHelp())
 wireButton('prevShape', () => prevShape())
 wireButton('nextShape', () => nextShape())
@@ -657,6 +661,23 @@ document.addEventListener('keydown', (e) => {
     } else if (!state.previewMode && (e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || e.key === 'y' || e.key === 'Y')) {
         e.preventDefault()
         redo()
+    // Presse-papiers interne (évolution « couper, copier, coller les
+    // éléments sélectionnés ») : Ctrl+C / Ctrl+X / Ctrl+V, mêmes
+    // fonctions que les boutons #copy / #cut / #paste. La garde `typing`
+    // est INDISPENSABLE pour Ctrl+V : sans elle, le coller interne
+    // intercepte la frappe dans un champ (ex. renommage de la fenêtre
+    // d'enregistrement) et casserait le collage natif du navigateur.
+    // Ignorés en preview (mutations de scène, même politique que
+    // undo/redo).
+    } else if (!state.previewMode && !typing && !e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyC' || e.key === 'c' || e.key === 'C')) {
+        e.preventDefault()
+        copySelection()
+    } else if (!state.previewMode && !typing && !e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyX' || e.key === 'x' || e.key === 'X')) {
+        e.preventDefault()
+        cutSelection()
+    } else if (!state.previewMode && !typing && !e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyV' || e.key === 'v' || e.key === 'V')) {
+        e.preventDefault()
+        pasteClipboard()
     } else if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.key === 's' || e.key === 'S')) {
         e.preventDefault()
         openSaveModal()

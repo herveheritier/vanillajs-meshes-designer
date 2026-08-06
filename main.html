@@ -1579,6 +1579,23 @@
                      l'appel final dans doit() garantit "(0)" au boot meme
                      apres une scene restauree depuis localStorage. -->
                 <span id="selectionCount" title="Nombre de points sélectionnés">0</span>
+                <!-- Presse-papiers interne (évolution « couper, copier,
+                     coller les éléments sélectionnés ») : 3 boutons
+                     opérant sur la sélection de la forme active.
+                     Copier / Couper sont désactivés sans sélection,
+                     Coller sans contenu dans le presse-papiers (état
+                     sync par updateClipboardButtons, hud.js). Le
+                     collage cible TOUJOURS la forme active, décalé d'un
+                     demi-pas de grille à chaque collage. Même langage
+                     visuel que les autres boutons toolbar ; raccourcis
+                     Ctrl+C / Ctrl+X / Ctrl+V en miroir (main.js). Place
+                     dans le groupe SELECTION (apres #selectionCount,
+                     avant #triangleColor) pour rester thematiquement
+                     coherent avec les outils qui operent sur la
+                     selection. -->
+                <button id="copy" title="Copier la sélection (Ctrl+C) : points sélectionnés + triangles entièrement contenus (avec leur couleur)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3.5 10.5V3.5h7"/></svg></button>
+                <button id="cut" title="Couper la sélection (Ctrl+X) : copie dans le presse-papiers puis supprime les points sélectionnés" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="4.5" r="1.7"/><circle cx="5" cy="11.5" r="1.7"/><path d="M6.3 6.3l7.2 7.2"/><path d="M6.3 9.7l7.2-7.2"/></svg></button>
+                <button id="paste" title="Coller le presse-papiers dans la forme active (Ctrl+V)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2.5h5"/><rect x="3" y="3.5" width="10" height="10.5" rx="1"/><path d="M5.5 7.2h5"/><path d="M5.5 9.7h3.5"/></svg></button>
                 <!-- Bouton Peinture : ouvre / ferme la palette de
                      couleurs des triangles (#triangleColorPanel). Le
                      panneau peut s'ouvrir quel que soit le mode de
@@ -1787,6 +1804,9 @@
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">Z</kbd><span>retablir</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Y</kbd><span>retablir</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">S</kbd><span>sauvegarder la scene en JSON</span></div>
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">C</kbd><span>copier la sélection : points sélectionnés + triangles entièrement contenus (avec leur couleur)</span></div>
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">X</kbd><span>couper la sélection (copie dans le presse-papiers puis suppression, annulable par Ctrl+Z)</span></div>
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">V</kbd><span>coller dans la forme active — chaque collage décale d'un demi-pas de grille pour se distinguer de la source ; le presse-papiers est interne à l'application (non partagé avec le système)</span></div>
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd">R</kbd><span>réticule : off / simple / projection symétrique (cycle)</span></div>
                     <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; Échap, P ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
