@@ -24,10 +24,13 @@ export const updateSelectionHud = () => {
     // (fusion par déplacement, cf. DESIGN.md §7.11) la 2e fonction du
     // bouton Fusionner n'est utilisable que si exactement 1 point est
     // sélectionné ; toute autre taille de sélection la désarme
-    // immédiatement. Garde locale à hud.js (pas d'import de merge.js,
-    // qui importerait hud.js en retour — cycle interdit, cf. §1.1).
+    // immédiatement (et déverrouille, cf. évolution verrouillage : la
+    // sélection multi-points déverrouille ET désarme). Garde locale à
+    // hud.js (pas d'import de merge.js, qui importerait hud.js en
+    // retour — cycle interdit, cf. §1.1).
     if (state.mergeOnDropActive && state.selectedPoints.length !== 1) {
         state.mergeOnDropActive = false
+        state.mergeOnDropLocked = false
         state.mergeDropCandidate = undefined
         updateMergeButtonState()
     }
@@ -37,25 +40,38 @@ export const updateSelectionHud = () => {
 // bouton #mergePoints : accent vert (même langage que #fps.fps-active /
 // #preview.preview-active) quand le mode est armé + libellé du rayon
 // (#mergeDropText, « 20px » — même langage que #gridText) + title qui
-// décrit le geste à effectuer. state.mergeOnDropActive / state.mergeDropRadius
-// sont les sources de vérité ; classes/attributs/textes ne font que les
-// refléter.
+// décrit le geste à effectuer. Évolution verrouillage : quand le mode
+// est armé ET verrouillé (2e clic), le bouton porte en plus la classe
+// .merge-locked (icône cadenas #mergeLockIcon affichée + ring inset
+// vert, cf. CSS main.html). state.mergeOnDropActive /
+// state.mergeOnDropLocked / state.mergeDropRadius sont les sources de
+// vérité ; classes/attributs/textes ne font que les refléter.
 export const updateMergeButtonState = () => {
     const btn = document.querySelector('#mergePoints')
     if (!btn) return
     const armed = !!state.mergeOnDropActive
+    const locked = armed && !!state.mergeOnDropLocked
     btn.classList.toggle('merge-armed', armed)
+    btn.classList.toggle('merge-locked', locked)
     btn.setAttribute('aria-pressed', armed ? 'true' : 'false')
     btn.setAttribute('title', armed
-        ? `Fusion par déplacement armée : glissez le point sélectionné puis relâchez-le près d'un autre point ` +
-          `(rayon ${state.mergeDropRadius} px à l'écran, indépendant du zoom — molette sur ce bouton pour le régler) ` +
-          `pour le fusionner avec lui. Re-cliquez pour désarmer.`
+        ? locked
+            ? `Fusion par déplacement VERROUILLÉE : le mode reste armé après chaque fusion, enchaînez ` +
+              `les fusions sans réarmer. Glissez le point sélectionné puis relâchez-le près d'un autre ` +
+              `point (rayon ${state.mergeDropRadius} px à l'écran — molette sur ce bouton pour le régler). ` +
+              `Re-cliquez pour désarmer.`
+            : `Fusion par déplacement armée : glissez le point sélectionné puis relâchez-le près d'un autre point ` +
+              `(rayon ${state.mergeDropRadius} px à l'écran, indépendant du zoom — molette sur ce bouton pour le régler) ` +
+              `pour le fusionner avec lui. Re-cliquez pour verrouiller le mode (enchaînement de fusions), ` +
+              `un autre clic le désarme.`
         : 'Fusionner les points sélectionnés vers une position commune (le centroid). ' +
           'Avec un seul point sélectionné : arme la fusion par déplacement ' +
           '(glisser le point puis le relâcher près d\'un autre le fusionne avec lui ; ' +
           `la molette sur ce bouton règle le rayon, actuellement ${state.mergeDropRadius} px à l'écran).`)
     // Libellé du rayon, vide hors mode armé (même comportement que
     // #shapesText qui n'affiche « cercle N » que quand le mode est actif).
+    // L'icône cadenas est pilotée par la classe .merge-locked via CSS
+    // (display none/block, cf. main.html) — pas de manipulation DOM ici.
     const text = btn.querySelector('#mergeDropText')
     if (text) text.textContent = armed ? `${state.mergeDropRadius}px` : ''
 }

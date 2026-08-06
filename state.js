@@ -271,6 +271,16 @@ export const state = {
     // anneau orange) et consommé par merge.js (attemptDropMerge) au
     // relâchement.
     mergeOnDropActive: false,
+    // (évolution verrouillage, cf. DESIGN.md §7.11) — sous-état du mode
+    // armé : le bouton est VERROUILLÉ (2e clic quand le mode est armé,
+    // icône cadenas + ring inset). Signification : après une fusion
+    // réussie, le mode RESTE armé (et verrouillé) au lieu de se
+    // désarmer, pour enchaîner plusieurs fusions sans réarmer.
+    // Transitoire comme mergeOnDropActive (jamais persisté) : n'est
+    // vrai que si mergeOnDropActive est vrai. Effacé par le clic sur le
+    // bouton verrouillé (désarme tout), par une sélection multi-points
+    // (garde updateSelectionHud) et par la fusion classique.
+    mergeOnDropLocked: false,
     mergeDropCandidate: undefined,
     // Rayon courant de la fusion par déplacement (px écran), réglé à la
     // molette sur le bouton Fusionner quand le mode est armé (même

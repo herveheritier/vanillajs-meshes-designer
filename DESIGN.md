@@ -1442,9 +1442,31 @@ Le bouton Fusionner porte deux fonctions :
    clic ARME le mode au lieu de signaler une sélection insuffisante.
    Déplacer le point sélectionné (clic droit + drag, le geste de
    déplacement habituel) puis le RELÂCHER près d'un autre point le
-   fusionne avec lui. Le mode se désarme au re-clic (toggle), après
-   une fusion réussie, ou dès que la sélection n'est plus un point
-   unique (garde dans `updateSelectionHud`, hud.js).
+   fusionne avec lui.
+
+**Cycle du bouton en 3 états (évolution verrouillage)** : le clic sur
+le bouton (avec 1 point sélectionné) fait cycler le mode dans un
+cycle à 3 états au lieu du simple toggle armé/désarmé :
+
+1. **Désarmé** → clic = **arme** (bouton `.merge-armed`, accent vert,
+   libellé du rayon).
+2. **Armé (non verrouillé)** → clic = **verrouille** (bouton
+   `.merge-locked` + icône cadenas + ring inset vert). Le verrou
+   exprime l'intention d'ENCHAÎNER plusieurs fusions : après une
+   fusion réussie, le mode reste armé ET verrouillé au lieu de se
+   désarmer.
+3. **Armé + verrouillé** → clic = **désarme** tout (mode + verrou),
+   même contrat que l'ancien re-clic.
+
+Le verrouillage n'est jamais persisté (même statut transitoire que
+`mergeOnDropActive`) : un reload retombe sur le mode désarmé.
+
+**Le mode se désarme** : au clic sur le bouton verrouillé, après une
+fusion réussie NON verrouillée, ou dès que la sélection n'est plus un
+point unique (garde dans `updateSelectionHud`, hud.js — qui déverrouille
+AUSSI : la sélection multi-points déverrouille et désarme). La fusion
+classique (>= 2 points) désarme aussi le mode en tête de
+`mergeSelectedPoints` (chemin préexistant).
 
 **Limite réglable** : `state.mergeDropRadius` (pixels écran, défaut
 `MERGE_DROP_RADIUS_DEFAULT_PX = 20`, bornes 8–64, pas ±2 px par cran),
@@ -1470,9 +1492,10 @@ fusion classique : la seule différence est la position du survivant
 
 **Déroulement du geste** :
 1. `mergeSelectedPoints` (merge.js) : 1 seul point → `toggleMergeOnDrop`
-   arme le mode (bouton `.merge-armed`, log explicatif). 0 point →
-   modale « Sélection insuffisante » (inchangé). >= 2 → fusion
-   classique.
+   fait avancer le CYCLE du bouton (arme → verrouille → désarme, cf.
+   ci-dessus — bouton `.merge-armed` / `.merge-locked`, log explicatif).
+   0 point → modale « Sélection insuffisante » (inchangé). >= 2 →
+   fusion classique.
 2. `beginGrabbing` / `resolveMouseMoveOnBoard` (editor.js) : pendant
    le drag, `updateMergeDropCandidate` calcule à chaque tick le point
    le plus proche du point déplacé dans la limite →
@@ -1493,8 +1516,12 @@ fusion classique : la seule différence est la position du survivant
    final de `endGrabbing`), pose `selectedPoints = [déplacé, cible]` et
    délègue à `applyMergeToSelection(position de la cible)`. Conflit
    topologique (un triangle contient les deux points) → modale d'erreur
-   et restauration de la sélection utilisateur (le mode reste armé,
-   le déplacement reste annulable). Succès → désarmement.
+   et restauration de la sélection utilisateur (le mode reste armé —
+   verrouillé ou non — et le déplacement reste annulable). Succès →
+   désarmement SAUF si le mode est verrouillé : dans ce cas il reste
+   armé ET verrouillé pour permettre l'enchaînement (le survivant est
+   l'unique point sélectionné, le mode reste donc utilisable
+   immédiatement sur un autre point).
 
 **Historique** : le geste produit 2 entrées undo (déplacement puis
 fusion), chacune annulable séparément (Ctrl+Z une fois = retour à la

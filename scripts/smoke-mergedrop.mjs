@@ -20,7 +20,8 @@
 //      désarmé, et Ctrl+Z ×2 ramène à l'état d'origine.
 //   C. Relâchement hors limite : drag vers une zone vide → simple
 //      déplacement (toujours 4 points), le mode RESTE armé ; re-clic
-//      sur #mergePoints → désarmé.
+//      sur #mergePoints → VERROUILLE le mode (évolution : cycle armé →
+//      verrouillé → désarmé), un autre clic → désarmé.
 //   D. Conflit topologique : drag d'un point vers un autre point du
 //      MÊME triangle → modale d'erreur de fusion, aucun merge (4
 //      points), la sélection utilisateur est restaurée.
@@ -31,6 +32,14 @@
 //      la limite effective).
 //   E2. Persistance : nouveau chargement → le rayon 26 px est restauré
 //      depuis localStorage et réaffiché sur le bouton.
+//   F. Verrouillage (évolution) : scène 5 points / 3 tris — armement
+//      puis clic = verrou (classe .merge-locked + icône cadenas
+//      visible, log « verrouillée ») ; fusion réussie alors que le
+//      mode est verrouillé → il RESTE armé et verrouillé (une 2e
+//      fusion sur une autre cible s'enchaîne sans réarmer) ; re-clic
+//      sur le bouton verrouillé → désarmé + déverrouillé ; re-armement
+//      + verrouillage puis sélection multi-points (Shift+clic) →
+//      déverrouillé ET désarmé.
 //
 // Le seed passe par page.addInitScript (localStorage écrit AVANT le
 // boot de l'app), même pattern que smoke-multipoint.mjs.
@@ -209,10 +218,16 @@ try {
     check('C : mode TOUJOURS armé', (await mergeArmedC()) === 1)
     check('C : 1 seule entrée undo (le déplacement)', (await undoCountC()) === '(1)')
 
-    // Re-clic sur le bouton → désarmement (toggle).
+    // Re-clic sur le bouton → VERROUILLE (évolution : cycle armé →
+    // verrouillé → désarmé) : le mode reste armé, le verrou s'active.
+    const mergeLockedC = () => pageC.locator('#mergePoints.merge-locked').count()
     await pageC.click('#mergePoints')
     await pageC.waitForTimeout(150)
-    check('C : re-clic → désarmé', (await mergeArmedC()) === 0)
+    check('C : re-clic → verrouillé (toujours armé)', (await mergeArmedC()) === 1 && (await mergeLockedC()) === 1)
+    // Un autre clic sur le bouton verrouillé → désarmé (cycle complet).
+    await pageC.click('#mergePoints')
+    await pageC.waitForTimeout(150)
+    check('C : clic sur verrouillé → désarmé', (await mergeArmedC()) === 0 && (await mergeLockedC()) === 0)
     await pageC.close()
 
     // ============ D. Conflit topologique (cible dans le MÊME triangle) ============
@@ -304,7 +319,110 @@ try {
     check('E2 : rayon 26 px restauré au rechargement', (await mergeDropTextE()) === '26px')
     await pageE.close()
 
-    check('aucune erreur JS sur tout le parcours', errorsB.length === 0 && errorsC.length === 0 && errorsD.length === 0 && errorsE.length === 0)
+    // ============ F. Verrouillage du mode (évolution) ============
+    // Scène 5 points / 3 tris : p0 (0,0) et p3 (100,100) ne partagent
+    // aucun triangle (fusion 1 OK), p4 (80,0) ne partage aucun triangle
+    // avec p1 (100,0) (fusion 2 OK — à ~20 px, dans le rayon).
+    const SCENE_LOCK = {
+        format: 'meshes-designer', version: 1, name: 'lock-merge',
+        activeGrid: false, GRID_STEP: 32,
+        shapes: [{
+            pointList: [
+                { x: 0, y: 0 },     // p0 : déplacé vers p3 (fusion 1)
+                { x: 100, y: 0 },   // p1 : cible 2
+                { x: 0, y: 100 },   // p2
+                { x: 100, y: 100 }, // p3 : cible 1 (triangle différent de p0)
+                { x: 80, y: 0 },    // p4 : 20 px de p1 → cible 2
+            ],
+            tris: [
+                { p1: 0, p2: 1, p3: 2 }, // T1 : p0,p1,p2
+                { p1: 3, p2: 1, p3: 2 }, // T2 : p3,p1,p2
+                { p1: 4, p2: 3, p3: 2 }, // T3 : p4,p3,p2 (p4 ∉ triangle de p1)
+            ],
+        }],
+        activeShapeIndex: 0, zoomLevel: 1, viewCenter: { x: 0, y: 0 },
+    }
+    const pageF = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+    const errorsF = attachErrorCollector(pageF)
+    const selectionCountF = () => pageF.locator('#selectionCount').textContent()
+    const mergeArmedF = () => pageF.locator('#mergePoints.merge-armed').count()
+    const mergeLockedF = () => pageF.locator('#mergePoints.merge-locked').count()
+    const lockIconVisibleF = () => pageF.locator('#mergeLockIcon').isVisible()
+    await seedScene(pageF, SCENE_LOCK)
+    await pageF.goto(BASE_URL, { waitUntil: 'networkidle' })
+    await pageF.waitForSelector('#board')
+    await pageF.waitForTimeout(400)
+    const centerF = await canvasCenter(pageF)
+
+    // Sélection de p0 puis armement (clic 1).
+    await pageF.mouse.click(centerF.x, centerF.y)
+    await pageF.waitForTimeout(150)
+    check('F : sélection unique (1)', (await selectionCountF()) === '1')
+    await pageF.click('#mergePoints')
+    await pageF.waitForTimeout(150)
+    check('F : mode armé (pas encore verrouillé)', (await mergeArmedF()) === 1 && (await mergeLockedF()) === 0)
+    check('F : cadenas masqué hors verrouillage', !(await lockIconVisibleF()))
+
+    // Clic 2 → verrouillage : classe .merge-locked + cadenas visible.
+    await pageF.click('#mergePoints')
+    await pageF.waitForTimeout(150)
+    check('F : clic 2 → mode verrouillé', (await mergeArmedF()) === 1 && (await mergeLockedF()) === 1)
+    check('F : cadenas visible quand verrouillé', await lockIconVisibleF())
+    const logTextF = await pageF.locator('#messageLog').textContent()
+    check('F : log de verrouillage', logTextF.includes('verrouillée'))
+
+    // Fusion 1 (p0 → p3) alors que le mode est verrouillé : le mode
+    // RESTE armé ET verrouillé (5 → 4 points).
+    const targetF1 = { x: centerF.x + 95, y: centerF.y - 95 }
+    await pageF.mouse.move(centerF.x, centerF.y)
+    await pageF.mouse.down({ button: 'right' })
+    await pageF.mouse.move(targetF1.x, targetF1.y, { steps: 8 })
+    await pageF.mouse.up({ button: 'right' })
+    await pageF.waitForTimeout(200)
+    info = await sceneInfo(pageF)
+    check('F : fusion 1 verrouillée (5 → 4 pts)', info.points === 4 && info.tris === 3)
+    check('F : mode TOUJOURS armé et verrouillé après fusion', (await mergeArmedF()) === 1 && (await mergeLockedF()) === 1)
+
+    // Fusion 2 ENCHAÎNÉE sans réarmer : sélection de p4 (80,0) puis
+    // drag vers p1 (100,0), relâchement à ~2 px → fusion (4 → 3 pts).
+    const p4Screen = { x: centerF.x + 80, y: centerF.y }
+    await pageF.mouse.click(p4Screen.x, p4Screen.y)
+    await pageF.waitForTimeout(150)
+    check('F : p4 sélectionné (1)', (await selectionCountF()) === '1')
+    const targetF2 = { x: centerF.x + 98, y: centerF.y }
+    await pageF.mouse.move(p4Screen.x, p4Screen.y)
+    await pageF.mouse.down({ button: 'right' })
+    await pageF.mouse.move(targetF2.x, targetF2.y, { steps: 8 })
+    await pageF.mouse.up({ button: 'right' })
+    await pageF.waitForTimeout(200)
+    info = await sceneInfo(pageF)
+    check('F : fusion 2 enchaînée (4 → 3 pts)', info.points === 3 && info.tris === 3)
+    check('F : toujours armé et verrouillé après la 2e fusion', (await mergeArmedF()) === 1 && (await mergeLockedF()) === 1)
+
+    // Re-clic sur le bouton verrouillé → désarmé + déverrouillé.
+    await pageF.click('#mergePoints')
+    await pageF.waitForTimeout(150)
+    check('F : clic sur verrouillé → désarmé', (await mergeArmedF()) === 0 && (await mergeLockedF()) === 0)
+    check('F : cadenas masqué après désarmement', !(await lockIconVisibleF()))
+
+    // Re-armement + verrouillage puis sélection multi-points
+    // (Shift+clic) → déverrouillé ET désarmé.
+    await pageF.mouse.click(centerF.x + 100, centerF.y - 100)
+    await pageF.waitForTimeout(150)
+    await pageF.click('#mergePoints')
+    await pageF.waitForTimeout(100)
+    await pageF.click('#mergePoints')
+    await pageF.waitForTimeout(100)
+    check('F : re-verrouillé avant multi-sélection', (await mergeArmedF()) === 1 && (await mergeLockedF()) === 1)
+    await pageF.keyboard.down('Shift')
+    await pageF.mouse.click(centerF.x + 100, centerF.y)
+    await pageF.keyboard.up('Shift')
+    await pageF.waitForTimeout(200)
+    check('F : sélection multi-points (2)', (await selectionCountF()) === '2')
+    check('F : multi-points → déverrouillé ET désarmé', (await mergeArmedF()) === 0 && (await mergeLockedF()) === 0)
+    await pageF.close()
+
+    check('aucune erreur JS sur tout le parcours', errorsB.length === 0 && errorsC.length === 0 && errorsD.length === 0 && errorsE.length === 0 && errorsF.length === 0)
 } catch (err) {
     check('parcours sans exception', false)
     console.error('EXCEPTION:', err.message)

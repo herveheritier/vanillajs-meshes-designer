@@ -326,17 +326,35 @@ const applyMergeToSelection = (mergePos, label) => {
 //      zoom) le fusionne avec le point le plus proche : la position de
 //      la CIBLE est conservée, le point déplacé disparaît et ses
 //      références triangle sont redirigées vers la cible.
-// Le mode se désarme : après une fusion réussie, au re-clic du bouton
-// (toggle), ou dès que la sélection n'est plus un point unique (garde
-// dans updateSelectionHud, hud.js).
+// Le mode se désarme : au clic sur le bouton verrouillé, après une
+// fusion réussie NON verrouillée, ou dès que la sélection n'est plus un
+// point unique (garde dans updateSelectionHud, hud.js).
+//
+// Cycle du bouton en 3 états (évolution verrouillage, cf. DESIGN.md
+// §7.11) : désarmé → clic = ARME ; armé → clic = VERROUILLE (le mode
+// survivra aux fusions réussies pour enchaîner plusieurs fusions) ;
+// armé + verrouillé → clic = DÉSARME tout (mode + verrou).
 
-// Arme / désarme la fusion par déplacement (toggle). N'arme QUE si
-// exactement 1 point est sélectionné (la fonction n'est utilisable que
-// dans ce cas, cf. cahier des charges) ; sinon, désarme silencieusement.
+// Fait avancer le cycle du bouton (arme / verrouille / désarme).
+// N'arme QUE si exactement 1 point est sélectionné (la fonction n'est
+// utilisable que dans ce cas, cf. cahier des charges) ; sinon, désarme
+// silencieusement.
 export const toggleMergeOnDrop = () => {
     if (state.mergeOnDropActive) {
-        disarmMergeOnDrop()
-        log('Fusion par déplacement desarmée')
+        if (state.mergeOnDropLocked) {
+            // 3e état du cycle : clic sur le bouton VERROUILLÉ →
+            // désarme tout (mode + verrou), même contrat que l'ancien
+            // re-clic.
+            disarmMergeOnDrop()
+            log('Fusion par déplacement desarmée')
+        } else {
+            // 2e état du cycle : clic sur le mode ARMÉ → verrouille.
+            // Le mode restera armé après les fusions réussies.
+            state.mergeOnDropLocked = true
+            updateMergeButtonState()
+            log('Fusion par déplacement verrouillée : le mode reste armé après chaque fusion ' +
+                'pour enchaîner les fusions (re-clic sur Fusionner pour désarmer).')
+        }
         return false
     }
     if (state.selectedPoints.length !== 1) {
@@ -350,13 +368,14 @@ export const toggleMergeOnDrop = () => {
     updateMergeButtonState()
     log(`Fusion par déplacement armée : glissez le point sélectionné puis relâchez-le près d'un autre point ` +
         `(rayon ${state.mergeDropRadius} px a l'ecran, independant du zoom — molette sur ce bouton pour le régler) ` +
-        `pour le fusionner avec lui. Re-clic sur Fusionner = desarmer.`)
+        `pour le fusionner avec lui. Re-clic sur Fusionner = verrouiller (enchaînement), un autre clic = désarmer.`)
     return true
 }
 
 export const disarmMergeOnDrop = () => {
-    if (!state.mergeOnDropActive) return
+    if (!state.mergeOnDropActive && !state.mergeOnDropLocked) return
     state.mergeOnDropActive = false
+    state.mergeOnDropLocked = false
     state.mergeDropCandidate = undefined
     updateMergeButtonState()
 }
@@ -388,12 +407,16 @@ export const attemptDropMerge = () => {
         'Fusion par déplacement'
     )
     if (merged) {
-        disarmMergeOnDrop()
+        // Succès : désarmement SAUF si le mode est verrouillé — le
+        // verrou exprime l'intention d'enchaîner plusieurs fusions, le
+        // mode reste donc armé ET verrouillé (le survivant est l'unique
+        // point sélectionné, le geste est immédiatement réutilisable).
+        if (!state.mergeOnDropLocked) disarmMergeOnDrop()
     } else {
         // Échec (conflit topologique : la cible et le point déplacé
         // partagent un triangle) : la sélection utilisateur est
-        // restaurée et le mode reste armé pour permettre un nouvel
-        // essai.
+        // restaurée et le mode reste armé (verrouillé ou non) pour
+        // permettre un nouvel essai.
         state.selectedPoints = previousSelection
     }
     return merged

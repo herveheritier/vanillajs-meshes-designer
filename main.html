@@ -932,7 +932,18 @@
                sélectionné + clic sur le bouton). Libellé du rayon
                (#mergeDropText, « 20px ») : même structure que #grid /
                #gridText — monospace 11px atténué par défaut, vert accent
-               quand le mode est armé. */
+               quand le mode est armé.
+
+               Évolution verrouillage : le bouton est verrouillable par un
+               clic supplémentaire quand le mode est armé (cycle armé →
+               verrouillé → désarmé, cf. DESIGN.md §7.11). L'icône cadenas
+               #mergeLockIcon est masquée par défaut et affichée quand le
+               bouton porte la classe .merge-locked (posée par
+               updateMergeButtonState, hud.js). Le ring inset sur l'état
+               armé + verrouillé réutilise le langage de
+               #triangleColor.color-panel-open / #shapes.shapes-panel-open :
+               le mode verrouillé survit aux fusions réussies (enchaînement
+               de plusieurs fusions sans réarmer). */
             #mergePoints {
                 display: inline-flex;
                 align-items: center;
@@ -947,6 +958,18 @@
                 pointer-events: none;
                 transition: color 0.12s;
             }
+            /* Icône cadenas du mode verrouillé : invisible tant que le
+               bouton n'est pas en .merge-locked (display none par
+               défaut ; block quand verrouillé). pointer-events none
+               comme les autres éléments décoratifs du bouton — le clic
+               doit toujours atteindre le bouton lui-même. */
+            #mergePoints #mergeLockIcon {
+                display: none;
+                pointer-events: none;
+            }
+            #mergePoints.merge-locked #mergeLockIcon {
+                display: block;
+            }
             #toolbar #mergePoints.merge-armed {
                 color: rgb(55, 194, 0);
                 background-color: rgba(55, 194, 0, 0.10);
@@ -954,6 +977,13 @@
             }
             #mergePoints.merge-armed #mergeDropText {
                 color: rgb(55, 194, 0);
+            }
+            /* Ring inset quand le mode est armé ET verrouillé : même
+               langage que #triangleColor.color-panel-open — distingue le
+               verrouillage (le mode survivra aux fusions) du simple
+               armement. */
+            #toolbar #mergePoints.merge-armed.merge-locked {
+                box-shadow: 0 0 0 2px rgba(55, 194, 0, 0.55) inset;
             }
 
             /* Bouton Formes : ouvre le panneau des formes prédéfinies.
@@ -1437,11 +1467,17 @@
                      rayon en px) — glisser le point puis le relâcher
                      près d'un autre point (rayon réglable à la molette
                      sur ce bouton, 20 px par défaut, 8-64 px à l'écran)
-                     le fusionne avec lui. Place dans le groupe SELECTION
-                     (apres #selectAll, avant #selectionCount) pour
-                     rester thematiquement cohere avec les outils qui
-                     operent sur la selection. -->
-                <button id="mergePoints" title="Fusionner les points sélectionnés vers une position commune (le centroid). Avec un seul point sélectionné : arme la fusion par déplacement (glisser le point puis le relâcher près d'un autre le fusionne avec lui ; la molette sur ce bouton règle le rayon, 20 px par défaut). La fusion est annulée si un triangle contient plusieurs de vos points sélectionnés."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3" cy="4" r="1.4"/><circle cx="3" cy="12" r="1.4"/><circle cx="13" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="4.4" y1="4" x2="6.8" y2="7"/><line x1="4.4" y1="12" x2="6.8" y2="9"/><line x1="11.6" y1="8" x2="9.5" y2="8"/></svg><span id="mergeDropText"></span></button>
+                     le fusionne avec lui. Evolution verrouillage : un
+                     clic supplémentaire quand le mode est armé le
+                     VERROUILLE (icône cadenas + ring inset vert) — le
+                     mode survit alors aux fusions réussies pour enchaîner
+                     plusieurs fusions sans réarmer ; un re-clic sur le
+                     bouton verrouillé désarme tout, et une sélection
+                     multi-points déverrouille + désarme également. Place
+                     dans le groupe SELECTION (apres #selectAll, avant
+                     #selectionCount) pour rester thematiquement cohere
+                     avec les outils qui operent sur la selection. -->
+                <button id="mergePoints" title="Fusionner les points sélectionnés vers une position commune (le centroid). Avec un seul point sélectionné : arme la fusion par déplacement (glisser le point puis le relâcher près d'un autre le fusionne avec lui ; la molette sur ce bouton règle le rayon, 20 px par défaut). Un clic supplémentaire quand le mode est armé le verrouille (enchaînement de plusieurs fusions), un autre clic le désarme. La fusion est annulée si un triangle contient plusieurs de vos points sélectionnés."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3" cy="4" r="1.4"/><circle cx="3" cy="12" r="1.4"/><circle cx="13" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="4.4" y1="4" x2="6.8" y2="7"/><line x1="4.4" y1="12" x2="6.8" y2="9"/><line x1="11.6" y1="8" x2="9.5" y2="8"/></svg><span id="mergeDropText"></span><span id="mergeLockIcon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7.2V5.6a2.5 2.5 0 0 1 5 0v1.6"/></svg></span></button>
                 <!-- Compteur de points selectionnes : miroite le pattern
                      des autres pills read-only (#shapeLabel, #undoCount)
                      mais pour la selection courante. Placer APRES

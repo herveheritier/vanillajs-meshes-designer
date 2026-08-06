@@ -1415,7 +1415,14 @@ export const processMouseUpSelection = (e) => {
     const targetModel = state.activeGrid ? snapToGrid(rawTargetModel) : rawTargetModel
     const np = findNearestPoint(targetModel)
     const pointHit = np && np.distance <= pointHitRadiusModel() ? np : undefined
-    const leftSelectionEvent = { ...e, ctrlKey: false, metaKey: false }
+    // NB : le spread {...e} ne copie PAS les getters du prototype MouseEvent
+    // (shiftKey / ctrlKey / metaKey sont des accesseurs, pas des propriétés
+    // propres) — sans re-posé explicite, e.shiftKey serait toujours
+    // undefined ici et le toggle Shift documenté (DESIGN.md §3.6) ne
+    // fonctionnerait jamais (la branche « replace » écraserait la
+    // sélection). ctrlKey/metaKey sont déjà forcés à false volontairement
+    // (le geste gauche neutralise Ctrl/Cmd, cf. §3.6).
+    const leftSelectionEvent = { ...e, ctrlKey: false, metaKey: false, shiftKey: e.shiftKey }
 
     if (state.selectionMode === 'segment') {
         const ns = findSelectedLine(targetModel)
