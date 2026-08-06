@@ -1059,12 +1059,35 @@
                 box-shadow: 0 0 0 2px rgba(55, 194, 0, 0.55) inset;
             }
 
-            /* Panneau des formes prédéfinies : meme structure que
-               #triangleColorPanel (fond sombre, border subtile, position
-               absolue reglee en JS sous le bouton #shapes). Liste
-               verticale de boutons icone + libellé avec etats hover /
-               active heritant du theme de la toolbar. */
-            #shapesPanel {
+            /* Bouton Aligner / Répartir (#align, évolution « boutons
+               pour forcer l'alignement et la répartition des points
+               sélectionnés », cf. DESIGN.md §7.14) : état panneau
+               déployé — même langage que #shapes.shapes-panel-open /
+               #triangleColor.color-panel-open (ring inset vert). La
+               classe .align-panel-open est posée par updateAlignButton
+               (hud.js) en miroir de state.alignPanelOpen. Le bouton
+               reste toujours actif (il ouvre/ferme le panneau) ; le
+               grisage des 4 actions se fait DANS le panneau. */
+            #toolbar #align.align-panel-open {
+                box-shadow: 0 0 0 2px rgba(55, 194, 0, 0.55) inset;
+            }
+
+            /* Panneaux flottants #shapesPanel (formes prédéfinies) et
+               #alignPanel (aligner / répartir, évolution « boutons pour
+               forcer l'alignement et la répartition des points
+               sélectionnés », cf. DESIGN.md §7.14) : même structure —
+               fond sombre, border subtile, position absolue reglee en
+               JS sous le bouton declencheur, fermeture au clic
+               exterieur / Echap. Liste verticale de boutons icone +
+               libellé avec etats hover / active heritant du theme de
+               la toolbar. Les deux panneaux partagent la meme charte
+               (selecteurs groupes) ; #alignPanel ajoute en plus un
+               état disabled local (align < 2 points, répartir < 3
+               points — posé par updateAlignPanelButtons, hud.js : le
+               CSS #toolbar button:disabled ne s'applique qu'aux
+               descendants de #toolbar, d'ou un état disabled local). */
+            #shapesPanel,
+            #alignPanel {
                 position: absolute;
                 z-index: 60;
                 background-color: rgba(15, 15, 15, 0.95);
@@ -1081,15 +1104,18 @@
                 color: rgb(220, 220, 220);
                 box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
             }
-            #shapesPanel[hidden] {
+            #shapesPanel[hidden],
+            #alignPanel[hidden] {
                 display: none;
             }
-            #shapesPanel .shapes-title {
+            #shapesPanel .shapes-title,
+            #alignPanel .shapes-title {
                 font-size: 11px;
                 color: rgb(55, 194, 0);
                 margin-bottom: 2px;
             }
-            #shapesPanel button {
+            #shapesPanel button,
+            #alignPanel button {
                 display: inline-flex;
                 align-items: center;
                 gap: 8px;
@@ -1103,19 +1129,31 @@
                 cursor: pointer;
                 transition: background-color 0.10s, border-color 0.10s, color 0.10s;
             }
-            #shapesPanel button:hover {
+            #shapesPanel button:hover,
+            #alignPanel button:hover {
                 background-color: rgba(255, 255, 255, 0.12);
                 border-color: rgba(255, 255, 255, 0.40);
                 color: rgb(255, 255, 255);
             }
-            #shapesPanel button:active {
+            #shapesPanel button:active,
+            #alignPanel button:active {
                 color: rgb(55, 194, 0);
                 border-color: rgb(55, 194, 0);
             }
-            #shapesPanel button svg {
+            #shapesPanel button svg,
+            #alignPanel button svg {
                 width: 14px;
                 height: 14px;
                 display: block;
+            }
+            #alignPanel button:disabled {
+                opacity: 0.35;
+                cursor: not-allowed;
+            }
+            #alignPanel button:disabled:hover {
+                background-color: rgba(255, 255, 255, 0.05);
+                border-color: rgba(255, 255, 255, 0.15);
+                color: rgb(220, 220, 220);
             }
 
             /* body.preview-mode : masque TOUTE la chrome de l'editeur
@@ -1138,6 +1176,7 @@
             body.preview-mode #sceneStatus,
             body.preview-mode #triangleColorPanel,
             body.preview-mode #shapesPanel,
+            body.preview-mode #alignPanel,
             body.preview-mode .modal {
                 display: none !important;
             }
@@ -1664,6 +1703,25 @@
                 <button id="copy" title="Copier la sélection (Ctrl+C) : points sélectionnés + triangles entièrement contenus (avec leur couleur)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3.5 10.5V3.5h7"/></svg></button>
                 <button id="cut" title="Couper la sélection (Ctrl+X) : copie dans le presse-papiers puis supprime les points sélectionnés" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="4.5" r="1.7"/><circle cx="5" cy="11.5" r="1.7"/><path d="M6.3 6.3l7.2 7.2"/><path d="M6.3 9.7l7.2-7.2"/></svg></button>
                 <button id="paste" title="Coller le presse-papiers dans la forme active (Ctrl+V)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2.5h5"/><rect x="3" y="3.5" width="10" height="10.5" rx="1"/><path d="M5.5 7.2h5"/><path d="M5.5 9.7h3.5"/></svg></button>
+                <!-- Alignement / répartition des points sélectionnés
+                     (évolution « boutons pour forcer l'alignement et la
+                     répartition des points sélectionnés ») : le bouton
+                     #align ouvre un panneau flottant de 4 actions —
+                     Aligner X (Alt+Flèche Gauche), Aligner Y (Alt+Flèche
+                     Droite), Répartir X (Alt+Shift+Flèche Gauche),
+                     Répartir Y (Alt+Shift+Flèche Droite). Aligner prend
+                     pour référence le PREMIER point sélectionné (tous
+                     les autres prennent sa coordonnée X ou Y) ; Répartir
+                     espace uniformément les points entre les deux
+                     extrêmes (qui restent en place). Le panneau reste
+                     ouvert après une action pour enchaîner ; grisage des
+                     actions selon le nombre de points sélectionnés
+                     (align ≥ 2, répartir ≥ 3) par updateAlignPanelButtons
+                     (hud.js), état du bouton par updateAlignButton.
+                     Place dans le groupe SELECTION (apres #paste, avant
+                     #triangleColor) pour rester thematiquement coherent
+                     avec les outils qui operent sur la selection. -->
+                <button id="align" title="Aligner / répartir les points sélectionnés : ouvre le panneau avec Aligner X (Alt+Flèche Gauche, référence = 1er point sélectionné), Aligner Y (Alt+Flèche Droite), Répartir X (Alt+Shift+Flèche Gauche), Répartir Y (Alt+Shift+Flèche Droite) ; les points extrêmes restent en place pour la répartition" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="1.5" x2="8" y2="14.5"/><circle cx="8" cy="4" r="1.4" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></button>
                 <!-- Bouton Peinture : ouvre / ferme la palette de
                      couleurs des triangles (#triangleColorPanel). Le
                      panneau peut s'ouvrir quel que soit le mode de
@@ -1822,6 +1880,29 @@
             <button type="button" data-shape="star" title="Créer une étoile à 5 branches en 3 clics : 1er clic = centre, mouvement = rayon + angle de départ, 2e clic = verrouille, mouvement = profondeur des branches, 3e clic = valider"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.7 3.4 3.8.6-2.7 2.7.6 3.8-3.4-1.8-3.4 1.8.6-3.8L2.5 6l3.8-.6z"/></svg><span>Étoile</span></button>
             <button type="button" data-shape="annulus" title="Créer un anneau (cercle percé d'un trou) en 3 clics : 1er clic = centre, mouvement = rayon externe + angle, 2e clic = verrouille, mouvement = taille du trou, 3e clic = valider ; molette = nombre de côtés"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5"/></svg><span>Anneau</span></button>
         </div>
+        <!-- Panneau Aligner / Répartir (évolution « boutons pour forcer
+             l'alignement et la répartition des points sélectionnés »,
+             cf. DESIGN.md §7.14) : structure calquee sur #shapesPanel
+             (position absolue sous le bouton #align, fermeture au clic
+             exterieur / Echap). 4 actions sur la sélection de la forme
+             active :
+               - Aligner X : tous les points prennent la coordonnée X du
+                 PREMIER point sélectionné (l'ancre) ;
+               - Aligner Y : idem sur Y ;
+               - Répartir X : espacement uniforme selon X entre les deux
+                 points extrêmes (qui restent en place) ;
+               - Répartir Y : idem sur Y.
+             Grisage selon le nombre de points sélectionnés (align ≥ 2,
+             répartir ≥ 3) par updateAlignPanelButtons (hud.js), synchro
+             par updateSelectionHud. Le panneau reste ouvert après une
+             action (pour enchaîner aligner X puis aligner Y). -->
+        <div id="alignPanel" hidden>
+            <div class="shapes-title">Aligner / Répartir</div>
+            <button type="button" id="alignX" title="Aligner X (Alt+Flèche Gauche) : tous les points sélectionnés prennent la coordonnée X du premier point sélectionné (le premier point de la sélection est l'ancre de référence, son Y est conservé). Nécessite au moins 2 points sélectionnés." disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="2" x2="8" y2="14"/><circle cx="3.5" cy="5" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="12.5" cy="11" r="1.3" fill="currentColor" stroke="none"/></svg><span>Aligner X</span></button>
+            <button type="button" id="alignY" title="Aligner Y (Alt+Flèche Droite) : tous les points sélectionnés prennent la coordonnée Y du premier point sélectionné (le premier point de la sélection est l'ancre de référence, son X est conservé). Nécessite au moins 2 points sélectionnés." disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2" y1="8" x2="14" y2="8"/><circle cx="5" cy="3.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="11" cy="12.5" r="1.3" fill="currentColor" stroke="none"/></svg><span>Aligner Y</span></button>
+            <button type="button" id="distributeX" title="Répartir X (Alt+Shift+Flèche Gauche) : espace uniformément les points sélectionnés selon X entre les deux points extrêmes (qui restent en place). Nécessite au moins 3 points sélectionnés." disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="13" x2="14" y2="13"/><circle cx="4" cy="3" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="3" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="3" r="1.2" fill="currentColor" stroke="none"/><circle cx="4" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="13" r="1.2" fill="currentColor" stroke="none"/></svg><span>Répartir X</span></button>
+            <button type="button" id="distributeY" title="Répartir Y (Alt+Shift+Flèche Droite) : espace uniformément les points sélectionnés selon Y entre les deux points extrêmes (qui restent en place). Nécessite au moins 3 points sélectionnés." disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="2" x2="3" y2="14"/><line x1="13" y1="2" x2="13" y2="14"/><circle cx="3" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="13" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="13" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="13" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg><span>Répartir Y</span></button>
+        </div>
         <div id="messageBoard">
             <!-- Bandeau de titre : un mousedown declenche un drag
                  (mouvement du cadre via mousemove document-level).
@@ -1884,6 +1965,10 @@
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">C</kbd><span>copier la sélection : points sélectionnés + triangles entièrement contenus (avec leur couleur)</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">X</kbd><span>couper la sélection (copie dans le presse-papiers puis suppression, annulable par Ctrl+Z)</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">V</kbd><span>coller dans la forme active — chaque collage décale d'un demi-pas de grille pour se distinguer de la source ; le presse-papiers est interne à l'application (non partagé avec le système)</span></div>
+                    <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">←</kbd><span>aligner X les points sélectionnés — tous prennent la coordonnée X du 1er point sélectionné (l'ancre, bouton Aligner X du panneau du bouton Aligner)</span></div>
+                    <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">→</kbd><span>aligner Y les points sélectionnés — tous prennent la coordonnée Y du 1er point sélectionné (l'ancre, bouton Aligner Y)</span></div>
+                    <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">←</kbd><span>répartir X les points sélectionnés — espacement uniforme selon X entre les deux points extrêmes (qui restent en place, bouton Répartir X)</span></div>
+                    <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">→</kbd><span>répartir Y les points sélectionnés — espacement uniforme selon Y entre les deux points extrêmes (qui restent en place, bouton Répartir Y)</span></div>
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd">R</kbd><span>réticule : off / simple / projection symétrique (cycle)</span></div>
                     <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; un 2e clic (ou P) affiche toutes les formes dans leur ordre (forme n = plan n) ; Échap ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd><span>monter / descendre la forme active d'un plan dans l'ordre des formes (forme n = plan n dans la vue plans : monter la fait passer au-dessus, descendre en dessous) ; boutons de la barre d'outils (grisés aux bornes de l'ordre)</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>

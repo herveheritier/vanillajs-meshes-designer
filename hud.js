@@ -52,6 +52,47 @@ export const updateSelectionHud = () => {
     // presse-papiers : resynchronisés à chaque mutation de sélection
     // (et par les fonctions presse-papiers de editor.js).
     updateClipboardButtons()
+    // (évolution « boutons pour forcer l'alignement et la répartition
+    // des points sélectionnés ») les 4 actions du panneau #align
+    // dépendent du nombre de points sélectionnés : grisés en
+    // conséquence à chaque mutation de sélection.
+    updateAlignPanelButtons()
+}
+
+// (évolution « boutons pour forcer l'alignement et la répartition des
+// points sélectionnés ») — état du bouton #align : classe
+// .align-panel-open quand le panneau est déployé (même langage que
+// #shapes.shapes-panel-open / #triangleColor.color-panel-open : ring
+// inset vert). state.alignPanelOpen est la source de vérité ; la classe
+// ne fait que la refléter. Ne lit QUE state (pas d'import de editor.js
+// — cycle interdit, cf. §1.1).
+export const updateAlignButton = () => {
+    const btn = document.querySelector('#align')
+    if (!btn) return
+    btn.classList.toggle('align-panel-open', !!state.alignPanelOpen)
+    btn.setAttribute('aria-pressed', state.alignPanelOpen ? 'true' : 'false')
+}
+
+// (évolution « boutons pour forcer l'alignement et la répartition des
+// points sélectionnés ») — état disabled des 4 actions du panneau
+// #align : Aligner X / Aligner Y nécessitent au moins 2 points
+// sélectionnés (le premier est l'ancre de référence), Répartir X /
+// Répartir Y au moins 3 (deux extrêmes + un point intermédiaire).
+// Ne lit QUE state (pas d'import de editor.js — cycle interdit) ;
+// appelée par updateSelectionHud (sync à chaque mutation de sélection)
+// et au boot par updateAlignButton callers.
+export const updateAlignPanelButtons = () => {
+    const n = state.selectedPoints.length
+    const alignBtn = ['alignX', 'alignY']
+    const distributeBtn = ['distributeX', 'distributeY']
+    alignBtn.forEach((id) => {
+        const btn = document.querySelector('#' + id)
+        if (btn) btn.disabled = n < 2
+    })
+    distributeBtn.forEach((id) => {
+        const btn = document.querySelector('#' + id)
+        if (btn) btn.disabled = n < 3
+    })
 }
 
 // (évolution « couper, copier, coller les éléments sélectionnés ») —

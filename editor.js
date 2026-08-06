@@ -15,7 +15,7 @@ import {
     ANNULUS_INNER_RATIO_MIN, ANNULUS_INNER_RATIO_MAX, ANNULUS_INNER_RATIO_DEFAULT,
 } from './constants.js'
 import { drawBoard, drawPoint, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
-import { updateSelectionHud, updateColorButtonState, updateShapesButton, updateClipboardButtons } from './hud.js'
+import { updateSelectionHud, updateColorButtonState, updateShapesButton, updateClipboardButtons, updateAlignButton, updateAlignPanelButtons } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
 import {
@@ -628,6 +628,206 @@ export const pasteClipboard = () => {
     log(`Collage : ${clip.points.length} point${clip.points.length > 1 ? 's' : ''}, ${clipTris.length} triangle${clipTris.length > 1 ? 's' : ''}`)
     persistState()
     return true
+}
+
+// ===== Alignement / répartition des points sélectionnés =====
+//
+// (évolution « boutons pour forcer l'alignement et la répartition des
+// points sélectionnés ») 4 actions sur la sélection de la FORME ACTIVE,
+// accessibles via le panneau du bouton #align et les raccourcis
+// Alt+←/→ / Alt+Shift+←/→ (cf. DESIGN.md §7.14) :
+//   - aligner X : tous les points sélectionnés prennent la coordonnée
+//     X du PREMIER point sélectionné (leur Y est conservé) — le premier
+//     point de la sélection est l'ancre de référence explicite (convention
+//     des éditeurs vectoriels).
+//   - aligner Y : idem sur la coordonnée Y (X conservé).
+//   - répartir X : les points sélectionnés sont espacés uniformément
+//     selon X ENTRE les deux points extrêmes (min et max X restent en
+//     place, les points intermédiaires sont répartis à pas égaux —
+//     position_i = min + (max - min) * i / (n-1)).
+//   - répartir Y : idem sur Y.
+// Chaque action est une entry undo UNIQUE : mutation des coords du
+// pointList seul (les tris ne changent pas — les indices restent
+// valides, les fills survivent), enregistrée via replaceShapePatch
+// before/after (même pattern que pasteClipboard / deleteSelectedPoint).
+// L'action est un no-op si elle ne déplace aucun point (align < 2
+// points, répartir < 3 points). Les boutons du panneau sont grisés en
+// conséquence (updateAlignPanelButtons, hud.js).
+
+// Aligne les points sélectionnés sur la coordonnée X du premier point
+// sélectionné. Retourne true si au moins un point a bougé.
+export const alignSelectedPointsX = () => {
+    return alignOrDistribute('align', 'x')
+}
+
+// Aligne les points sélectionnés sur la coordonnée Y du premier point
+// sélectionné. Retourne true si au moins un point a bougé.
+export const alignSelectedPointsY = () => {
+    return alignOrDistribute('align', 'y')
+}
+
+// Répartit uniformément les points sélectionnés selon X entre les deux
+// extrêmes (qui restent en place). Retourne true si au moins un point
+// a bougé.
+export const distributeSelectedPointsX = () => {
+    return alignOrDistribute('distribute', 'x')
+}
+
+// Répartit uniformément les points sélectionnés selon Y entre les deux
+// extrêmes (qui restent en place). Retourne true si au moins un point
+// a bougé.
+export const distributeSelectedPointsY = () => {
+    return alignOrDistribute('distribute', 'y')
+}
+
+// Implémentation commune align / répartir. `mode` = 'align' |
+// 'distribute', `axis` = 'x' | 'y'. La référence d'alignement est le
+// premier point sélectionné (state.selectedPoints[0]) ; la répartition
+// trie les points sélectionnés par coordonnée et répartit les rangs
+// intermédiaires à pas égal entre min et max (les extrêmes sont des
+// invariants de l'opération). Une entry undo par appel.
+const alignOrDistribute = (mode, axis) => {
+    const shape = activeShape()
+    if (!shape) return false
+    const selected = state.selectedPoints
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    // bornes minimales : align = 2 points (1 seule ancre), répartir =
+    // 3 points (2 extrêmes + 1 intermédiaire au moins).
+    const minCount = mode === 'align' ? 2 : 3
+    if (selected.length < minCount) return false
+    const valid = selected.filter(idx => Number.isInteger(idx) && pointList[idx])
+    if (valid.length < minCount) return false
+
+    // Calcule la map { idx -> nouvelle coordonnée } SANS muter la
+    // scène (le clone before du patch doit capturer l'état pré-mutation).
+    const target = new Map()
+    if (mode === 'align') {
+        // L'ancre est le premier point sélectionné VALIDE (selected[0]
+        // peut être un indice périmé — même garde défensive que
+        // captureClipboard : un indice hors pointList reste dans
+        // selectedSet mais n'a pas d'entrée valide).
+        const anchor = pointList[valid[0]]
+        if (!anchor) return false
+        const anchorCoord = axis === 'x' ? anchor.x : anchor.y
+        valid.forEach((idx) => {
+            if (idx === valid[0]) return
+            target.set(idx, anchorCoord)
+        })
+    } else {
+        // Tri des indices sélectionnés par coordonnée croissante. Les
+        // rangs 0 et n-1 (extrêmes) restent en place ; les rangs
+        // intermédiaires sont répartis à pas égal entre eux.
+        const sorted = [...valid].sort((a, b) => (axis === 'x' ? pointList[a].x - pointList[b].x : pointList[a].y - pointList[b].y))
+        const n = sorted.length
+        const min = axis === 'x' ? pointList[sorted[0]].x : pointList[sorted[0]].y
+        const max = axis === 'x' ? pointList[sorted[n - 1]].x : pointList[sorted[n - 1]].y
+        if (!(max > min)) return false  // tous les points déjà sur la même coordonnée : rien à répartir
+        const step = (max - min) / (n - 1)
+        sorted.forEach((idx, i) => {
+            if (i === 0 || i === n - 1) return
+            target.set(idx, min + step * i)
+        })
+    }
+    if (target.size === 0) return false
+
+    const shapeIdx = state.activeShapeIndex
+    const clonedBefore = cloneShape(shape)
+    // Mutation réelle (map appliquée sur les coords).
+    target.forEach((coord, idx) => {
+        if (axis === 'x') pointList[idx].x = coord
+        else pointList[idx].y = coord
+    })
+    const clonedAfter = cloneShape(shape)
+    saveState({
+        patches: [replaceShapePatch(
+            shapeIdx,
+            clonedBefore.pointList, clonedBefore.tris,
+            clonedAfter.pointList, clonedAfter.tris,
+        )],
+    })
+    const verb = mode === 'align' ? 'Aligne' : 'Repartit'
+    const coordLabel = axis === 'x' ? 'X' : 'Y'
+    log(`${verb} ${target.size} point${target.size > 1 ? 's' : ''} selon ${coordLabel}`)
+    state.nearestPoint = undefined
+    state.nearestLine = undefined
+    requestDraw()
+    if (state.lastMousePos) updateMouseHover(state.lastMousePos)
+    updateSelectionHud()
+    persistState()
+    return true
+}
+
+// ===== Panneau #align (aligner / répartir) =====
+//
+// (évolution « boutons pour forcer l'alignement et la répartition des
+// points sélectionnés ») le bouton #align ouvre un panneau flottant de
+// 4 actions (même pattern que #shapesPanel / #triangleColorPanel) :
+// Aligner X, Aligner Y, Répartir X, Répartir Y. Le panneau reste
+// OUVERT après une action (contrairement à #shapesPanel qui se ferme
+// quand on arme un outil) pour permettre d'enchaîner aligner X puis
+// aligner Y par exemple ; il se ferme par re-clic sur #align, Echap ou
+// clic extérieur. État du bouton synchronisé par updateAlignButton
+// (hud.js, classe .align-panel-open — même langage que
+// #shapes.shapes-panel-open). Le positionnement sous le bouton
+// réutilise positionPanelUnderButton (partagé avec #shapesPanel /
+// #triangleColorPanel — clamp aux bords de la fenêtre).
+export const openAlignPanel = () => {
+    const btn = document.querySelector('#align')
+    const panel = document.querySelector('#alignPanel')
+    if (!btn || !panel) return
+    positionPanelUnderButton(btn, panel)
+    state.alignPanelOpen = true
+    updateAlignButton()
+}
+
+export const closeAlignPanel = () => {
+    const panel = document.querySelector('#alignPanel')
+    if (panel) panel.hidden = true
+    state.alignPanelOpen = false
+    updateAlignButton()
+}
+
+export const toggleAlignPanel = () => {
+    if (state.alignPanelOpen) closeAlignPanel()
+    else openAlignPanel()
+}
+
+// Cablage du panneau #align : bouton (ouvrir/fermer) + 4 actions +
+// fermeture au clic exterieur (même pattern que wireShapesPanel).
+export const wireAlignPanel = () => {
+    const btn = document.querySelector('#align')
+    const panel = document.querySelector('#alignPanel')
+    if (!btn || !panel) return
+    btn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        toggleAlignPanel()
+    })
+    const actions = {
+        alignX: alignSelectedPointsX,
+        alignY: alignSelectedPointsY,
+        distributeX: distributeSelectedPointsX,
+        distributeY: distributeSelectedPointsY,
+    }
+    Object.keys(actions).forEach((key) => {
+        const actionBtn = panel.querySelector(`#${key}`)
+        if (!actionBtn) return
+        actionBtn.addEventListener('click', (e) => {
+            if (e.button !== 0) return
+            // Le panneau reste ouvert après l'action pour enchaîner
+            // (aligner X puis aligner Y) ; les gardes de bornes sont
+            // dans alignOrDistribute (no-op) et le grisage des boutons
+            // dans updateAlignPanelButtons.
+            actions[key]()
+        })
+    })
+    document.addEventListener('mousedown', (e) => {
+        if (!state.alignPanelOpen) return
+        const target = e.target
+        if (!target) return
+        if (panel.contains(target)) return
+        if (btn.contains(target)) return
+        closeAlignPanel()
+    })
 }
 
 // ===== Creation d'un cercle (outil cercle) =====

@@ -124,6 +124,14 @@ export const state = {
     // Panneau flottant du bouton #shapes (liste des formes
     // prédéfinies), ouvert/ferme par le bouton ou clic exterieur.
     shapesPanelOpen: false,
+
+    // ===== Alignement / répartition des points sélectionnés =====
+    // (évolution « boutons pour forcer l'alignement et la répartition
+    // des points sélectionnés », cf. DESIGN.md §7.14) — panneau
+    // flottant du bouton #align (4 actions : aligner X / aligner Y /
+    // répartir X / répartir Y), ouvert/ferme par le bouton ou clic
+    // exterieur. Non persisté comme les autres états d'UI transitoires.
+    alignPanelOpen: false,
     // Outil de forme armé : shapeKind = 'rect' | 'square' | 'tri' |
     // 'penta' | 'hexa' | 'star' (clé du catalogue SHAPE_DEFS). Une
     // forme armée attend un geste clic + glisser sur le canvas :

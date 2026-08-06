@@ -1687,6 +1687,34 @@ format et survit au reload). Couvert par `scripts/smoke-shapeorder.mjs`.
 
 ---
 
+### §7.14 Alignement / répartition des points sélectionnés (`#align`, panneau 4 actions, Alt+← / Alt+→ / Alt+⇧+← / Alt+⇧+→)
+
+(évolution « boutons pour forcer l'alignement et la répartition des
+points sélectionnés »)
+
+**4 actions sur la sélection de la FORME ACTIVE**, accessibles depuis
+le panneau du bouton `#align` (groupe sélection, après `#paste` avant
+`#triangleColor`) et les raccourcis clavier :
+
+| Action | Raccourci | Sémantique |
+|---|---|---|
+| Aligner X | `Alt+←` | tous les points sélectionnés prennent la coordonnée **X du premier point sélectionné** (l'ancre), leur Y est conservé |
+| Aligner Y | `Alt+→` | idem sur Y (X conservé) |
+| Répartir X | `Alt+⇧+←` | espacement **uniforme** selon X entre les deux points extrêmes (min et max restent en place) |
+| Répartir Y | `Alt+⇧+→` | idem sur Y |
+
+**Référence d'alignement = le premier point sélectionné** (`state.selectedPoints[0]`), convention des éditeurs vectoriels : l'ancre est explicite dans l'ordre de sélection, les autres points convergent vers elle (coordonnée alignée seule, l'autre axe est conservé). La répartition trie les indices sélectionnés par coordonnée croissante puis place les rangs intermédiaires à pas égal : `pos_i = min + (max - min) * i / (n-1)` (les rangs 0 et n-1 sont les extrêmes, invariants de l'opération ; si tous les points sont déjà sur la même coordonnée, `max == min` → no-op).
+
+**Bornes** : aligner nécessite ≥ 2 points sélectionnés (1 seule ancre), répartir ≥ 3 (2 extrêmes + 1 intermédiaire au moins). `updateAlignPanelButtons` (hud.js) grise les 4 actions en conséquence à chaque mutation de sélection (appelé depuis `updateSelectionHud`, même pattern que `updateClipboardButtons`) ; `alignOrDistribute` (editor.js) garde en plus un no-op en profondeur (bornes + points invalides filtrés). Le bouton `#align` lui-même reste toujours actif (il ouvre/ferme le panneau) ; sa classe `.align-panel-open` (ring inset vert, même langage que `#shapes.shapes-panel-open`) est posée par `updateAlignButton` en miroir de `state.alignPanelOpen` (flag transitoire, jamais persisté — comme `shapesPanelOpen`).
+
+**Panneau** : structure calquée sur `#shapesPanel` (positionné sous le bouton par un helper dédié, fermeture au clic extérieur / `Échap` / re-clic sur `#align` via `wireAlignPanel`). Contrairement à `#shapesPanel` (qui se ferme quand on arme un outil), il reste **ouvert après une action** pour permettre d'enchaîner (ex. Aligner X puis Aligner Y) ; masqué en preview comme les autres panneaux (`body.preview-mode #alignPanel`).
+
+**Historique** : chaque action est une entry undo UNIQUE via `replaceShapePatch` before/after (même pattern que `pasteClipboard` / `deleteSelectedPoint`) — seules les coordonnées de `pointList` changent, les `tris` restent intacts (indices valides, fills survivent), donc le patch est compact. L'undo restaure les coordonnées exactes ; la sélection est vidée par l'undo (comportement standard `clearEditingTransientState`).
+
+**Raccourcis** : mêmes gardes que l'ordre des formes (§7.13) — `typing`, `preview` (aucune édition), `!e.ctrlKey` (AltGr = Alt+Ctrl exclu), `!e.repeat` ; `e.shiftKey` distingue répartir (Shift+) d'aligner. Les raccourcis passent par les MÊMES fonctions que les boutons (`alignSelectedPointsX/Y` / `distributeSelectedPointsX/Y`) — un seul chemin de vérité. Couvert par `scripts/smoke-align.mjs`.
+
+---
+
 ## §8. Pile d'historique avec stockage delta
 
 ### §8.1 Motivation
@@ -1909,7 +1937,7 @@ diminue simplement le coût mémoire par entrée.
 
 ### §8.8 Call sites (rappel exhaustive)
 
-11 sites `saveState` au total. Mapping vers patch :
+13 sites `saveState` au total. Mapping vers patch :
 
 | Site (fichier:ligne, fonction)                              | Patch appliqué                              |
 |-------------------------------------------------------------|---------------------------------------------|
@@ -1924,6 +1952,8 @@ diminue simplement le coût mémoire par entrée.
 | `shapes.js:addShape`                                        | `shapeArrayPatch` + `activeShapeIndexPatch` |
 | `shapes.js:performDeleteShape`                              | `shapeArrayPatch` (remove ou replace) + `activeShapeIndexPatch` |
 | `merge.js:mergeSelectedPoints`                              | `replaceShapePatch` (1 shape, mais avec reindex complet) |
+| `editor.js:pasteClipboard`                                   | `replaceShapePatch` (1 shape)               |
+| `editor.js:alignOrDistribute` (align/répartir §7.14)         | `replaceShapePatch` (1 shape)               |
 
 ### §8.9 API publique inchangée
 

@@ -21,6 +21,8 @@ import {
     wireShapesPanel, beginShapeGesture, commitShapeGesture, cancelShapeGesture,
     disarmShapeTool, closeShapesPanel,
     copySelection, cutSelection, pasteClipboard,
+    wireAlignPanel, closeAlignPanel,
+    alignSelectedPointsX, alignSelectedPointsY, distributeSelectedPointsX, distributeSelectedPointsY,
 } from './editor.js'
 import { undo, redo } from './history.js'
 import {
@@ -168,6 +170,7 @@ wireBoardWheel()
 wireBeforeUnload()
 wireTriangleColorPanel()
 wireShapesPanel()
+wireAlignPanel()
 
 // ===== Toolbar buttons =====
 
@@ -199,6 +202,11 @@ wireButton('selectAll', () => selectAllPoints())
 wireButton('copy', () => copySelection())
 wireButton('cut', () => cutSelection())
 wireButton('paste', () => pasteClipboard())
+// (évolution « boutons pour forcer l'alignement et la répartition des
+// points sélectionnés ») le bouton #align est câblé par wireAlignPanel
+// (editor.js) qui gère l'ouverture/fermeture + le clic extérieur + les
+// 4 actions du panneau. Raccourcis clavier Alt+←/→ / Alt+Shift+←/→
+// plus bas (mêmes fonctions que les boutons du panneau).
 wireButton('helpBtn', () => showHelp())
 wireButton('prevShape', () => prevShape())
 wireButton('nextShape', () => nextShape())
@@ -611,6 +619,16 @@ document.addEventListener('keydown', (e) => {
         else disarmShapeTool()
         return
     }
+    // Panneau #align (aligner / répartir, évolution « boutons pour
+    // forcer l'alignement et la répartition des points sélectionnés ») :
+    // Echap ferme le panneau (même contrat que #shapesPanel — placé
+    // juste après pour partager la même priorité Echap avant les
+    // modales).
+    if (e.code === 'Escape' && !e.repeat && state.alignPanelOpen) {
+        e.preventDefault()
+        closeAlignPanel()
+        return
+    }
     if (e.code === 'Escape' && !e.repeat && (isHelpOpen || isResetOpen || isDeleteShapeOpen || isSaveOpen || isMergeErrorOpen)) {
         e.preventDefault()
         if (isHelpOpen) hideHelp()
@@ -673,6 +691,30 @@ document.addEventListener('keydown', (e) => {
     } else if (!typing && !state.previewMode && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && e.code === 'ArrowDown') {
         e.preventDefault()
         moveShapeDown()
+    }
+    // Alignement / répartition des points sélectionnés (évolution
+    // « boutons pour forcer l'alignement et la répartition des points
+    // sélectionnés », cf. DESIGN.md §7.14) : Alt+← / Alt+→ alignent
+    // sur le premier point sélectionné (ancre), Alt+Shift+← /
+    // Alt+Shift+→ répartissent uniformément entre les extrêmes — mêmes
+    // fonctions que les 4 boutons du panneau #align. Gardes
+    // identiques à l'ordre des formes : typing, preview (aucune
+    // édition), AltGr via !e.ctrlKey (AltGr = Alt+Ctrl), !e.repeat.
+    // e.shiftKey distingue répartir (Shift+) d'aligner ; les actions
+    // sont no-op si la sélection est trop petite (align < 2 points,
+    // répartir < 3).
+    if (!typing && !state.previewMode && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && e.shiftKey && e.code === 'ArrowLeft') {
+        e.preventDefault()
+        distributeSelectedPointsX()
+    } else if (!typing && !state.previewMode && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && e.shiftKey && e.code === 'ArrowRight') {
+        e.preventDefault()
+        distributeSelectedPointsY()
+    } else if (!typing && !state.previewMode && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && !e.shiftKey && e.code === 'ArrowLeft') {
+        e.preventDefault()
+        alignSelectedPointsX()
+    } else if (!typing && !state.previewMode && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && !e.shiftKey && e.code === 'ArrowRight') {
+        e.preventDefault()
+        alignSelectedPointsY()
     }
     // Preview = visualisation seule : undo/redo sont des mutations de
     // scene — elles resteraient invisibles a l'ecran (geometrie
