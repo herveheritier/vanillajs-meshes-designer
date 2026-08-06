@@ -7,6 +7,19 @@ export const updateShapeHud = () => {
     const label = document.querySelector('#shapeLabel')
     if (!label) return
     label.textContent = `${state.activeShapeIndex + 1}/${state.shapes.length}`
+    // (évolution « boutons pour gérer l'ordre des formes ») — état
+    // disabled des boutons #moveShapeUp / #moveShapeDown : bornes de
+    // l'ordre. Monter la forme active n'a de sens que si elle n'est pas
+    // déjà la dernière (indice < longueur-1), descendre que si elle
+    // n'est pas déjà la première (indice > 0). Même langage que
+    // updateUndoRedoHud (opacité 0.35 + cursor not-allowed via CSS
+    // #toolbar button:disabled). Synchronisé à chaque changement de
+    // forme active (goToShape / addShape / deleteShape / undo / redo /
+    // boot) puisque updateShapeHud est appelé par tous ces chemins.
+    const upBtn = document.querySelector('#moveShapeUp')
+    const downBtn = document.querySelector('#moveShapeDown')
+    if (upBtn) upBtn.disabled = state.activeShapeIndex >= state.shapes.length - 1
+    if (downBtn) downBtn.disabled = state.activeShapeIndex <= 0
 }
 
 export const updateUndoRedoHud = () => {

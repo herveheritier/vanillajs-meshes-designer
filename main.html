@@ -1735,14 +1735,23 @@
             </div>
             <span class="toolbar-sep"></span>
             <!-- Groupe "Shape nav" : navigation entre formes (prev,
-                 label, next) + creation (new) + suppression
-                 (delete). Le compteur #shapeLabel deplace avec
-                 prev/next ; new/delete sont des outils de gestion
-                 lies. -->
+                 label, next) + ordre des formes (monter / descendre,
+                 evolution « boutons pour gerer l'ordre des formes » :
+                 dans la vue plans, forme n = plan n — monter augmente
+                 l'indice, la forme passe AU-DESSUS, descendre le
+                 diminue, elle passe en dessous) + creation (new) +
+                 suppression (delete). Le compteur #shapeLabel deplace
+                 avec prev/next ; new/delete sont des outils de gestion
+                 lies. Les boutons d'ordre sont grises aux bornes
+                 (1re forme : descendre impossible, derniere : monter
+                 impossible) par updateShapeHud (hud.js), meme langage
+                 que undo/redo. -->
             <div class="toolbar-group">
                 <button id="prevShape" title="Forme precedente"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l-5 5 5 5"/></svg></button>
                 <span id="shapeLabel" title="Forme active / nombre total">1/1</span>
                 <button id="nextShape" title="Forme suivante"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+                <button id="moveShapeUp" title="Monter la forme active d'un plan (Alt+Flèche Haut) : dans la vue plans (forme n = plan n), elle passe au-dessus de la forme suivante" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="13" x2="8" y2="3"/><polyline points="4,7 8,3 12,7"/></svg></button>
+                <button id="moveShapeDown" title="Descendre la forme active d'un plan (Alt+Flèche Bas) : dans la vue plans (forme n = plan n), elle passe en dessous de la forme précédente" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="4,9 8,13 12,9"/></svg></button>
                 <button id="newShape" title="Ajouter une nouvelle forme vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>
                 <button id="deleteShape" title="Supprimer la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
             </div>
@@ -1877,7 +1886,7 @@
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">V</kbd><span>coller dans la forme active — chaque collage décale d'un demi-pas de grille pour se distinguer de la source ; le presse-papiers est interne à l'application (non partagé avec le système)</span></div>
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd">R</kbd><span>réticule : off / simple / projection symétrique (cycle)</span></div>
-                    <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; un 2e clic (ou P) affiche toutes les formes dans leur ordre (forme n = plan n) ; Échap ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
+                    <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; un 2e clic (ou P) affiche toutes les formes dans leur ordre (forme n = plan n) ; Échap ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd><span>monter / descendre la forme active d'un plan dans l'ordre des formes (forme n = plan n dans la vue plans : monter la fait passer au-dessus, descendre en dessous) ; boutons de la barre d'outils (grisés aux bornes de l'ordre)</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Formes (bouton)</kbd><span>ouvre la liste des formes prédéfinies (cercle, rectangle, carré, triangle, pentagone, hexagone, étoile, anneau) : choisir une forme puis la tracer en 2 clics (1er clic = ancre, mouvement = taille et orientation pour les polygones, 2e clic = valider) ; l'étoile et l'anneau se tracent en 3 clics (1er = centre, mouvement = rayon + angle de départ, 2e = verrouille, mouvement = profondeur des branches / taille du trou, 3e = valider ; molette = côtés pour l'anneau) ; Échap = fermer le panneau ou annuler l'outil, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd wide">Molette</kbd><span>zoomer (centre sur le curseur) ; pivoter si 2+ points sont selectionnes</span></div>

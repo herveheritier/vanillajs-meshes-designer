@@ -43,7 +43,7 @@ import {
     showSaveModal, hideSaveModal, wireSaveModal,
 } from './modals.js'
 import {
-    prevShape, nextShape, addShape, deleteShape, hideDeleteShapeModal, wireDeleteShapeModal,
+    prevShape, nextShape, moveShapeUp, moveShapeDown, addShape, deleteShape, hideDeleteShapeModal, wireDeleteShapeModal,
 } from './shapes.js'
 import { mergeSelectedPoints, wireMergeErrorModal, hideMergeErrorModal, attemptDropMerge } from './merge.js'
 import { log } from './log.js'
@@ -202,6 +202,8 @@ wireButton('paste', () => pasteClipboard())
 wireButton('helpBtn', () => showHelp())
 wireButton('prevShape', () => prevShape())
 wireButton('nextShape', () => nextShape())
+wireButton('moveShapeUp', () => moveShapeUp())
+wireButton('moveShapeDown', () => moveShapeDown())
 wireButton('newShape', () => addShape())
 wireButton('deleteShape', () => deleteShape())
 wireButton('mergePoints', () => mergeSelectedPoints())
@@ -652,6 +654,25 @@ document.addEventListener('keydown', (e) => {
     if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyC' && !e.repeat) {
         e.preventDefault()
         toggleCircleMode()
+    }
+    // Ordre des formes (évolution « boutons pour gérer l'ordre des
+    // formes ») : Alt+Flèche Haut / Bas déplacent la forme active d'un
+    // plan (mêmes fonctions que les boutons #moveShapeUp /
+    // #moveShapeDown). Gardes : typing (ne pas voler la saisie dans
+    // un champ — même politique que Ctrl+C/X/V), preview (visualisation
+    // seule, aucune édition — même politique que undo/redo), AltGr
+    // détecté via e.ctrlKey (AltGr = Alt+Ctrl, cf. §3.6 : la
+    // combinaison ne doit PAS déclencher le déplacement), et e.repeat
+    // filtré pour un déplacement par frappe (maintenir Alt+Flèche ne
+    // doit pas faire défiler l'ordre en boucle). Les bornes sont gérées
+    // par moveShapeUp/Down eux-mêmes (no-op hors bornes) + l'état
+    // disabled des boutons.
+    if (!typing && !state.previewMode && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && e.code === 'ArrowUp') {
+        e.preventDefault()
+        moveShapeUp()
+    } else if (!typing && !state.previewMode && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && e.code === 'ArrowDown') {
+        e.preventDefault()
+        moveShapeDown()
     }
     // Preview = visualisation seule : undo/redo sont des mutations de
     // scene — elles resteraient invisibles a l'ecran (geometrie

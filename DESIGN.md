@@ -47,7 +47,7 @@ toucher §4.1 → le doc dérive. À détecter en revue de PR par grep croisé
 | `draw.js`                | Primitives de rendu canvas en SCREEN                              | Pas de calcul en MODÈLE                                             |
 | `editor.js`              | Manipulation scène/points : sélection, hover, find, grab, addPoint | Pas de CRUD formes (→`shapes.js`), pas d'historique (sauf `saveState`), pas de zoom/pan (→`viewport.js`) |
 | `viewport.js`            | Zoom, pan, wheel, projection, reticule                            | Pas de manipulation de points                                       |
-| `shapes.js`              | CRUD de formes (`addShape`, `deleteShape`, `goToShape`)           | —                                                                   |
+| `shapes.js`              | CRUD de formes (`addShape`, `deleteShape`, `goToShape`) + ordre (`moveShapeUp`/`moveShapeDown`, §7.13) | — |
 | `geometry.js`            | Calculs géométriques purs (`snapToGrid`, `screenToModel`, …)      | —                                                                   |
 | `io.js`                  | Sérialisation, persistance, import/export                         | —                                                                   |
 | `history.js`             | Pile undo/redo                                                    | —                                                                   |
@@ -1631,6 +1631,59 @@ que undo/redo).
 (`replaceShapePatch`) — Ctrl+Z annule le collage (les points collés
 disparaissent, la sélection revient), Ctrl+Z après un couper restaure
 les points supprimés. Couvert par `scripts/smoke-clipboard.mjs`.
+
+---
+
+### §7.13 Ordre des formes : monter / descendre (`#moveShapeUp` / `#moveShapeDown`, Alt+↑ / Alt+↓)
+
+(évolution « boutons pour gérer l'ordre des formes »)
+
+**L'ordre EST la sémantique des plans.** Dans la vue plans (§2.6),
+`drawShapes` rend les formes dans l'ordre du tableau `state.shapes` —
+forme n = plan n, la forme d'indice le plus haut est dessinée en
+dernier donc **recouvre** les précédentes là où elles se chevauchent.
+Réordonner le tableau = réordonner les plans, sans toucher ni aux
+`pointList` ni aux `tris` d'aucune forme.
+
+**Sens choisi avec l'utilisateur :** MONTER la forme active =
+indice +1 (`1/3 → 2/3 → 3/3`), elle passe AU-DESSUS dans la vue plans
+(recouvre celles d'indice inférieur). DESCENDRE = indice -1, elle passe
+en dessous. Le compteur `#shapeLabel` (forme active / total) monte et
+descend avec elle — un monter de la forme 1/3 l'amène en 2/3.
+
+**Entrées** : boutons `#moveShapeUp` / `#moveShapeDown` dans le groupe
+« Shape nav » (après `#nextShape`, avant `#newShape`) + raccourcis
+`Alt+Flèche Haut` / `Alt+Flèche Bas` (main.js keydown). Gardes des
+raccourcis : `typing` (ne pas voler la saisie d'un champ), `preview`
+(visualisation seule, même politique que undo/redo), `!e.ctrlKey`
+(AltGr = Alt+Ctrl est exclu — cf. §3.6), `!e.repeat` (un déplacement
+par frappe). Les boutons passent par les MÊMES fonctions
+(`moveShapeUp` / `moveShapeDown` dans shapes.js) — un seul chemin de
+vérité.
+
+**Bornes** : `updateShapeHud` (hud.js) grise `#moveShapeUp` sur la
+dernière forme (`activeShapeIndex >= length - 1`) et
+`#moveShapeDown` sur la première (`<= 0`) — même langage disabled que
+undo/redo (opacité 0.35 + `not-allowed`). Les fonctions sont
+elles-mêmes des no-op hors bornes (défense en profondeur : un clic
+programmatique sur un bouton grisé ne fait rien).
+
+**Historique (delta §8)** : nouveau patch `shapeMove { from, to }`
+dans history.js — le plus économe possible (~16 B) car un déplacement
+ne change NI `pointList` NI `tris` : seules les positions du tableau
+bougent, l'applicateur fait le splice dans les deux directions
+(forward = `from→to`, inverse = `to→from`). Le call site (shapes.js
+`moveShape`) accole un `activeShapeIndexPatch(from, to)` : la forme
+active SUIT son déplacement, et l'undo/redo restaure donc l'ordre ET
+l'index actif. L'entry est couverte par `shouldUseSnapshot`
+(estimation 16 B — jamais promue en snapshot). Le splice en mémoire
+est le miroir exact de l'applicateur history.js (remove at `from`,
+insert at `to`) ; `goToShape(to)` réutilise le nettoyage d'état
+transitoire du chemin de navigation (sélection, hover, HUDs).
+
+**Persistance** : mutation de scène ordinaire — `saveState` (dirty +
+undo) puis `persistState` (le nouvel ordre est sérialisé dans le wire
+format et survit au reload). Couvert par `scripts/smoke-shapeorder.mjs`.
 
 ---
 

@@ -4,7 +4,7 @@ import { state } from './state.js'
 import { ACTION_NONE } from './constants.js'
 import { drawBoard, requestDraw } from './draw.js'
 import { updateShapeHud, updateSelectionHud, updateColorButtonState } from './hud.js'
-import { saveState, shapeArrayPatch, activeShapeIndexPatch, cloneShape } from './history.js'
+import { saveState, shapeArrayPatch, activeShapeIndexPatch, shapeMovePatch, cloneShape } from './history.js'
 import { persistState } from './io.js'
 import { log } from './log.js'
 import { updateMouseHover } from './editor.js'
@@ -42,6 +42,56 @@ export const prevShape = () => {
 export const nextShape = () => {
     if (state.shapes.length <= 1) return
     goToShape((state.activeShapeIndex + 1) % state.shapes.length)
+}
+
+// (évolution « boutons pour gérer l'ordre des formes ») — déplacement
+// de la forme active dans l'ordre du tableau. L'ordre EST la sémantique
+// des plans : dans la vue plans (cf. DESIGN.md §2.6), drawShapes
+// rend les formes dans l'ordre du tableau — forme n = plan n, la forme
+// d'indice le plus haut est dessinée en dernier donc recouvre les
+// précédentes. MONTER la forme = augmenter son indice (elle passe
+// au-dessus, plan n → plan n+1, le compteur monte : 1/3 → 2/3),
+// DESCENDRE = diminuer son indice (elle passe en dessous). La forme
+// active suit son déplacement (activeShapeIndexPatch accolé au
+// shapeMovePatch : l'undo/redo restaure aussi l'index actif).
+//
+// Un déplacement = une entry undo (2 patches : shapeMove + index),
+// comme addShape/performDeleteShape. Le splice en mémoire est le miroir
+// exact de l'applicateur history.js applyShapeMove (même direction
+// forward : remove at from, insert at to). goToShape(to) réutilise le
+// nettoyage d'état transitoire (sélection, hover, HUDs) du même chemin
+// que prevShape/nextShape.
+const moveShape = (from, to) => {
+    if (from === to) return
+    saveState({
+        patches: [
+            shapeMovePatch(from, to),
+            activeShapeIndexPatch(from, to),
+        ],
+    })
+    const [moved] = state.shapes.splice(from, 1)
+    state.shapes.splice(to, 0, moved)
+    goToShape(to)
+    persistState()
+}
+
+export const moveShapeUp = () => {
+    if (state.shapes.length <= 1) return
+    // Défense en profondeur (le bouton est déjà grisé à cette borne) :
+    // un appel programmatique sur la dernière forme ne doit pas faire
+    // de splice hors bornes (ex. index+1 = length → splice invalide).
+    if (state.activeShapeIndex >= state.shapes.length - 1) return
+    moveShape(state.activeShapeIndex, state.activeShapeIndex + 1)
+}
+
+export const moveShapeDown = () => {
+    if (state.shapes.length <= 1) return
+    // Défense en profondeur (le bouton est déjà grisé à cette borne) :
+    // un appel programmatique sur la 1re forme ne doit pas faire un
+    // splice à l'index -1 (qui retirerait le DERNIER élément — bug
+    // attrapé par smoke-shapeorder).
+    if (state.activeShapeIndex <= 0) return
+    moveShape(state.activeShapeIndex, state.activeShapeIndex - 1)
 }
 
 export const addShape = () => {

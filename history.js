@@ -180,6 +180,22 @@ export const activeShapeIndexPatch = (from, to) => ({
     to,
 })
 
+// 7) shapeMove : la forme à l'index `from` est déplacée à l'index
+//    `to` dans state.shapes (évolution « boutons pour gérer l'ordre
+//    des formes »). Un déplacement ne change ni le pointList ni les
+//    tris d'aucune forme — seuls les indices du tableau bougent —,
+//    donc le patch le plus économe ne stocke que les deux positions
+//    (≈ 16 B) ; l'applicateur fait le splice dans les deux directions
+//    (forward = from→to, inverse = to→from). La forme active suit le
+//    déplacement : le call site (shapes.js moveShapeUp/moveShapeDown)
+//    accole un activeShapeIndexPatch(from, to) pour que l'undo
+//    restaure aussi l'index actif.
+export const shapeMovePatch = (from, to) => ({
+    kind: 'shapeMove',
+    from,
+    to,
+})
+
 // ===== Patch resolution =====
 //
 // À l'enregistrement (`saveState`), certains patches peuvent être passés
@@ -354,6 +370,16 @@ const applyActiveShapeIndex = (idx) => {
     state.activeShapeIndex = idx
 }
 
+const applyShapeMove = (patch, direction) => {
+    if (direction === 'forward') {
+        const [moved] = state.shapes.splice(patch.from, 1)
+        state.shapes.splice(patch.to, 0, moved)
+    } else {
+        const [moved] = state.shapes.splice(patch.to, 1)
+        state.shapes.splice(patch.from, 0, moved)
+    }
+}
+
 const applyPatch = (patch, direction) => {
     switch (patch.kind) {
         case 'movePoints':
@@ -370,6 +396,9 @@ const applyPatch = (patch, direction) => {
             return
         case 'shapeArray':
             applyShapeArray(patch, direction)
+            return
+        case 'shapeMove':
+            applyShapeMove(patch, direction)
             return
         case 'activeShapeIndex':
             applyActiveShapeIndex(direction === 'forward' ? patch.to : patch.from)
@@ -435,6 +464,13 @@ const snapshotBeforeState = (patches) => {
     try {
         for (const p of patches) {
             if (p.kind === 'insertPoint') continue
+            // shapeMove : même exception que insertPoint — le call site
+            // (shapes.js moveShape) appelle saveState AVANT la mutation,
+            // la scène courante EST déjà l'état pré-mutation ; rejouer
+            // l'inverse d'un déplacement sur un clone pré-mutation
+            // réordonnerait le clone (snapshot corrompu, undo d'ordre
+            // faux). Le snapshot doit refléter l'ordre PRÉ-déplacement.
+            if (p.kind === 'shapeMove') continue
             applyPatch(p, 'inverse')
         }
     } finally {
@@ -468,6 +504,8 @@ const shouldUseSnapshot = (patches, shapes) => {
             estBytes += Math.max(p.before.length, p.after.length) * 24
         } else if (p.kind === 'shapeArray') {
             estBytes += 200
+        } else if (p.kind === 'shapeMove') {
+            estBytes += 16
         } else if (p.kind === 'activeShapeIndex') {
             estBytes += 8
         }
