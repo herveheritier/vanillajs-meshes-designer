@@ -882,6 +882,21 @@ export const drawShapes = () => {
         !Array.isArray(state.shapes) ||
         state.shapes.length === 0
     ) return
+    // Preview « plans » (2e état du cycle, cf. DESIGN.md §2.6) :
+    // toutes les formes sont rendues COMME la forme active — fills
+    // conservés (t.fill ou défaut), lignes actives, pas de points de
+    // contrôle — dans l'ORDRE du tableau : forme n = plan n, la forme
+    // d'indice le plus haut recouvre les précédentes là où elles se
+    // chevauchent. La composition en plans rend le stacking visible,
+    // contrairement à la vue édition (forme active remplie + autres en
+    // contours atténués) et à la preview simple (même vue édition,
+    // chrome masquée).
+    if (state.previewPlans) {
+        for (let i = 0; i < state.shapes.length; i++) {
+            drawShape(state.shapes[i], true)
+        }
+        return
+    }
     for (let i = 0; i < state.shapes.length; i++) {
         if (i === state.activeShapeIndex) continue
         drawShape(state.shapes[i], false)

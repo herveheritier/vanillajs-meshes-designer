@@ -469,7 +469,7 @@ attendu et correct.
 
 ---
 
-### §2.6 Preview — mode visualisation seule (bouton œil, `P` / `Échap`)
+### §2.6 Preview — mode visualisation seule (bouton œil, cycle en 3 états)
 
 Un mode de **focus transitoire** qui réduit l'écran à la géométrie de la
 scène : points de contrôle, axes, grille, HUD et boutons sont masqués pour
@@ -478,26 +478,58 @@ comme on verrait une capture du résultat final. Spec utilisateur :
 « visualiser la scène sans les points de contrôle ni les axes ni le HUD
 ni les boutons ».
 
+**Cycle en 3 états (évolution bouton prévisualiser)** : le bouton `#preview`
+et la touche `P` font tourner un cycle `off → preview simple → plans → off` :
+
+1. **preview simple** (1er clic) — comportement historique : la scène est
+   visualisée « telle quelle » (forme active remplie, autres en contours
+   atténués), chrome masquée.
+2. **plans** (2e clic) — TOUTES les formes sont rendues comme des plans
+   remplis dans l'ORDRE du tableau : **forme n = plan n**, la forme
+   d'indice le plus haut recouvre les précédentes là où elles se
+   chevauchent. Cette vue fait apparaître la composition en plans
+   (stacking) de la scène. `state.previewPlans` (state.js) est le
+   sous-état qui distingue les deux vues — même chrome masquée, même
+   non-persistance.
+3. **off** (3e clic) — sortie.
+
+Les sorties **directes** (Échap, clic gauche sur le canvas, `Ctrl+S`)
+quittent les deux états d'un coup via `exitPreview` (viewport.js) — elles
+n'avancent PAS le cycle (sinon le clic de sortie afficherait les plans au
+lieu de quitter). Pour que le 2e/3e clic du bouton soient possibles, la
+toolbar est réduite en preview au seul bouton œil flottant (cf. §2.6.1).
+
 #### §2.6.1 Délimitation : chrome masquée vs contenu canvas
 
 Le mode agit sur DEUX plans complémentaires :
 
 1. **Chrome DOM** — la classe `body.preview-mode` posée par
-   `applyPreviewMode` (viewport.js) active une règle CSS (main.html) qui
-   passe en `display: none !important` : la toolbar (`#toolbar`), la
-   console (`#messageBoard`), le HUD bas-gauche (`#coords`,
-   `#zoomDisplay`, `#fpsDisplay`), `#sceneStatus`, le panneau de couleur
-   (`#triangleColorPanel`) et les modales (`.modal`). Le `!important` est
-   obligatoire pour surpasser le `#messageBoard.style.display` inline posé
-   par `updateConsoleButton` (hud.js) et l'attribut `hidden` du
-   `#fpsDisplay`. Le curseur du canvas passe en `grab` (indice de pan)
-   via `body.preview-mode #board { cursor: grab !important }` —
-   nécessaire parce que `#board` porte un `cursor: 'none'` inline posé en
-   JS (haute priorité), même pattern que `body.dragging-console`.
+   `applyPreviewMode` (viewport.js) active des règles CSS (main.html) qui
+   passent en `display: none !important` : la console (`#messageBoard`),
+   le HUD bas-gauche (`#coords`, `#zoomDisplay`, `#fpsDisplay`),
+   `#sceneStatus`, le panneau de couleur (`#triangleColorPanel`) et les
+   modales (`.modal`). La toolbar, elle, est RÉDUITE à son seul bouton
+   `#preview` (l'œil) : le fond/cadre de la card disparaît et tous les
+   autres éléments sont masqués (règles `:has()` sur `.toolbar-group`) —
+   c'est la condition pour que le CYCLE au clic (`off → preview → plans →
+   off`) reste pilotable à la souris depuis l'intérieur du mode. Le
+   `!important` est obligatoire pour surpasser le
+   `#messageBoard.style.display` inline posé par `updateConsoleButton`
+   (hud.js) et l'attribut `hidden` du `#fpsDisplay`. Le curseur du canvas
+   passe en `grab` (indice de pan) via
+   `body.preview-mode #board { cursor: grab !important }` — nécessaire
+   parce que `#board` porte un `cursor: 'none'` inline posé en JS (haute
+   priorité), même pattern que `body.dragging-console`.
 2. **Contenu canvas** — gardes `state.previewMode` dans `draw.js` :
    - `renderSceneToOffscreen` : saute `drawGrid`, `drawAxis` et
      `drawSelectedPoints` — la scène stable (§2.4) se réduit à
      `drawShapes`.
+   - `drawShapes` : en plans (`state.previewPlans`), TOUTES les formes
+     sont dessinées en `isActive=true` dans l'ordre du tableau (forme n =
+     plan n) — chaque forme devient un plan rempli (fills conservés), la
+     dernière recouvre les précédentes là où elles se chevauchent. En
+     preview simple, comportement historique (forme active remplie,
+     autres en contours atténués).
    - `drawShape` (pass vertex) : saute `drawPointsBatch` — les points de
      contrôle (disques des sommets) disparaissent.
    - `renderTransient` : early-return — réticule et selectionBox (lasso)
@@ -508,7 +540,9 @@ Le mode agit sur DEUX plans complémentaires :
 
 `state.previewMode` (state.js, défaut `false`) est la source de vérité du
 mode, lue par la couche DOM (viewport.js), le rendu (draw.js) ET les
-gardes d'interaction (main.js).
+gardes d'interaction (main.js). `state.previewPlans` (défaut `false`) est
+son sous-état : il ne vaut que si `previewMode` est vrai et ne change que
+le rendu de `drawShapes` (la chrome est masquée dans les deux états).
 
 #### §2.6.2 Contrat d'interaction : navigation seule, édition impossible
 
@@ -519,22 +553,23 @@ ne permet AUCUNE mutation de la scène.
 |---|---|
 | **Molette** | **Toujours zoom** — les deux chemins de rotation sont bloqués : `onBoardWheel` (viewport.js) gate la rotation AltGr (`§6`) et `canRotate` avec `!state.previewMode`. Sans cette garde, une sélection non vide (masquée mais toujours présente dans l'état) ferait pivoter la géométrie au lieu de zoomer — mutation invisible interdite. |
 | **Clic milieu + drag** | Pan, inchangé — seul geste souris autorisé (`e.button === 1`). |
-| **Clic gauche** | **Sort du mode** — le clic est avalé : le mousedown quitte la preview AVANT de poser la selectionBox, donc pas de lasso / sélection / `addPoint` sur le coup qui quitte. |
+| **Clic gauche** | **Sort du mode** — sortie DIRECTE (des deux états, preview simple et plans) : le clic est avalé : le mousedown quitte la preview AVANT de poser la selectionBox, donc pas de lasso / sélection / `addPoint` sur le coup qui quitte. |
 | **Clic droit** | Ignoré — pas de grab, et `processRightClickSelection` gate par `!state.previewMode` sur le mouseup. |
 | **`Backspace` / `⇧+Backspace`** | Ignorés (suppression = mutation). |
 | **`Ctrl+Z` / `Ctrl+⇧+Z` / `Ctrl+Y`** | Ignorés (undo/redo muteraient une scène invisible à l'écran). |
 | **`Ctrl+S`, `Ctrl+0`** | Conservés (export + reset zoom : non-mutants de la géométrie). |
 | **`G` / `R` / `F`** | Conservés mais sans effet visible (grille / axes / réticule masqués par le mode ; l'état revient tel quel à la sortie). |
-| **`P` / `Échap`** | Entrée / sortie du mode. |
+| **`P`** | Fait tourner le **cycle** : off → preview simple → plans → off (comme le bouton `#preview`). |
+| **`Échap`** | **Sortie directe** — quitte la preview (simple OU plans) d'un coup (`exitPreview`), priorité absolue sur la fermeture de modale dans le keydown handler. |
 
-**Filet anti-grab** : `togglePreview` retourne tôt si `grabbed()`
-(`ACTION_GRABBING` en cours). Sans ce garde, P/Échap pendant un
-clic-droit + drag entrerait en preview alors que
+**Filet anti-grab** : `togglePreview` ET `exitPreview` retournent tôt si
+`grabbed()` (`ACTION_GRABBING` en cours). Sans ce garde, P/Échap pendant
+un clic-droit + drag entrerait en preview alors que
 `resolveMouseMoveOnBoard` continuerait de muter la scène jusqu'au
 mouseup. Le bouton toolbar est inatteignable pendant un drag (souris
 occupée sur le canvas) — le clavier est la seule voie d'entrée, d'où la
-garde côté `togglePreview` (P, Échap et le clic gauche de sortie
-passent tous par cette fonction).
+garde partagée côté `togglePreview` (P, cycle) / `exitPreview` (Échap et
+le clic gauche de sortie).
 
 À l'entrée, `applyPreviewMode` nettoie aussi les gestes en cours
 (`isSelectingBox`, hover state) pour ne rien laisser transiter d'un mode
@@ -553,25 +588,27 @@ rapide dans la même frame rend l'état final, pas un flicker intermédiaire.
 
 À la différence des toggles de préférences (grille, réticule, FPS,
 console — persistés via leurs clés `meshesDesigner.*`), la preview n'est
-PAS persistée. Un reload en preview laisserait l'utilisateur sans boutons
-(la toolbar est masquée) — seule la sortie clavier (P / Échap) resterait
-disponible, et l'état d'édition par défaut au boot est plus sûr. La
-preview est un état de **focus passager**, pas une préférence de vue.
+PAS persistée — ni l'état simple ni l'état plans (`previewMode` /
+`previewPlans`). Un reload en preview laisserait l'utilisateur sans
+boutons (la toolbar est réduite au seul bouton œil) — seule la sortie
+clavier (P / Échap) resterait disponible, et l'état d'édition par défaut
+au boot est plus sûr. La preview est un état de **focus passager**, pas
+une préférence de vue.
 
 #### §2.6.5 Points d'entrée / sortie
 
-- Bouton toolbar `#preview` (groupe « Canvas ops », icône œil, état actif
-  `.preview-active` — même langage que `#fps.fps-active`).
+- Bouton toolbar `#preview` (groupe « Canvas ops », icône œil, cycle en 3
+  états : état actif `.preview-active` vert — même langage que
+  `#fps.fps-active` — et sous-état `.preview-plans` ambre avec ring inset
+  + libellé « plans », cf. `updatePreviewButton` dans viewport.js).
 - Raccourci clavier `P` (gate `!e.repeat` : maintenir P ne doit pas faire
   clignoter toute la chrome on/off — impact visuel bien plus lourd que
-  G/R/F).
-- Sortie clavier : `Échap` — **priorité absolue** sur la fermeture de
-  modale dans le keydown handler (la chrome étant masquée, un modal ouvert
-  n'a pas de sens à l'écran) — ou `P`.
-- **Sortie souris : clic gauche** sur le canvas — clic avalé (cf. §2.6.2) :
-  le mousedown quitte le mode et retourne avant toute action d'édition.
-  Le clic milieu conserve son contrat de pan (navigation), le clic droit
-  reste ignoré.
+  G/R/F) — même cycle que le bouton.
+- **Sortie directe** (des deux états) : `Échap` — **priorité absolue** sur
+  la fermeture de modale dans le keydown handler (la chrome étant masquée,
+  un modal ouvert n'a pas de sens à l'écran) —, clic gauche sur le canvas
+  (clic avalé, cf. §2.6.2) et `Ctrl+S` (`openSaveModal` sort d'abord via
+  `exitPreview` pour que la fenêtre d'enregistrement soit visible).
 
 Anti-régression : à la sortie, le `requestDraw` du toggle re-rend
 l'offscreen avec grille / axes / points restaurés ; `updateMouseHover`

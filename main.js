@@ -33,7 +33,7 @@ import {
     startPan, updatePan, endPan,
     restoreEditingMode, restoreSelectionMode, wireSelectionModeControl,
     restoreFpsVisible, wireFpsControl, toggleFps, updateFpsButton,
-    wireGridControl, togglePreview, wirePreviewControl, wireCircleWheelControl,
+    wireGridControl, togglePreview, exitPreview, wirePreviewControl, wireCircleWheelControl,
     restoreCircleSegments, wireMergeDropWheelControl, restoreMergeDropRadius,
 } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
@@ -186,7 +186,10 @@ const wireButton = (id, handler) => {
 // modales) est masquée : on sort d'abord de la preview pour que la
 // fenêtre soit visible — le geste est non-mutant pour la scène.
 const openSaveModal = () => {
-    if (state.previewMode) togglePreview()
+    // Sortie DIRECTE (exitPreview, pas togglePreview) : depuis l'état
+    // plans ou preview simple, on quitte complètement — le cycle
+    // off -> preview -> plans -> off est réservé au bouton / P.
+    if (state.previewMode) exitPreview()
     showSaveModal()
 }
 
@@ -260,10 +263,12 @@ document.addEventListener('mousedown', (e) => {
     // geste de navigation (pan). Le clic GAUCHE sort de la preview
     // (« sortir au clic ») : le clic est avalé (return avant de poser
     // la selectionBox) pour ne pas déclencher un lasso / une selection
-    // sur le coup qui quitte. Le clic droit reste ignoré (grab).
+    // sur le coup qui quitte. Sortie DIRECTE (exitPreview, pas
+    // togglePreview) : depuis l'état plans comme depuis la preview
+    // simple. Le clic droit reste ignoré (grab).
     // Rationale : voir DESIGN.md §2.6.2
     if (state.previewMode) {
-        if (e.button === 0) togglePreview()
+        if (e.button === 0) exitPreview()
         if (e.button !== 1) return
     }
     // Mode cercle : geste en 2 temps (orientation par souris) —
@@ -565,10 +570,12 @@ document.addEventListener('keydown', (e) => {
     const isSaveOpen = saveM && !saveM.hidden
     // Escape : en preview, priorite absolue — on quitte la preview
     // avant toute consideration de modale (la chrome est masquee, un
-    // modal ouvert n'a pas de sens a l'ecran).
+    // modal ouvert n'a pas de sens a l'ecran). Sortie DIRECTE
+    // (exitPreview, pas togglePreview) : Echap ferme depuis l'etat
+    // plans comme depuis la preview simple.
     if (e.code === 'Escape' && !e.repeat && state.previewMode) {
         e.preventDefault()
-        togglePreview()
+        exitPreview()
         return
     }
     // Mode cercle : Echap quitte le mode (et efface le trace en

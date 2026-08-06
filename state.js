@@ -355,6 +355,16 @@ export const state = {
     // persistée en localStorage (cf. viewport.js togglePreview) : au
     // reload, on retombe toujours sur l'état d'édition par défaut.
     previewMode: false,
+    // Sous-état « plans » (évolution bouton prévisualiser, cf. DESIGN.md
+    // §2.6) : 2e état du cycle off -> preview simple -> plans -> off
+    // (bouton / P). Ne vaut que si previewMode est true. En plans,
+    // TOUTES les formes sont rendues comme des plans remplis dans
+    // l'ORDRE du tableau (forme n = plan n — la forme d'indice le plus
+    // haut recouvre les précédentes là où elles se chevauchent, cf.
+    // draw.js drawShapes) au lieu de la vue édition (forme active
+    // remplie + autres en contours atténués). Même non-persistance que
+    // previewMode.
+    previewPlans: false,
 
     // ===== Render time instrumentation (gate) =====
     // Flag dev pour activer console.time('renderScene')/timeEnd dans

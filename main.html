@@ -918,11 +918,47 @@
             /* Bouton toolbar Preview (oeil) : meme langage d'etat actif
                que #fps.fps-active — vert accent quand la preview est
                activee. Jumeau pattern des toggles grid/reticle/fps
-               (meme groupe Canvas ops). */
+               (meme groupe Canvas ops). Evolution bouton prévisualiser
+               (cf. DESIGN.md §2.6) : le bouton cycle en 3 etats off ->
+               preview simple -> plans -> off. Le sous-etat « plans »
+               (2e clic, toutes les formes rendues dans leur ordre —
+               forme n = plan n) porte la classe .preview-plans : accent
+               AMBRE (meme famille que #sceneStatus[data-dirty=true]) +
+               ring inset + libellé « plans » (#previewText, meme
+               structure que #gridText / #shapesText). L'ambre distingue
+               visuellement les deux etats actifs du bouton. */
+            #preview {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+            }
+            #preview #previewText {
+                font-family: monospace;
+                font-size: 11px;
+                line-height: 1;
+                font-style: normal;
+                color: rgba(220, 220, 220, 0.55);
+                pointer-events: none;
+                white-space: nowrap;
+                transition: color 0.12s;
+            }
             #toolbar #preview.preview-active {
                 color: rgb(55, 194, 0);
                 background-color: rgba(55, 194, 0, 0.10);
                 border-color: rgba(55, 194, 0, 0.45);
+            }
+            /* Sous-etat plans : accent ambre + ring inset (meme langage
+               que #triangleColor.color-panel-open). Placee APRES la
+               regle .preview-active : en plans les deux classes sont
+               posees, l'ambre l'emporte sur le vert. */
+            #toolbar #preview.preview-plans {
+                color: rgb(255, 210, 80);
+                background-color: rgba(255, 210, 80, 0.12);
+                border-color: rgba(255, 210, 80, 0.55);
+                box-shadow: 0 0 0 2px rgba(255, 210, 80, 0.45) inset;
+            }
+            #preview.preview-plans #previewText {
+                color: rgb(255, 210, 80);
             }
 
             /* Bouton Fusionner : état armé de la fusion par déplacement
@@ -1095,7 +1131,6 @@
                pan) — !important necessaire car #board porte un
                cursor:'none' inline pose en JS (haute priorite), meme
                pattern que body.dragging-console. */
-            body.preview-mode #toolbar,
             body.preview-mode #messageBoard,
             body.preview-mode #coords,
             body.preview-mode #zoomDisplay,
@@ -1104,6 +1139,35 @@
             body.preview-mode #triangleColorPanel,
             body.preview-mode #shapesPanel,
             body.preview-mode .modal {
+                display: none !important;
+            }
+            /* En preview, la toolbar est réduite a un simple bouton
+               flottant #preview (l'oeil) pour permettre le CYCLE en 3
+               etats au clic : off -> preview -> plans -> off (spec
+               evolution : « le 2eme clic affiche toutes les formes...
+               on quitte au 3eme clic »). Tout le reste de la chrome
+               est masque. Le fond/cadre de la toolbar disparait ; le
+               groupe contenant #preview (canvas ops) est le seul
+               .toolbar-group conserve (:has() — supporte par tous les
+               navigateurs cibles, Chromium 105+ / Firefox 121+ /
+               Safari 15.4+, suffisant pour l'app et sa version
+               portable), et dans ce groupe seul le bouton #preview
+               reste visible (dans son etat actif : vert preview /
+               ambre plans). */
+            body.preview-mode #toolbar {
+                background-color: transparent;
+                border: none;
+                box-shadow: none;
+                backdrop-filter: none;
+                padding: 0;
+                overflow: visible;
+                max-height: none;
+            }
+            body.preview-mode #toolbar .toolbar-group:not(:has(> #preview)),
+            body.preview-mode #toolbar .toolbar-sep {
+                display: none !important;
+            }
+            body.preview-mode #toolbar .toolbar-group:has(> #preview) > *:not(#preview) {
                 display: none !important;
             }
             body.preview-mode #board {
@@ -1505,15 +1569,19 @@
                      title pour la discoverabilite. -->
                 <button id="fps" title="Afficher / masquer le compteur FPS (F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="13" x2="3" y2="9"/><line x1="7" y1="13" x2="7" y2="5"/><line x1="11" y1="13" x2="11" y2="11"/><line x1="2" y1="14" x2="14" y2="14"/></svg></button>
                 <!-- Preview : mode visualisation propre de la scene —
-                     masque les points de controle, axes, grille, HUD et
-                     boutons pour ne laisser que la geometrie
-                     (triangles / lignes / couleurs). Navigation
+                     le bouton (oeil) cycle en 3 etats (clic ou P) :
+                     1er clic = preview simple (masque points de
+                     controle, axes, grille, HUD et boutons pour ne
+                     laisser que la geometrie), 2e clic = plans (toutes
+                     les formes rendues dans leur ordre — forme n = plan
+                     n — accent ambre + libellé « plans »), 3e clic =
+                     sortie. En preview, la toolbar est reduite a ce
+                     seul bouton flottant (cf. CSS body.preview-mode) :
+                     le cycle au clic reste possible. Navigation
                      conservee (molette = zoom, clic milieu = pan),
-                     aucune edition possible. Sortie via Echap ou P.
-                     Jumeau pattern des toggles grid/reticle/fps (meme
-                     groupe Canvas ops, meme langage d'etat actif : vert
-                     accent quand la preview est active). Icone oeil. -->
-                <button id="preview" title="Prévisualiser la scène (P / Échap / clic gauche pour quitter) : masque points de contrôle, axes, grille, HUD et boutons"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2.2"/></svg></button>
+                     aucune edition possible. Sortie directe via Echap
+                     ou clic gauche sur le canvas. Icone oeil. -->
+                <button id="preview" title="Prévisualiser la scène (P / Échap / clic gauche pour quitter) : masque points de contrôle, axes, grille, HUD et boutons ; un 2e clic affiche toutes les formes dans leur ordre (forme n = plan n)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2.2"/></svg><span id="previewText"></span></button>
                 <!-- Mode de selection : cycle vertex / segment / triangle.
                      Mode "vertex" = comportement actuel (clic sur un
                      sommet). Mode "segment" = clic sur un edge
@@ -1809,7 +1877,7 @@
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">V</kbd><span>coller dans la forme active — chaque collage décale d'un demi-pas de grille pour se distinguer de la source ; le presse-papiers est interne à l'application (non partagé avec le système)</span></div>
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd">R</kbd><span>réticule : off / simple / projection symétrique (cycle)</span></div>
-                    <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; Échap, P ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
+                    <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; un 2e clic (ou P) affiche toutes les formes dans leur ordre (forme n = plan n) ; Échap ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Formes (bouton)</kbd><span>ouvre la liste des formes prédéfinies (cercle, rectangle, carré, triangle, pentagone, hexagone, étoile, anneau) : choisir une forme puis la tracer en 2 clics (1er clic = ancre, mouvement = taille et orientation pour les polygones, 2e clic = valider) ; l'étoile et l'anneau se tracent en 3 clics (1er = centre, mouvement = rayon + angle de départ, 2e = verrouille, mouvement = profondeur des branches / taille du trou, 3e = valider ; molette = côtés pour l'anneau) ; Échap = fermer le panneau ou annuler l'outil, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd wide">Molette</kbd><span>zoomer (centre sur le curseur) ; pivoter si 2+ points sont selectionnes</span></div>

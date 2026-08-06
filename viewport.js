@@ -323,8 +323,13 @@ export const wireConsoleToggle = () => {
 // Vue transitoire de focus : bascule state.previewMode et applique la
 // classe body.preview-mode (cf. CSS dans main.html) qui masque la
 // chrome (toolbar, console, HUD bas-gauche, sceneStatus, panneau de
-// couleur, modales). Le rendu canvas est nettoye cote draw.js (pas de
-// grille / axes / points de controle / overlays transitoires).
+// couleur, modales) — sauf le bouton #preview lui-même qui flotte
+// pour permettre le cycle en 3 états (off -> preview -> plans -> off,
+// cf. DESIGN.md §2.6). Le rendu canvas est nettoye cote draw.js (pas
+// de grille / axes / points de controle / overlays transitoires).
+// `state.previewPlans` (2e état du cycle) ne change que le rendu des
+// formes (draw.js drawShapes : toutes les formes en plans remplis
+// dans l'ordre, forme n = plan n) — la chrome reste masquée.
 //
 // PAS de persistance localStorage : a la difference des toggles de
 // prefs (grille, reticule, fps, console), la preview est un etat de
@@ -372,8 +377,20 @@ export const applyPreviewMode = () => {
 export const updatePreviewButton = () => {
     const btn = document.querySelector('#preview')
     if (!btn) return
+    const plans = !!state.previewPlans
     btn.classList.toggle('preview-active', !!state.previewMode)
+    btn.classList.toggle('preview-plans', plans)
     btn.setAttribute('aria-pressed', state.previewMode ? 'true' : 'false')
+    // Libellé du sous-état plans (même structure que #gridText /
+    // #shapesText) : vide hors plans, « plans » quand le 2e état du
+    // cycle est actif — l'utilisateur sait qu'un nouveau clic
+    // reviendra à la preview simple et qu'un autre quittera.
+    const text = btn.querySelector('#previewText')
+    if (text) text.textContent = plans ? 'plans' : ''
+    // Title (tooltip) : décrit le cycle en 3 états.
+    btn.setAttribute('title', plans
+        ? 'Prévisualisation plans : toutes les formes affichées dans leur ordre (forme n = plan n). P ou clic pour revenir à la preview simple, Échap ou clic gauche pour quitter.'
+        : 'Prévisualiser la scène (P / Échap / clic gauche pour quitter) : masque points de contrôle, axes, grille, HUD et boutons ; un 2e clic affiche toutes les formes dans leur ordre (forme n = plan n)')
 }
 
 export const togglePreview = () => {
@@ -385,12 +402,39 @@ export const togglePreview = () => {
     // able dans ce cas (souris occupee sur le canvas), le clavier est
     // la seule voie d'entree.
     if (grabbed()) return
-    state.previewMode = !state.previewMode
+    // Cycle en 3 états (bouton / P, cf. DESIGN.md §2.6) : off -> preview
+    // simple -> plans (toutes les formes dans leur ordre, forme n =
+    // plan n) -> off. Le 2e état ne se distingue du 1er que par le
+    // rendu (draw.js drawShapes) — la chrome est masquée dans les deux.
+    if (!state.previewMode) {
+        state.previewMode = true
+        state.previewPlans = false
+    } else if (!state.previewPlans) {
+        state.previewPlans = true
+    } else {
+        state.previewMode = false
+        state.previewPlans = false
+    }
     updatePreviewButton()
     applyPreviewMode()
     log(state.previewMode
-        ? 'Preview active - P, Echap ou clic gauche pour sortir (molette = zoom, clic milieu = pan)'
+        ? (state.previewPlans
+            ? 'Plans actifs : toutes les formes dans leur ordre (forme n = plan n) - P ou clic pour revenir a la preview simple, Echap ou clic gauche pour quitter'
+            : 'Preview active - P ou clic pour afficher toutes les formes dans leur ordre (forme n = plan n), Echap ou clic gauche pour sortir (molette = zoom, clic milieu = pan)')
         : 'Preview desactivee')
+}
+
+// Sortie DIRECTE de la preview (Echap, clic gauche sur le canvas,
+// openSaveModal) : contrairement à togglePreview (cycle), on sort
+// toujours complètement — des deux états (preview simple et plans).
+export const exitPreview = () => {
+    if (grabbed()) return
+    if (!state.previewMode) return
+    state.previewMode = false
+    state.previewPlans = false
+    updatePreviewButton()
+    applyPreviewMode()
+    log('Preview desactivee')
 }
 
 export const wirePreviewControl = () => {
