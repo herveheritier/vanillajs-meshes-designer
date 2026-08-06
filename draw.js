@@ -1,5 +1,3 @@
-// Rationale : voir DESIGN.md §2.3
-
 import { state } from './state.js'
 import { modelToScreen, screenToModel, getMultiPointIndices } from './geometry.js'
 import {
@@ -40,33 +38,9 @@ export const drawPoint = (p, radius = 3, color = '#FFFFFF') => {
 }
 
 // ===== Performance : drawPointsBatch =====
-// (feature/performance opt #1) — factorise N drawPoint successifs en un
-// seul beginPath + N sub-paths (moveTo + arc) + un seul stroke(). Sur
-// un mesh de 1000 triangles (~3000 vertex partages : chaque sommet
-// partage entre 2-6 triangles referenciait le meme arc stroke N fois),
-// on tombe de 3000 cycles beginPath/stroke (chaque cycle = setLineDash +
-// setStrokeStyle + beginPath + arc + stroke) a UN seul. Sur mesh-wail
-// (33 pts, 36 tris) on attend ~108 -> 1 beginPath/stroke pour la forme
-// active.
-//
-// API inchangee cote caller : un tableau de points en model coords, un
-// radius, une couleur de stroke. Les callers qui ont besoin de tracer
-// un point isole (hover overlays : drawMouse, drawPoint direct dans
-// editor.js updateMouseHover pour le nearest-point vert radius 5)
-// continuent a utiliser drawPoint() — leur cycle est rendu SUR le
-// visible canvas apres le blit offscreen, pas dans la phase de
-// repeint offscreen, et doit rester identifie pour ne pas etre avalé
-// par un batch offscreen en cours.
-//
-// Sub-path moveTo explicite : arc() NE reset PAS le "current point"
-// du path apres son trace (spec Canvas 2D : "If the previous point
-// of the sub-path... a line will be drawn from the last point to the
-// start point of the arc"). Si on enchaînait deux arc() sans moveTo,
-// le path tracerait une ligne parasite entre les deux centres AVANT
-// chaque arc, ce qui ajouterait des segments entre tous les points
-// du batch. Le moveTo(sp.x, sp.y) avant chaque arc casse la
-// continuite et isole chaque cercle en sous-path ferme ; le stroke()
-// final trace tous les arcs ensemble, en un seul appel GPU.
+// Factorise N drawPoint en un seul beginPath + N sub-paths + 1 stroke
+// (opt #1). moveTo avant chaque arc : arc() ne reset pas le current
+// point, sans lui le path tracerait une ligne parasite entre centres.
 export const drawPointsBatch = (points, radius, color) => {
     if (!points || points.length === 0) return
     state._ctx.setLineDash([])
@@ -82,17 +56,9 @@ export const drawPointsBatch = (points, radius, color) => {
     state._ctx.stroke()
 }
 
-// drawMouse : la croix / point blanc au curseur est dessinée ici
-// (et pas en CSS — le curseur du board est `display:none` inline,
-// cf. main.js boot, pour qu'on controle tout pixel-par-pixel).
-// En mode pinceau (panel de couleurs ouvert ET brushMode actif), on
-// ajoute en dessous du curseur un petit disque rempli de la couleur
-// courante du pinceau — feedback visuel immediate de « tu vas peindre
-// de cette couleur-là ». Le ring blanc exterieur reste pour distinguer
-// le marqueur d'un selecteur de couleur opaque (sur fond noir / sur
-// triangles deja colores). Taille (rayon 7) choisie pour rester
-// lisible sans envahir la zone de hit : ~3 px du disque blanc central
-// + 4 px de « padding » sur le pourtour.
+// Le curseur est peint ici (le board a `cursor: none`) ; en mode
+// pinceau, disque de la couleur courante + ring blanc lisible sur
+// fond noir ou deja colore.
 const BRUSH_CURSOR_RADIUS = 7
 export const drawMouse = (p) => {
     if (!p) return
@@ -106,26 +72,13 @@ export const drawMouse = (p) => {
         state._ctx.fillStyle = state.brushColor
         state._ctx.arc(p.x, p.y, BRUSH_CURSOR_RADIUS, 0, TAU)
         state._ctx.fill()
-        // Ring blanc fin pour rendre le marqueur lisible quand
-        // brushColor est proche du noir (ex: un preset futur) ou
-        // sur fond deja proche de la couleur (un triangle deja
-        // peint de la meme teinte).
         state._ctx.strokeStyle = '#ffffff'
         state._ctx.lineWidth = 1
         state._ctx.stroke()
     }
 }
 
-// Label d'identifiant stable du sommet survole (cf. §7.8) : petite
-// pill sombre sous le point avec l'index 0-based du vertex dans
-// activeShapeIndex (convention dev-friendly alignee sur les arrays
-// JS de getAllVertices()). Permet d'identifier chaque point sans
-// ambiguite quand plusieurs refs partagent la meme position.
-// Position sous le cercle vert (offset Y +14) pour eviter la
-// collision visuelle avec les elements superieurs du stack.
-// Choix d'un fond semi-transparent pour rester lisible sur
-// n'importe quelle zone du canvas (sombre ou deja coloree par un
-// triangle custom).
+// Pill sombre avec l'index du vertex survole (cf. §7.8), sous le point (Y+14).
 const VERTEX_LABEL_OFFSET_Y = 14
 const VERTEX_LABEL_HEIGHT = 14
 const VERTEX_LABEL_PADDING_X = 6
@@ -148,12 +101,7 @@ export const drawVertexLabel = (p, label) => {
     state._ctx.fillText(text, sp.x, sp.y + VERTEX_LABEL_OFFSET_Y)
 }
 
-// Liste des slots triangles qui partagent le sommet survole (cf.
-// §7.9). Pill 2 lignes : header golden "stack (N)" + body blanc
-// "T1.p1, T3.p2, ...". Position sous le label §7.8 (offset Y +32)
-// sans overlap avec le label (+14/+21) ni avec le canvas bottom
-// edge (pas de flip -- un stack de plusieurs refs est rare ; si
-// besoin ajouter un clamp bottom-edge ici).
+// Slots triangles partageant le sommet survole (cf. §7.9) : pill 2 lignes sous le label.
 const STACK_LIST_OFFSET_Y = 32
 const STACK_LIST_HEIGHT = 14
 const STACK_LIST_PADDING_X = 6
@@ -185,62 +133,23 @@ export const drawStackList = (p, refs) => {
     state._ctx.fillText(bodyText, sp.x, y0 + STACK_LIST_PADDING_Y + STACK_LIST_HEIGHT * 1.5)
 }
 
-// ===== Scene cache (feature/performance) =====
-//
-// Rationale : avec l'ancien drawBoard, chaque mousemove repaintait
-// integralement le visible canvas (background + grid + axes + N
-// formes + selection + reticule + selectionBox). Meme quand rien
-// d'observable n'avait change (curseur qui derive sur zone vide,
-// mouseup sans mutation relle, etc.) on payait le cout de re-stroker
-// toutes les formes + toutes les lignes de la grille.
-//
-// Le nouveau pipeline separe la SCENE STABLE (tout ce qui depend de
-// state.shapes / state.ctx.zoomLevel-viewCenter / state.selectedPoints
-// / state.selectedTriangles / state.GRID_STEP / state.activeGrid) de
-// la SURFACE TRANSITOIRE (reticule + selectionBox, depend du runtime
-// pas du modele). La scene stable est rendue une fois dans un canvas
-// offscreen (offscreen board) puis blittee sur le visible via
-// drawImage (= 1 memcpy GPU/CPU rapide). Le transitoire est repeint
-// a chaque frame par-dessus (le reticule depend de la position du
-// curseur, la selectionBox de la drag en cours).
-//
-// API publique ajoutee :
-//   invalidateScene() : force le re-render offscreen au prochain
-//     drawBoard. A appeler apres TOUT path qui mute la scene stable.
-//     (Non obligatoire si on appelle requestDraw — voir ci-dessous.)
-//   requestDraw() : coalesce via requestAnimationFrame (= au plus un
-//     drawBoard par frame) + invalide la scene. Le chemin privilegie
-//     pour les paths de mutation asynchrones (undo, drag mousemove,
-//     wheel-zoom). Premier appel du frame pose le flag dirty, les
-//     appels suivants sont coalesces ; le rAF callback voit un seul
-//     drawBoard.
-//   isSceneDirty() : introspection pour les tests / debug.
-
-// Etat du cache offscreen. Le flag sceneDirty demarre a true pour
-// que le premier appel de drawBoard repeint integralement l'offscreen.
-// frameScheduled empeche les rafales d'appels requestDraw de
-// multiplier les callbacks rAF (= 1 max en parallele).
+// ===== Scene cache =====
+// La scene STABLE (shapes, zoom/viewCenter, selection, grille) est rendue
+// une fois dans un offscreen puis blittee (drawImage) ; le TRANSITOIRE
+// (reticule, selectionBox, curseur, previews de geste) est repeint a
+// chaque frame par-dessus. invalidateScene() force le re-render ;
+// requestDraw() coalesce via rAF (au plus 1 drawBoard/frame) ;
+// isSceneDirty() pour les tests. sceneDirty demarre a true (premier
+// repaint integral) ; frameScheduled limite les callbacks rAF a 1.
 let offscreen = null
 let offCtx = null
 let sceneDirty = true
 let frameScheduled = false
 
-// ===== HiDPI (devicePixelRatio) =====
-//
-// Rationale : voir DESIGN.md §2.7. Le bitmap du canvas est dimensionne
-// en pixels PHYSIQUES (CSS x devicePixelRatio) pour un rendu net sur
-// ecrans HiDPI, mais TOUTES les coordonnees internes (souris,
-// hit-testing, state.ctx.center, modelToScreen, bornes grille/axes)
-// restent en pixels CSS. La conversion se fait aux deux seules
-// frontieres :
-//   1. la taille du bitmap (main.js boot + resize) ;
-//   2. la transform canvas posee ici (drawBoard / renderSceneToOffscreen)
-//      qui projette les coords CSS sur le bitmap physique.
-// getDevicePixelRatio est exporte pour main.js (sizing du bitmap) ;
-// les helpers cssBoardW/H derivent la taille CSS du board depuis le
-// bitmap physique (board.width = round(cssW x dpr)) et remplacent
-// partout les lectures directes de state.board.width/height dans les
-// bornes de dessin (grille, axes, reticle).
+// ===== HiDPI =====
+// Bitmap en pixels PHYSIQUES (CSS x dpr), coords internes en pixels CSS ;
+// conversion aux 2 seules frontieres : taille du bitmap (main.js) et
+// transform dpr posee ici. cssBoardW/H derivent la taille CSS du board.
 export const getDevicePixelRatio = () => (
     typeof window !== 'undefined' && window.devicePixelRatio > 0
         ? window.devicePixelRatio
@@ -255,20 +164,12 @@ const applyDprTransform = (ctx) => {
 const cssBoardW = () => state.board.width / getDevicePixelRatio()
 const cssBoardH = () => state.board.height / getDevicePixelRatio()
 
-// Compteurs de charge de rendu effectif (cf. DESIGN.md §2.4). Pas de
-// condition sur state.fpsVisible : l'incrementation est microscopique
-// (deux entiers) etape partagee par tous les paths d'appel a
-// drawBoard, visible ou pas. Le sampling (consumeDrawStats ci-dessous)
-// n'est invoque que quand le HUD est actif, donc cout polling-only en
-// idle = 0 (independamment des deux compteurs qui restent toujours
-// presents dans draw.js).
+// Compteurs de rendu effectif (cf. DESIGN.md §2.4), sans condition sur
+// fpsVisible (cout microscopique) ; le sampling ne tourne que HUD actif.
 let statsRedraws = 0
 let statsOffscreen = 0
 
-// Consomme les compteurs et les remet a zero : le sampling HUD lit
-// toujours via ce helper (snapshot atomique + reset), jamais en
-// lecture directe, pour eviter une race entre incrementation dans
-// drawBoard et lecture dans la boucle d'echantillonnage.
+// Snapshot atomique + reset, pour eviter une race avec drawBoard.
 export const consumeDrawStats = () => {
     const res = { redraws: statsRedraws, offscreen: statsOffscreen }
     statsRedraws = 0
@@ -310,45 +211,20 @@ const syncOffscreenSize = () => {
     }
 }
 
-// renderSceneToOffscreen : repeint la scene stable dans l'offscreen.
-// Les draw* helpers lisent/ecrivent `state._ctx`, donc on swappe
-// temporairement vers offCtx le temps du rendu puis on restaure via
-// try/finally (defense : un helper qui throw ne casserait pas le
-// pipeline global).
+// Rendu de la scene stable dans l'offscreen : `state._ctx` est
+// temporairement swap vers offCtx (try/finally : un helper qui throw
+// ne casse pas le pipeline).
 const renderSceneToOffscreen = () => {
-    // (feature/performance opt #1) — instrumentation dev pour comparer
-    // le cout offscreen avant/apres batching dans Chrome devtools
-    // (console.time agrege min/max/avg/x). Label stable 'renderScene' :
-    // juxtaposeable avec #fpsDisplay (redraws/s, offscreen/s), qui doit
-    // montrer la MEME charge de travail (memes triggers d'invalidation,
-    // meme nombre de cycles) — seule la duree par cycle devrait
-    // chuter. Mesure volontaire sur CE path seul (vs renderTransient),
-    // car c'est lui que le batching affecte : renderTransient n'a pas
-    // de drawPoint dans son scope.
-    //
-    // Gatee par `state.debugRenderTime` (cf. state.js) — desactivee
-    // par defaut pour eviter la pollution devtools en prod. Activation
-    // runtime depuis la console navigateur : `state.debugRenderTime = true`.
-    // Cout du check (typeof === 'undefined' = falsy) : 1 comparaison par
-    // drawScene, negligible. try/finally garantit que timeEnd n'est pas
-    // appele sans timeStart (defense, ne devrait pas arriver dans le
-    // pipeline normal).
+    // Instrumentation dev gatee par state.debugRenderTime (default false) :
+    // `state.debugRenderTime = true` active console.time('renderScene').
     if (state.debugRenderTime) console.time('renderScene')
     const visibleCtx = state._ctx
     state._ctx = offCtx
     try {
-        // Transform dpr : le rendu offscreen est exprime en pixels CSS
-        // (modelToScreen / bornes cssBoardW-H) ; la transform le projette
-        // sur le bitmap physique (offscreen.width = round(cssW x dpr)).
         applyDprTransform(offCtx)
         offCtx.fillStyle = CANVAS_BACKGROUND
         offCtx.fillRect(0, 0, cssBoardW(), cssBoardH())
-        // Preview (mode visualisation seule) : la scene stable est
-        // reduite a la geometrie — pas de grille, pas d'axes, pas de
-        // points selectionnes. Les points de controle (vertex dots)
-        // sont sautes dans drawShape (pass vertex). L'invalidation du
-        // cache offscreen est garantie par applyPreviewMode (requestDraw).
-        // Rationale : voir DESIGN.md §2.6
+        // Preview (cf. DESIGN.md §2.6) : scene reduite a la geometrie.
         if (!state.previewMode) {
             if (state.activeGrid) drawGrid()
             drawAxis()
@@ -364,14 +240,9 @@ const renderSceneToOffscreen = () => {
     if (state.debugRenderTime) console.timeEnd('renderScene')
 }
 
-// renderTransient : dessine SUR le visible les calques transitoires
-// qui dependent du runtime (et non du modele). Toujours repeint a
-// chaque drawBoard parce que reticule / selectionBox peuvent bouger
-// entre deux frames meme si la scene stable est inchangee.
+// Calques transitoires (runtime, pas modele) repeints a chaque drawBoard.
 const renderTransient = () => {
-    // Preview : aucun calque transitoire — le reticule et la box de
-    // selection sont des aides d'edition, pas de la geometrie.
-    // Rationale : voir DESIGN.md §2.6
+    // Preview : aucun calque transitoire.
     if (state.previewMode) return
     if (typeof state.reticleMode !== 'undefined' && state.reticleMode > 0) drawReticle()
     if (
@@ -382,32 +253,13 @@ const renderTransient = () => {
     ) {
         drawSelectionBox(state.selectionBoxStart, state.selectionBoxCurrent)
     }
-    // Mode cercle : previsualisation du cercle en cours de tracé. Le
-    // geste est transitoire (ne depend que du curseur + de l'etat
-    // circleCenterModel/circleRadiusModel), pas du modele — il vit ici
-    // et non dans l'offscreen de la scene stable.
+    // Previews transitoires des gestes de creation (cercle, etoile, anneau, forme).
     if (state.circleMode && state.circleCenterModel) drawCirclePreview()
-    // Mode étoile (3 clics, meme logique que le cercle + profondeur) :
-    // meme principe — previsualisation transitoire du geste en cours.
     if (state.starMode && state.starCenterModel) drawStarModePreview()
-    // Mode anneau (3 clics, meme logique que l'etoile + trou) : meme
-    // principe — previsualisation transitoire du geste en cours.
     if (state.annulusMode && state.annulusCenterModel) drawAnnulusPreview()
-    // Forme predéfinie armee (panneau #shapes) : meme principe —
-    // previsualisation transitoire du geste en cours.
     if (state.shapeKind !== undefined && state.shapeAnchorModel) drawShapeToolPreview()
-    // Fusion par déplacement (2e fonction de #mergePoints, cf. §7.11) :
-    // pendant un drag armé, anneau orange en pointillés autour du
-    // candidat cible (le point qui fusionnera au relâchement). Même
-    // couleur que le marqueur des sommets multi-points (COLOR_MULTI_POINT)
-    // pour un langage visuel « fusion » unique. Le rayon de l'anneau est
-    // le rayon de fusion COURANT (state.mergeDropRadius, réglable à la
-    // molette sur le bouton) : le cercle matérialise la zone de capture
-    // — le réglage de la molette devient visible en direct pendant le
-    // drag, pas seulement via le libellé du bouton. Le candidat est
-    // calculé par editor.js à chaque tick (state.mergeDropCandidate) ;
-    // la garde currentAction === ACTION_GRABBING évite d'afficher un
-    // candidat périmé hors drag.
+    // Fusion par deplacement : anneau orange (couleur multi-points) du
+    // rayon COURANT autour du candidat cible pendant le drag arme.
     if (state.mergeOnDropActive && typeof state.mergeDropCandidate === 'number' && state.currentAction === ACTION_GRABBING) {
         const shape = state.shapes[state.activeShapeIndex]
         const pt = shape && Array.isArray(shape.pointList) ? shape.pointList[state.mergeDropCandidate] : undefined
@@ -421,42 +273,18 @@ const renderTransient = () => {
             state._ctx.setLineDash([])
         }
     }
-    // Curseur (drawMouse) : overlay post-blit par nature (le board a
-    // `cursor: none`, la croix blanche est peinte pixel-par-pixel). Il
-    // doit etre repeint a CHAQUE drawBoard, comme le reticule, et pas
-    // seulement au mousemove : tant qu'il n'etait dessine que par
-    // updateMouseHover (editor.js), tout requestDraw isole — 1er clic
-    // du geste cercle/forme, armement de l'outil, molette — blittait
-    // l'offscreen par-dessus le curseur du dernier mousemove et le
-    // faisait disparaître jusqu'au prochain deplacement de souris
-    // (exigence cahier des charges : « au premier clic, le pointeur ne
-    // devrait pas disparaître »). state.lastMousePos est maintenu a
-    // chaque mousemove sur le board (resolveMouseMoveOnBoard) et par
-    // les fonctions qui posent un geste sans mouvement prealable
-    // (beginCircleGesture / beginShapeGesture / resolveMouseClickOnBoard) :
-    // le curseur survit donc a n'importe quel repaint.
+    // Le curseur est repeint a CHAQUE drawBoard (pas seulement au mousemove),
+    // sinon tout requestDraw isole le blittait par-dessus et le faisait
+    // disparaître au 1er clic d'un geste. state.lastMousePos est maintenu
+    // par les chemins de saisie, donc il survit au repaint.
     if (state.lastMousePos) drawMouse(state.lastMousePos)
 }
 
 // ===== Previews transitoires de creation (cercle + formes) =====
 
-// Socle radial partage (cercle + formes radiales) : cercle vrai en
-// pointilles (frontiere du disque approxime) + ligne de rayon +
-// marqueur de centre, en pixels ecran.
-//
-// `angle` (defaut 0, radians) : direction du rayon dans le repere
-// modele (meme convention que circleGeometry — la generation du
-// sommet 0 utilise `(i/n)*TAU + offset` en coords model Y-up). Le
-// rayon est calcule en modele (cos/sin autour de `center`) puis
-// projete en SCREEN via modelToScreen : on obtient le VRAI point
-// ou le sommet 0 apparait a l'ecran, et la ligne le relie au
-// centre. Pour le cercle en cours (drawCirclePreview) `angle` =
-// `state.circleOffsetAngle` : la ligne suit l'angle de depart
-// regle a la souris. Pour les polygones reguliers (tri / penta /
-// hexa / etoile du panneau #shapes) `angle` n'est pas transmis et
-// reste a 0 = le rayon « canonique » horizontal a droite, qui
-// sert de repere visuel stable tant que ces formes n'ont pas
-// d'orientation par souris (evolution future, pas le besoin actuel).
+// Socle radial partage : cercle pointille + ligne de rayon + marqueur
+// de centre. `angle` = direction du rayon, projete en SCREEN via
+// modelToScreen pour pointer exactement vers le sommet 0 genere.
 const drawRadialBase = (center, radius, angle = 0) => {
     const sp = modelToScreen(center)
     const zoom = state.ctx.zoomLevel
@@ -466,14 +294,8 @@ const drawRadialBase = (center, radius, angle = 0) => {
     state._ctx.arc(sp.x, sp.y, radius * zoom, 0, TAU)
     state._ctx.stroke()
     state._ctx.setLineDash([])
-    // Endpoint du rayon en coords model : centre + (r*cos(angle),
-    // r*sin(angle)). La projection via modelToScreen tient compte du
-    // Y-flip canvas <-> modele, donc le point tombe exactement ou
-    // le sommet 0 du polygone genere apparaitra. Le delta X/Y
-    // ajoute a center dans la branche par defaut (angle = 0) reste
-    // (r, 0) — strictement equivalent a l'ancienne formule en
-    // screen `radius*zoom, 0`, les polygones reguliers gardent leur
-    // rayon horizontal historique.
+    // Point ou le sommet 0 du polygone genere apparaitra (angle = 0 :
+    // rayon horizontal historique).
     const endpoint = modelToScreen({
         x: center.x + radius * Math.cos(angle),
         y: center.y + radius * Math.sin(angle),
@@ -487,10 +309,7 @@ const drawRadialBase = (center, radius, angle = 0) => {
     state._ctx.stroke()
 }
 
-// Polyline fermee a travers des points SCREEN (outline du polygone
-// genere) — les sommets sont calcules en model coords avec la MEME
-// formule que la creation puis projetés (Y inverse gere par
-// modelToScreen) : WYSIWYG strict entre la preview et le commit.
+// Outline fermee en points SCREEN (WYSIWYG strict entre preview et commit).
 const strokeScreenPolyline = (pts) => {
     if (!pts || pts.length === 0) return
     state._ctx.setLineDash([])
@@ -504,23 +323,9 @@ const strokeScreenPolyline = (pts) => {
     state._ctx.stroke()
 }
 
-// Previsualisation du cercle en cours de tracé (mode cercle) :
-// dessinee dans le calque transitoire pour suivre le curseur a chaque
-// repaint sans invalider le cache offscreen. Montre ce qui SERA
-// genere : le cercle vrai (arc en pointilles) + le polygone des N
-// cotes (la frontiere de l'eventail de triangles) + la ligne de
-// rayon (qui pointe vers le sommet 0 — feedback WYSIWYG : la ligne
-// mene pile au bord du polygone que le 2e mousedown commitera) +
-// marqueur de centre. Meme contrat que circleGeometry : le
-// `state.circleOffsetAngle` (radians, calcule en coords model Y-up
-// — voir updateCircleGesture) decale le sommet 0 du polygone ; le
-// rayon de drawRadialBase est emis avec le MEME offset pour que
-// ligne et polygone restent colinear (le rayon mene au bord). Le
-// resultat : la souris ne touche pas forcement le rayon (le mode
-// cercle est en 2 clics, rayon et angle sont regles par le
-// mousemove du 1er clic) ; en pratique la souris sera a proximite
-// du sommet 0 par design, et les deux se deplacent ensemble parce
-// que tous les deux derivent du meme offset.
+// Preview du cercle : polygone des N cotes (frontiere de l'eventail) +
+// socle radial aligne sur circleOffsetAngle — ligne et polygone
+// restent colineaires car derives du meme offset.
 const drawCirclePreview = () => {
     const center = state.circleCenterModel
     const r = state.circleRadiusModel
@@ -536,17 +341,10 @@ const drawCirclePreview = () => {
     strokeScreenPolyline(rim)
 }
 
-// Previsualisation du mode étoile (creation en 3 clics) : WYSIWYG
-// strict avec starGeometry — le contour de l'etoile (sommets exterieurs
-// et interieurs alternes, meme formule que la creation avec
-// offsetAngle + innerRatio), la frontiere du disque de rayon en
-// pointilles + la ligne de rayon vers le 1er pic (drawRadialBase avec
-// angle = -PI/2 + offset : le pic 0 tombe pile sur la direction du
-// curseur) + marqueur de centre. En phase 2 (apres le 2e clic), le
-// mouvement de la souris regle starInnerRatio et l'etoile se deforme
-// en direct (feedback profondeur des branches) ; en phase 1 l'etoile
-// est affichee avec la profondeur par defaut, seule l'orientation
-// suit la souris.
+// Preview etoile : contour (sommets exterieurs/interieurs alternes,
+// meme formule que starGeometry) + ligne de rayon vers le 1er pic
+// (angle -PI/2 + offset). En phase 2, starInnerRatio deforme
+// l'etoile en direct.
 const drawStarModePreview = () => {
     const center = state.starCenterModel
     const r = state.starRadiusModel
@@ -561,21 +359,13 @@ const drawStarModePreview = () => {
         pts.push(modelToScreen({ x: center.x + r * Math.cos(aOuter), y: center.y + r * Math.sin(aOuter) }))
         pts.push(modelToScreen({ x: center.x + rInner * Math.cos(aInner), y: center.y + rInner * Math.sin(aInner) }))
     }
-    // Ligne de rayon vers le 1er pic : drawRadialBase attend l'angle
-    // du sommet 0, c'est-a-dire -PI/2 + offset pour l'etoile.
     drawRadialBase(center, r, -Math.PI / 2 + offset)
     strokeScreenPolyline(pts)
 }
 
-// Previsualisation du mode anneau (cercle perçé d'un trou, creation
-// en 3 clics) : WYSIWYG strict avec annulusGeometry — la couronne
-// EXTERIEURE (polyline + cercle vrai en pointilles + ligne de rayon
-// vers le sommet exterieur 0 via drawRadialBase, qui pointe vers la
-// souris) et la couronne INTERIEURE (le trou : cercle en pointilles
-// + polyline du rayon interne). En phase 1 (apres le 2e clic), le
-// mouvement de la souris regle annulusInnerRatio et le trou se
-// deforme en direct (feedback taille du trou) ; en phase 0 le trou
-// est affiche au ratio par defaut (ANNULUS_INNER_RATIO_DEFAULT).
+// Preview anneau : couronne exterieure (socle radial) + trou (cercle
+// pointille + polyline interne, ratio courant). En phase 1, le
+// mouvement regle annulusInnerRatio en direct.
 const drawAnnulusPreview = () => {
     const center = state.annulusCenterModel
     const r = state.annulusOuterRadiusModel
@@ -591,12 +381,9 @@ const drawAnnulusPreview = () => {
         outer.push(modelToScreen({ x: center.x + r * Math.cos(a), y: center.y + r * Math.sin(a) }))
         inner.push(modelToScreen({ x: center.x + rInner * Math.cos(a), y: center.y + rInner * Math.sin(a) }))
     }
-    // Couronne exterieure : cercle pointille + ligne de rayon vers le
-    // sommet 0 + marqueur de centre (socle radial partage).
     drawRadialBase(center, r, offset)
     strokeScreenPolyline(outer)
-    // Le trou : cercle du rayon interne en pointilles + polyline de la
-    // couronne interieure (WYSIWYG strict avec annulusGeometry).
+    // Le trou : cercle du rayon interne + polyline interieure.
     const sp = modelToScreen(center)
     const zoom = state.ctx.zoomLevel
     state._ctx.setLineDash([4, 4])
@@ -608,11 +395,8 @@ const drawAnnulusPreview = () => {
     strokeScreenPolyline(inner)
 }
 
-// Previsualisation de la forme predéfinie armee (panneau #shapes) :
-// WYSIWYG strict avec la creation — rectangle/carre = contour des 2
-// coins (le carre applique la meme regle max(|dx|,|dy|) que la
-// creation), polygones reguliers = socle radial du n-cote, etoile =
-// contour des sommets alternes exterieur/interieur.
+// Preview de la forme armee : rect/square = 2 coins, polygones =
+// socle radial, etoile = contour alterne.
 const drawShapeToolPreview = () => {
     const kind = state.shapeKind
     const anchor = state.shapeAnchorModel
@@ -655,10 +439,7 @@ const drawShapeToolPreview = () => {
         strokeScreenPolyline(pts)
         return
     }
-    // Polygones reguliers (triangle, pentagone, hexagone) : meme
-    // preview que le cercle avec N fixe, orientation par souris incluse
-    // (shapeOffsetAngle, meme convention que drawCirclePreview : le
-    // sommet 0 — et la ligne de rayon — pointent vers la souris).
+    // Polygones reguliers : meme preview que le cercle, N fixe, orientation par souris.
     const n = { tri: 3, penta: 5, hexa: 6 }[kind]
     const offset = typeof state.shapeOffsetAngle === 'number' ? state.shapeOffsetAngle : 0
     const rim = []
@@ -666,12 +447,8 @@ const drawShapeToolPreview = () => {
         const a = (i / n) * TAU + offset
         rim.push(modelToScreen({ x: anchor.x + radius * Math.cos(a), y: anchor.y + radius * Math.sin(a) }))
     }
-    // Triangle : la forme generee est reduite a ses 3 sommets (un seul
-    // triangle, pas d'eventail — cf. cahier des charges) — on ne trace
-    // que le contour, SANS le socle radial (cercle pointille + ligne
-    // de rayon + marqueur de centre) qui n'existera pas dans le
-    // resultat (WYSIWYG strict). L'orientation reste visible : le
-    // sommet 0 du contour pointe vers la souris.
+    // Triangle : un seul triangle (pas d'eventail), contour seul sans
+    // socle radial — le resultat n'a ni centre ni rayon.
     if (kind === 'tri') {
         strokeScreenPolyline(rim)
         return
@@ -681,16 +458,8 @@ const drawShapeToolPreview = () => {
 }
 
 export const drawBoard = () => {
-    // Increments inconditionnels des compteurs de charge de rendu
-    // effectif (cf. DESIGN.md §2.4). Cout negligeable (deux `++`) ;
-    // ne pas conditionner sur state.fpsVisible pour eviter une
-    // branche dans le chemin chaud de rendu.
     statsRedraws++
-    // Transform dpr sur le visible (invariant) : toutes les coords
-    // internes sont en pixels CSS ; la transform les projette sur le
-    // bitmap physique. Posee ici et JAMAIS retiree — les overlays de
-    // editor.js (hover, drawMouse) dessinent sur state._ctx APRES
-    // drawBoard et s'appuient sur cette transform active.
+    // Transform dpr (jamais retiree : les overlays d'editor.js s'appuient dessus).
     applyDprTransform(state._ctx)
     ensureOffscreen()
     syncOffscreenSize()
@@ -699,30 +468,18 @@ export const drawBoard = () => {
         renderSceneToOffscreen()
         sceneDirty = false
     }
-    // Blit offscreen → visible en une seule operation. Le cache
-    // offscreen est en pixels PHYSIQUES (offscreen.width = board.width) ;
-    // on le dessine dans une boite de destination CSS px (cssBoardW-H) :
-    // la transform dpr le retablit en 1:1 physique — aucun upscale ni
-    // downscale du cache.
+    // Blit offscreen (pixels physiques) vers une boite CSS px : 1:1 via la transform dpr.
     state._ctx.drawImage(offscreen, 0, 0, offscreen.width, offscreen.height, 0, 0, cssBoardW(), cssBoardH())
     renderTransient()
 }
 
-// (modifyShapeModel-spec §3.7) : avec state.selectedPoints
-// = indices dans activeShape().pointList (Q1c), chaque entree du
-// tableau est un nombre, pas une ref JS. On resout via
-// pointList[idx] avant de deleguer au drawPoint. Indices non-
-// integer ou hors range sont ignores (defense — ne devrait pas
-// arriver dans le pipeline normal post-spec-merge-compact).
+// selectedPoints = indices pointList de la forme active : resolution
+// en coords (indices non-integer / hors range ignores) puis batch.
 export const drawSelectedPoints = () => {
     if (typeof state.selectedPoints === 'undefined' || !state.selectedPoints || state.selectedPoints.length === 0) return
     let isDimmed = typeof state.isSelectionDimmed !== 'undefined' && state.isSelectionDimmed
     let color = isDimmed ? COLOR_SELECTED_POINT_DIMMED : COLOR_SELECTED_POINT
     const pointList = state.shapes[state.activeShapeIndex]?.pointList || []
-    // (feature/performance opt #1) — meme batching que drawShape : on
-    // resout les indices selectedPoints vers coords (defenses
-    // Number.isInteger et !p preservees) puis on delegue a
-    // drawPointsBatch pour 1 seul beginPath/stroke au lieu de N.
     const resolved = []
     state.selectedPoints.forEach((idx) => {
         if (!Number.isInteger(idx)) return
@@ -733,16 +490,9 @@ export const drawSelectedPoints = () => {
     drawPointsBatch(resolved, 6, color)
 }
 
-// Marqueur des sommets multi-points (cf. DESIGN.md §7.10) : anneau
-// orange autour des positions de la FORME ACTIVE portant plusieurs
-// entrees pointList (doublons de scenes legacy/importees) — candidats
-// a la fusion #mergePoints. Rendu dans la scene stable (offscreen)
-// APRES drawSelectedPoints pour rester visible meme quand le sommet
-// est selectionne (le cercle cyan r6 l'ecraserait sinon). Gate preview
-// comme les autres aides d'edition (points de controle). Over-stroke
-// inoffensif : N entrees au meme sommet dessinent N anneaux
-// identiques superposes = un seul anneau visible (batches via
-// drawPointsBatch = 1 beginPath/stroke).
+// Anneaux orange autour des positions multi-points de la FORME ACTIVE
+// (candidats a la fusion #mergePoints, cf. DESIGN.md §7.10). Rendu
+// apres drawSelectedPoints pour rester visible sur un sommet selectionne.
 export const drawMultiPointMarkers = () => {
     const shape = state.shapes[state.activeShapeIndex]
     const multi = getMultiPointIndices(shape)
@@ -772,8 +522,6 @@ export const drawSelectionBox = (p1, p2) => {
 export const drawAxis = () => {
     let originScreenX = state.ctx.center.x + (0 - state.ctx.viewCenter.x) * state.ctx.zoomLevel
     let originScreenY = state.ctx.center.y - (0 - state.ctx.viewCenter.y) * state.ctx.zoomLevel
-    // Bornes en pixels CSS (cf. §2.7) : le bitmap est en pixels
-    // physiques, mais le dessin est exprime en CSS px sous transform dpr.
     let w = cssBoardW()
     let h = cssBoardH()
     state._ctx.setLineDash(PATTERN_AXIS)
@@ -792,15 +540,9 @@ export const drawAxis = () => {
     }
 }
 
-// Calcule le centroide (moyenne des coords deduped par index) des
-// points engages dans le grab en cours. Sert d'ancre au reticule
-// mode 2 (projection symetrique) pendant la drag : reflete en
-// temps reel la position de l'entite manipulee (cf. spec
-// « pendant le clic-droit en position down, le reticule se
-// positionne automatiquement sur le point manipule »).
-// Retourne null si grabbedGroup vide (cas idle / post-endGrabbing)
-// ou si tous les indices resolvent vers undefined (defense contre
-// formes corrompues post-rebase).
+// Centroide deduped des points du grab : ancre du reticule mode 2
+// pendant la drag (reflete en temps reel l'entite manipulee). null si
+// grabbedGroup vide ou tous les indices resolvent vers undefined.
 const grabbedReticleAnchor = () => {
     if (!Array.isArray(state.grabbedGroup) || state.grabbedGroup.length === 0) return null
     if (state.moveAllActive) return null
@@ -822,24 +564,8 @@ const grabbedReticleAnchor = () => {
 
 export const drawReticle = () => {
     if (typeof state.reticleMode === 'undefined' || state.reticleMode === 0) return
-    // Selection de l'ancre : mode 2 (« projection symétrique »)
-    // gagne le comportement spec clic-droit « pendant la drag, le
-    // reticule se positionne sur le point manipule ». Resolution :
-    //   1. Mode 2 + grabbedGroup non-vide + !moveAllActive : ancre =
-    //      centroide deduped des indices grabbedGroup (calcule depuis
-    //      state.shapes[item.shapeIndex].pointList[item.pointIndex] =
-    //      position live, donc reflette la drag en temps reel).
-    //   2. Sinon : ancre = curseur (comportement historique).
-    //
-    // Cas d'usage AltGr : `state.moveAllActive` court-circuite la
-    // branche 1 (la « point manipule » est ambigu : tout les points
-    // bougent, le pivot de rotation suit le curseur cf. §6.2 ;
-    // laisser le reticule sur le curseur preserve la coherence avec
-    // la rotation AltGr).
-    //
-    // Cas release : `endGrabbing` vide grabbedGroup -> branche 2
-    // reprend la main, reticule retourne au curseur (spec « le
-    // reticule ensuite à la position du curseur quand on relache »).
+    // Mode 2 : ancre = centroide du grab en cours (position live) ;
+    // moveAllActive (AltGr) et fin de grab retombent sur le curseur.
     let m = null
     if (state.reticleMode === 2) {
         m = grabbedReticleAnchor()
@@ -859,8 +585,6 @@ export const drawReticle = () => {
     state._ctx.strokeStyle = COLOR_RETICLE
     positions.forEach((pos) => {
         let sp = modelToScreen(pos)
-        // Bornes en pixels CSS (cf. §2.7) : le bitmap est en pixels
-        // physiques, le dessin en CSS px sous transform dpr.
         if (sp.y >= 0 && sp.y <= cssBoardH()) {
             state._ctx.beginPath()
             state._ctx.moveTo(0, sp.y)
@@ -882,15 +606,9 @@ export const drawShapes = () => {
         !Array.isArray(state.shapes) ||
         state.shapes.length === 0
     ) return
-    // Preview « plans » (2e état du cycle, cf. DESIGN.md §2.6) :
-    // toutes les formes sont rendues COMME la forme active — fills
-    // conservés (t.fill ou défaut), lignes actives, pas de points de
-    // contrôle — dans l'ORDRE du tableau : forme n = plan n, la forme
-    // d'indice le plus haut recouvre les précédentes là où elles se
-    // chevauchent. La composition en plans rend le stacking visible,
-    // contrairement à la vue édition (forme active remplie + autres en
-    // contours atténués) et à la preview simple (même vue édition,
-    // chrome masquée).
+    // Preview « plans » (cf. DESIGN.md §2.6) : TOUTES les formes comme
+    // plans remplis dans l'ordre du tableau (forme n = plan n, la plus
+    // haute recouvre les precedentes).
     if (state.previewPlans) {
         for (let i = 0; i < state.shapes.length; i++) {
             drawShape(state.shapes[i], true)
@@ -904,13 +622,8 @@ export const drawShapes = () => {
     drawShape(state.shapes[state.activeShapeIndex], true)
 }
 
-// (modifyShapeModel-spec §3.7) : le tableau est `tris` ,
-// les slots p1/p2/p3 sont des indices dans shape.pointList. On resout
-// les coordonnees via pointList[t.pX] avant de deleguer a drawTriangle /
-// drawPoint. Les slots `undefined` (Q1b triangles partiels) sont
-// correctement filtres — drawTriangle gere deja le cas p1 absent / p2
-// absent / p3 absent, et drawPoint ignore les coords absents (guard
-// `if (!p) return`).
+// tris = indices dans pointList ; resolution en coords, slots undefined
+// (triangles partiels) filtres.
 export const drawShape = (shape, isActive) => {
     if (!shape || !Array.isArray(shape.tris) || shape.tris.length === 0) return
     const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
@@ -918,32 +631,9 @@ export const drawShape = (shape, isActive) => {
     let linePattern = isActive ? PATTERN_LINES : PATTERN_LINES_INACTIVE
     let pointColor = isActive ? POINT_COLOR_ACTIVE : POINT_COLOR_INACTIVE
 
-    // (feature/performance opt #3) — decomposition en 3 passes au lieu
-    // d'appeler drawTriangle par tri (= N beginPath + N stroke + N fill).
-    // Avant : pour N tris, on cumulait jusqu'a 3N beginPath/stroke cycles
-    // API canvas (1 drawTriangle = 1 beginPath, parfois 1 fill, 1 stroke ;
-    // sommation sur N = 3N path-state transitions sur le hot path machine).
-    // Apres : 3 passes par shape :
-    //   1. fill pass  (active shape seulement) : regroupe les tris par
-    //      couleur de fill (key = t.fill ou COLOR_TRIANGLE_FILL_ACTIVE
-    //      par defaut) et trace 1 beginPath + sub-paths moveTo/lineTo/closePath
-    //      + 1 fill() par groupe de couleur (= K groupements, K = nombre
-    //      de couleurs distinctes sur la forme ; 1 en pratique si tous
-    //      default, 2-5 max en multi-coloration manuelle).
-    //   2. stroke pass (tous les tris, completes et partiels) : 1 beginPath
-    //      couvrant TOUS les tris de la shape, sub-paths moveTo/lineTo/
-    //      closePath empiles dans l'ordre source, 1 stroke() final. Le
-    //      setLineDash + setStrokeStyle sont fixes une seule fois pour
-    //      la shape (= meme pattern + meme couleur par shape).
-    //   3. vertex pass : drawPointsBatch sur tous les vertex collectes,
-    //      delivre de opt #1. Preserved tel quel.
-    //
-    // resolvedTris : single source of truth — on resout une seule fois
-    // les indices pointList en coords (defenses Number.isInteger + !p
-    // preservees ; fill = isActive ? (t.fill !== undefined ? t.fill :
-    // COLOR_TRIANGLE_FILL_ACTIVE) : undefined) et chaque passe itere
-    // ce pre-calcule. Evite la double resolution (2 iterations de
-    // shape.tris entraineraient 2 lookups pointList[t.pX] par tri).
+    // 3 passes au lieu d'un drawTriangle par tri (opt #3) : fill par
+    // groupe de couleur (active shape), stroke global unique, vertex
+    // en batch. resolvedTris = resolution unique des indices en coords.
     const vertexPoints = []
     const resolvedTris = []
     shape.tris.forEach((t) => {
@@ -957,16 +647,9 @@ export const drawShape = (shape, isActive) => {
         resolvedTris.push({ p1, p2, p3, fill })
     })
 
-    // === Fill pass (active shape uniquement, tris completes uniquement) ===
-    // Spec Canvas 2D : fill() applique le fillStyle courant a TOUS les
-    // sub-paths formes depuis le dernier beginPath(). Si on mettait
-    // plusieurs fillStyles dans un meme beginPath, le dernier fill()
-    // repeindrait la totalite avec la derniere couleur (et les
-    // precedents seraient perdus). On DOIT donc un beginPath par groupe
-    // de couleur distincte. Groupage via Map<string, Array<r>> : K entries,
-    // K = nombre de couleurs distinctes. Pour les formes avec tous les
-    // tris en default fill (= cas typique mesh-wail), K = 1 = fill(x36)
-    // -> fill(x1) (~36x de gain sur la sous-operation fill).
+    // === Fill pass (active shape, tris completes) ===
+    // fill() applique le fillStyle courant a TOUS les sub-paths du
+    // beginPath courant : un beginPath par groupe de couleur distinct.
     if (isActive) {
         const fillGroups = new Map()
         for (let i = 0; i < resolvedTris.length; i++) {
@@ -977,20 +660,9 @@ export const drawShape = (shape, isActive) => {
             fillGroups.set(r.fill, arr)
         }
         for (const [color, tris] of fillGroups.entries()) {
-            // SAFE-BELT (feature/performance opt #3 follow-up) :
-            // detecter les windings inconsistantes en screen-space (apres
-            // modelToScreen, qui flippe Y et inverse les cross-products
-            // math). Si les tris d'un meme groupe de fill ont des signes
-            // de winding heterogenes ou si l'un est degenere (cross = 0),
-            // le fill batched sous fillRule=nonzero peut creer un trou
-            // par annulation des winding counts (verifie empiriquement
-            // par test manuel sur assets/mesh-overlap-test.json, forme 3
-            // fan CCW autour d'un centre commun). Fallback : per-tri fill,
-            // qui preserve le comportement de l'ancien drawTriangle
-            // (chaque tri path-independant = pas d'interaction de winding).
-            // Cout : N beginPath/fill au lieu d'1 pour ce groupe ; sur mesh
-            // typique (windings uniformes en screen space, mesh-wail par
-            // exemple) le chemin batched est preserve.
+            // SAFE-BELT : des windings heterogenes en screen-space (apres
+            // le Y-flip de modelToScreen) ou un tri degenere (cross = 0)
+            // feraient un trou sous fillRule=nonzero -> fallback per-tri.
             const screenTris = tris.map((r) => {
                 const s1 = modelToScreen(r.p1)
                 const s2 = modelToScreen(r.p2)
@@ -1011,8 +683,6 @@ export const drawShape = (shape, isActive) => {
             uniformSign = uniformSign && !hasDegenerate
             state._ctx.fillStyle = color
             if (uniformSign) {
-                // BATCHED : 1 beginPath + sub-paths empiles + 1 fill. Gain
-                // opt #3 preserve pour les groupes safe (mesh typique).
                 state._ctx.beginPath()
                 for (let i = 0; i < screenTris.length; i++) {
                     const t = screenTris[i]
@@ -1023,11 +693,7 @@ export const drawShape = (shape, isActive) => {
                 }
                 state._ctx.fill()
             } else {
-                // PER-TRI (fallback) : un path par tri, fill sur chaque.
-                // Aucune interaction de winding entre sub-paths = rendu
-                // identique a l'ancien drawTriangle. Cout : N beginPath +
-                // N fill cycles. Pas de batching fill pour ce groupe mais
-                // le reste (stroke, vertex) reste batched.
+                // Fallback : un path par tri, rendu identique a l'ancien drawTriangle.
                 for (let i = 0; i < screenTris.length; i++) {
                     const t = screenTris[i]
                     state._ctx.beginPath()
@@ -1041,15 +707,10 @@ export const drawShape = (shape, isActive) => {
         }
     }
 
-    // === Stroke pass (tous les tris, completes et partiels) ===
-    // setLineDash + setStrokeStyle fixes une fois pour toute la shape :
-    // les deux sont homogenees par shape (meme pattern/color par drawShape),
-    // donc setter N fois dans la boucle etait un gaspillage. 1 beginPath
-    // couvre tous les tris ; chaque tri ajoute moveTo + (lineTo si p2) +
-    // (lineTo+closePath si p3). Le stroke() final trace toutes les
-    // sub-paths en un seul appel GPU. Les tris partiels (p3 absent = en
-    // cours de construction) ne ferment pas leur sub-path mais participent
-    // au stroke global avec leur unique segment.
+    // === Stroke pass (tous les tris) ===
+    // 1 beginPath + 1 stroke global ; setLineDash/setStrokeStyle fixes
+    // une fois par shape. Les tris partiels (p3 absent) ne ferment pas
+    // leur sub-path.
     state._ctx.setLineDash(linePattern)
     state._ctx.strokeStyle = lineColor
     state._ctx.beginPath()
@@ -1070,10 +731,7 @@ export const drawShape = (shape, isActive) => {
     }
     state._ctx.stroke()
 
-    // Pass vertex = points de controle de l'edition (petits disques
-    // sur chaque sommet). Sautes en preview : seule la geometrie
-    // (lignes / fills) doit rester visible.
-    // Rationale : voir DESIGN.md §2.6
+    // Points de controle sautes en preview (seule la geometrie reste visible).
     if (!state.previewMode) drawPointsBatch(vertexPoints, 2, pointColor)
 }
 
@@ -1112,19 +770,9 @@ export const drawLine = (p1, p2, pattern, color) => {
     state._ctx.stroke()
 }
 
-// ===== LOD grille (feature/performance opt #2) =====
-// Seuil minimum d'espacement utile entre 2 lignes de grille voisines en
-// pixels-ecran. En dessous, les lignes fusionnent en un bloc gris
-// (aliasing per pixel) et le cout API canvas devient explosif pour rien :
-// a zoom 0.1 / GRID_STEP 32, step_px = 3.2 ; le deuxieme for genere
-// alors ~6000 moveTo+lineTo sur un canvas 1920px de large sans le moindre
-// pixel distinct. Constante module-level (pas dans drawGrid) pour eviter
-// une re-definition par appel (= V8 inline cache-friendly).
-//
-// Borne basse seulement : a zoom eleve (step > 100 px), la grille reste
-// utile (8-15 lignes par viewport = grille lisible). Pas de borne haute,
-// le loop n_min..n_max est deja borne par le viewport et trace au pire
-// 2-3 lignes, sans risque quadratique.
+// ===== LOD grille (opt #2) =====
+// En dessous de 4 px d'espacement, les lignes fusionnent et le cout
+// canvas explose (a zoom 0.1 / pas 32 : ~6000 moveTo+lineTo inutiles).
 const MIN_GRID_STEP_PX = 4
 
 export const drawGrid = () => {
@@ -1132,12 +780,6 @@ export const drawGrid = () => {
     if (!baseStep || baseStep <= 0) return
     const step = baseStep * state.ctx.zoomLevel
     if (step <= 0) return
-    // (feature/performance opt #2) — elimine la grille quand l'espacement
-    // est trop serre (< MIN_GRID_STEP_PX) pour eviter le cout quadratique
-    // sur zoom-out extreme. Garde les defenses existantes (step <= 0,
-    // baseStep <= 0) intactes. Pas d'invalidation de cache : si GRID_STEP
-    // ou zoomLevel reviennent dans la plage visible, la prochaine
-    // renderSceneToOffscreen repeint la grille normalement.
     if (step < MIN_GRID_STEP_PX) return
     state._ctx.setLineDash([])
     state._ctx.strokeStyle = COLOR_GRID
@@ -1145,8 +787,6 @@ export const drawGrid = () => {
     let originScreenX = state.ctx.center.x - state.ctx.viewCenter.x * state.ctx.zoomLevel
     let originScreenY = state.ctx.center.y + state.ctx.viewCenter.y * state.ctx.zoomLevel
     let n_min_x = Math.ceil(-originScreenX / step)
-    // Bornes en pixels CSS (cf. §2.7) : le bitmap est en pixels
-    // physiques, le dessin en CSS px sous transform dpr.
     let n_max_x = Math.floor((cssBoardW() - originScreenX) / step)
     for (let n = n_min_x; n <= n_max_x; n++) {
         let x_screen = originScreenX + n * step

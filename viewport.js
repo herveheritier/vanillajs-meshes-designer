@@ -38,34 +38,12 @@ export const updateZoomDisplay = () => {
 }
 
 // ===== FPS HUD =====
-//
-// Rationale : voir DESIGN.md §2.4 — ce HUD mesure la CHARGE DE RENDU
-// EFFECTIVE (appels a drawBoard et re-renders offscreen), pas la
-// frequence rAF/vsync du navigateur. Le but est de valider que le
-// canvas n'est repeint que quand c'est utile : en idle, redraws/s
-// doit tomber a 0 ; en drag/zoom, doit plafonner au vsync (preuve du
-// rAF coalescing) ; offscreen/s doit rester << redraws en pratique
-// (preuve de l'efficacite du cache de scene). Un compteur base sur
-// requestAnimationFrame mentirait sur l'idle (rAF ticks toujours a
-// 60 Hz meme quand drawBoard = 0).
-//
-// Le polling 250 ms (= 4 Hz) sert uniquement a eviter le thrash
-// textContent du DOM — les valeurs reelles remontent depuis draw.js
-// par consumeDrawStats() (cf. §2.4). Pas de condition sur
-// state.fpsVisible dans drawBoard (cout microscopique : deux
-// increments par repaint). Le polling ne tourne que quand le HUD est
-// actif, donc cout total en idle = 0 (independamment des compteurs
-// toujours presents dans draw.js).
-//
-// PAS DE SEUIL data-perf : la metrique est volontairement neutre.
-// L'attribut data-perf="good" reste statique dans le markup HTML
-// (couleur verte permanente) ; pas de bascule "warn" auto qui
-// pourrait mentir sur un cas limite. La regle CSS [data-perf="warn"]
-// reste dormante dans main.html — reservee pour evolution future si
-// on decide d'ajouter un seuil.
+// Mesure la charge de rendu EFFECTIVE (drawBoard / re-renders offscreen,
+// cf. DESIGN.md §2.4), pas la frequence rAF : en idle redraws/s = 0, en
+// drag plafond vsync (preuve du rAF coalescing). Polling 250 ms, valeurs
+// via consumeDrawStats() ; pas de seuil data-perf (metrique volontairement neutre).
 
 // ===== FPS display =====
-
 let fpsLastDisplayUpdate = 0
 let fpsRafId = 0
 
@@ -86,9 +64,7 @@ export const updateFpsButton = () => {
 
 const fpsSampleLoop = (now) => {
     if (!state.fpsVisible) {
-        // Sortie silencieuse : stopFpsMonitor annule deja le rAF
-        // chain quand state.fpsVisible passe a false, ce guard n'est
-        // qu'une defense en profondeur.
+        // Defense en profondeur : stopFpsMonitor annule deja le rAF chain.
         return
     }
     if (now - fpsLastDisplayUpdate >= FPS_DISPLAY_INTERVAL_MS) {
@@ -104,11 +80,7 @@ const fpsSampleLoop = (now) => {
 const startFpsMonitor = () => {
     if (fpsRafId) return
     fpsLastDisplayUpdate = 0
-    // Drain les compteurs accumules pendant l'idle (ou pendant que
-    // le HUD etait OFF) : evite qu'un long gap apparaisse comme un
-    // burst de redraws au premier intervalle. Pas de sauvegarde de
-    // l'etat pre-drain — interessant uniquement si on dive dans
-    // stats-detail (pas prevu).
+    // Drain les compteurs accumules pour eviter un faux burst au 1er intervalle.
     consumeDrawStats()
     fpsRafId = requestAnimationFrame(fpsSampleLoop)
 }
@@ -118,9 +90,7 @@ const stopFpsMonitor = () => {
     cancelAnimationFrame(fpsRafId)
     fpsRafId = 0
     fpsLastDisplayUpdate = 0
-    // Drain final pour eviter qu'au prochain ON les compteurs
-    // accumules (long gap = un grand nombre) apparaissent comme
-    // donnees fraiches dans le premier intervalle.
+    // Drain final : eviter qu'un long gap ressorte comme donnees fraiches au prochain ON.
     consumeDrawStats()
     const div = document.querySelector('#fpsDisplay')
     if (div) div.textContent = '0 redraws/s (0 offscreen)'
@@ -137,9 +107,6 @@ export const toggleFps = () => {
 export const restoreFpsVisible = () => {
     if (localStorage.getItem(FPS_VISIBLE_STORAGE_KEY) === '1') {
         state.fpsVisible = true
-        // Demarre la boucle d'echantillonnage immediatement si la
-        // session precedente avait active le HUD : evite d'attendre un
-        // toggle utilisateur pour voir l'indicateur.
         startFpsMonitor()
     }
 }
@@ -217,9 +184,6 @@ export const wireGridControl = () => {
 export const toggleReticle = () => {
     state.reticleMode = (state.reticleMode + 1) % 3
     updateReticleButton()
-    // Note : le reticule fait partie du calque transitoire (cf.
-    // draw.js renderTransient) et est repeint a chaque drawBoard ;
-    // un requestDraw suffit.
     requestDraw()
     persistState()
 }
@@ -245,12 +209,8 @@ export const wireReticleControl = () => {
 
 // ===== Editing mode =====
 
-// Migration silencieuse : les sessions précédentes pouvaient stocker
-// 'construction' ou 'selection' dans localStorage. L'unique mode
-// supporté est désormais 'edition' (constante EDITING_MODES dans
-// constants.js). Une valeur stockée hors-tableau est ignorée et la
-// valeur par défaut 'edition' reste appliquée. Pas d'écriture
-// ultérieure : il n'y a plus de toggle UI à persister (cf. §1.3).
+// Migration silencieuse d'anciennes sessions ('construction'/'selection') :
+// seule 'edition' est acceptee, plus de toggle UI a persister.
 export const restoreEditingMode = () => {
     try {
         const stored = localStorage.getItem(EDITING_MODE_STORAGE_KEY)
@@ -317,45 +277,24 @@ export const wireConsoleToggle = () => {
 }
 
 // ===== Preview (mode visualisation seule) =====
-//
-// Rationale : voir DESIGN.md §2.6
-//
-// Vue transitoire de focus : bascule state.previewMode et applique la
-// classe body.preview-mode (cf. CSS dans main.html) qui masque la
-// chrome (toolbar, console, HUD bas-gauche, sceneStatus, panneau de
-// couleur, modales) — sauf le bouton #preview lui-même qui flotte
-// pour permettre le cycle en 3 états (off -> preview -> plans -> off,
-// cf. DESIGN.md §2.6). Le rendu canvas est nettoye cote draw.js (pas
-// de grille / axes / points de controle / overlays transitoires).
-// `state.previewPlans` (2e état du cycle) ne change que le rendu des
-// formes (draw.js drawShapes : toutes les formes en plans remplis
-// dans l'ordre, forme n = plan n) — la chrome reste masquée.
-//
-// PAS de persistance localStorage : a la difference des toggles de
-// prefs (grille, reticule, fps, console), la preview est un etat de
-// focus passager. Un reload en preview laisserait l'utilisateur sans
-// boutons (masques) — seule la sortie clavier (P / Echap) resterait
-// dispo, et l'etat d'edition par defaut au boot est plus sur.
+// Vue transitoire de focus (cf. DESIGN.md §2.6) : masque la chrome via
+// body.preview-mode, sauf le bouton #preview qui flotte pour le cycle
+// off -> preview -> plans -> off. Jamais persistee (un reload en
+// preview laisserait l'utilisateur sans boutons).
 
 export const applyPreviewMode = () => {
     const body = state.body
     if (body) body.classList.toggle('preview-mode', !!state.previewMode)
     if (state.previewMode) {
-        // Nettoie les gestes en cours (lasso en cours de drag, hover
-        // fantome) pour ne rien laisser transiter d'un mode a l'autre.
-        // Le grab est deja inatteignable : le mousedown droit est
-        // ignore en preview (cf. main.js), mais le reset reste gratuit
-        // et defensif.
+        // Reset defensif des gestes en cours (lasso, hover, traces
+        // cercle/anneau/forme) : l'outil reste arme, seul le geste
+        // est abandonne.
         state.isSelectingBox = false
         state.selectionBoxStart = undefined
         state.selectionBoxCurrent = undefined
         state.nearestPoint = undefined
         state.nearestLine = undefined
         state.nearestTriangle = undefined
-        // Un trace de cercle / anneau ou de forme en cours ne doit pas
-        // survivre a l'entree en preview : a la sortie, on retomberait
-        // sur une ancre fantome. L'outil lui-meme reste arme (toggle
-        // de vue), seul le geste est abandonne.
         state.circleCenterModel = undefined
         state.circleRadiusModel = 0
         state.circleOffsetAngle = 0
@@ -368,9 +307,7 @@ export const applyPreviewMode = () => {
         state.shapeCurrentModel = undefined
         state.shapeRadiusModel = 0
     }
-    // force le re-render offscreen : la scene stable (grille / axes /
-    // points de controle) change avec previewMode, il faut donc
-    // invalider le cache, pas juste blitter.
+    // La scene stable change avec previewMode : invalider le cache offscreen.
     requestDraw()
 }
 
@@ -381,31 +318,20 @@ export const updatePreviewButton = () => {
     btn.classList.toggle('preview-active', !!state.previewMode)
     btn.classList.toggle('preview-plans', plans)
     btn.setAttribute('aria-pressed', state.previewMode ? 'true' : 'false')
-    // Libellé du sous-état plans (même structure que #gridText /
-    // #shapesText) : vide hors plans, « plans » quand le 2e état du
-    // cycle est actif — l'utilisateur sait qu'un nouveau clic
-    // reviendra à la preview simple et qu'un autre quittera.
+    // Libellé du sous-état : vide hors plans, « plans » en 2e état.
     const text = btn.querySelector('#previewText')
     if (text) text.textContent = plans ? 'plans' : ''
-    // Title (tooltip) : décrit le cycle en 3 états.
+    // Tooltip : décrit le cycle en 3 états.
     btn.setAttribute('title', plans
         ? 'Prévisualisation plans : toutes les formes affichées dans leur ordre (forme n = plan n). P ou clic pour revenir à la preview simple, Échap ou clic gauche pour quitter.'
         : 'Prévisualiser la scène (P / Échap / clic gauche pour quitter) : masque points de contrôle, axes, grille, HUD et boutons ; un 2e clic affiche toutes les formes dans leur ordre (forme n = plan n)')
 }
 
 export const togglePreview = () => {
-    // Filet : ne pas basculer en pleine gesture de grab (clic droit +
-    // drag en cours, P/Echap enfonce pendant le drag). Sans ce garde,
-    // resolveMouseMoveOnBoard continuerait de muter la scene sous la
-    // preview jusqu'au mouseup. La gesture se termine au release ; un
-    // nouveau P / Echap bascule alors. Le bouton toolbar est inatteign-
-    // able dans ce cas (souris occupee sur le canvas), le clavier est
-    // la seule voie d'entree.
+    // Filet : ne pas basculer en pleine gesture de grab (la souris
+    // muterait la scene sous la preview jusqu'au mouseup).
     if (grabbed()) return
-    // Cycle en 3 états (bouton / P, cf. DESIGN.md §2.6) : off -> preview
-    // simple -> plans (toutes les formes dans leur ordre, forme n =
-    // plan n) -> off. Le 2e état ne se distingue du 1er que par le
-    // rendu (draw.js drawShapes) — la chrome est masquée dans les deux.
+    // Cycle en 3 états : off -> preview -> plans -> off (cf. DESIGN.md §2.6).
     if (!state.previewMode) {
         state.previewMode = true
         state.previewPlans = false
@@ -424,9 +350,9 @@ export const togglePreview = () => {
         : 'Preview desactivee')
 }
 
-// Sortie DIRECTE de la preview (Echap, clic gauche sur le canvas,
-// openSaveModal) : contrairement à togglePreview (cycle), on sort
-// toujours complètement — des deux états (preview simple et plans).
+// Sortie DIRECTE (Echap, clic gauche sur le canvas, openSaveModal) : on
+// sort toujours complètement, des deux états (contrairement à
+// togglePreview qui cycle).
 export const exitPreview = () => {
     if (grabbed()) return
     if (!state.previewMode) return
@@ -448,11 +374,9 @@ export const wirePreviewControl = () => {
 
 // ===== Wheel handler (sur board) =====
 
-// Reglage du nombre de cotes du cercle. Partage par la molette sur le
-// canvas en mode cercle (onBoardWheel) ET par la molette sur le
-// bouton #shapes actif (wireCircleWheelControl — le bouton affiche
-// « cercle N ») — un seul chemin de verite pour le clamp et le
-// refresh (compteur du bouton + preview renderTransient).
+// Reglage du nombre de cotes du cercle, partage entre la molette sur le
+// canvas (mode cercle) et celle sur le bouton #shapes : un seul chemin
+// de verite pour le clamp et le refresh.
 const adjustCircleSegments = (delta) => {
     state.circleSegments = Math.min(
         CIRCLE_MAX_SEGMENTS,
@@ -460,18 +384,11 @@ const adjustCircleSegments = (delta) => {
     )
     updateShapesButton()
     requestDraw()
-    // Preference persistée (comme le pas de grille) : le choix de
-    // l'utilisateur survit au rechargement. Ecriture directe (meme
-    // pattern que FPS_VISIBLE_STORAGE_KEY dans toggleFps) — pas de
-    // transit par persistState, le reglage est volontairement hors du
-    // wire format des fichiers exportes.
+    // Preference persistee en ecriture directe (hors du wire format des fichiers).
     try { localStorage.setItem(CIRCLE_SEGMENTS_STORAGE_KEY, String(state.circleSegments)) } catch (e) { /* ignore */ }
 }
 
-// Restaure le nombre de cotes mémorisé (preference de session, comme
-// reticleMode / FPS) : valeur stockée clampée dans les bornes
-// [CIRCLE_MIN_SEGMENTS, CIRCLE_MAX_SEGMENTS] ; sinon le defaut
-// CIRCLE_DEFAULT_SEGMENTS (déjà posé dans state.js) reste applique.
+// Restaure le nombre de cotes mémorisé (clampé dans les bornes), sinon defaut.
 export const restoreCircleSegments = () => {
     try {
         const stored = localStorage.getItem(CIRCLE_SEGMENTS_STORAGE_KEY)
@@ -487,18 +404,13 @@ export const restoreCircleSegments = () => {
     } catch (e) { /* ignore */ }
 }
 
-// Molette sur le bouton #shapes (qui affiche « cercle N » quand le
-// mode cercle est actif) : reglage du nombre de cotes — meme langage
-// que la molette sur le bouton grille pour le pas (sans effet hors
-// mode). `{ passive: false }` pour pouvoir preventDefault (sinon le
-// scroll vertical de la toolbar avalerait l'evenement).
+// Molette sur #shapes : reglage des cotes quand le mode cercle/anneau
+// est actif. `{ passive: false }` pour pouvoir preventDefault (sinon
+// le scroll vertical de la toolbar avalerait l'evenement).
 export const wireCircleWheelControl = () => {
     const btn = document.querySelector('#shapes')
     if (!btn) return
     btn.addEventListener('wheel', (e) => {
-        // Mode cercle OU anneau : le compteur de cotes est partage
-        // (state.circleSegments), le bouton affiche « cercle N » /
-        // « anneau N ».
         if (!state.circleMode && !state.annulusMode) return
         e.preventDefault()
         adjustCircleSegments(e.deltaY < 0 ? 1 : -1)
@@ -507,11 +419,9 @@ export const wireCircleWheelControl = () => {
 
 // ===== Rayon de la fusion par déplacement (molette sur #mergePoints) =====
 
-// Reglage du rayon de la fusion par déplacement (cf. DESIGN.md §7.11).
-// Partage par la molette sur le bouton #mergePoints quand le mode est
-// armé (meme langage que adjustCircleSegments / le pas de grille : le
-// bouton affiche « 20px ») — un seul chemin de verite pour le clamp et
-// le refresh (libellé + title via updateMergeButtonState).
+// Reglage du rayon de fusion (cf. DESIGN.md §7.11) via la molette sur
+// #mergePoints quand le mode est armé : un seul chemin de verite pour
+// le clamp et le refresh (libellé + title via updateMergeButtonState).
 const adjustMergeDropRadius = (delta) => {
     state.mergeDropRadius = Math.min(
         MERGE_DROP_RADIUS_MAX_PX,
@@ -519,19 +429,11 @@ const adjustMergeDropRadius = (delta) => {
     )
     updateMergeButtonState()
     requestDraw()
-    // Preference persistée (comme le nombre de cotes du cercle) : le
-    // choix de l'utilisateur survit au rechargement. Ecriture directe
-    // (meme pattern que CIRCLE_SEGMENTS_STORAGE_KEY dans
-    // adjustCircleSegments) — pas de transit par persistState, le
-    // reglage est volontairement hors du wire format des fichiers
-    // exportes.
+    // Preference persistee en ecriture directe (hors du wire format).
     try { localStorage.setItem(MERGE_DROP_RADIUS_STORAGE_KEY, String(state.mergeDropRadius)) } catch (e) { /* ignore */ }
 }
 
-// Restaure le rayon mémorisé (preference de session, comme
-// circleSegments) : valeur stockée clampée dans les bornes
-// [MERGE_DROP_RADIUS_MIN_PX, MERGE_DROP_RADIUS_MAX_PX] ; sinon le
-// defaut (déjà posé dans state.js) reste applique.
+// Restaure le rayon mémorisé (clampé dans les bornes), sinon defaut.
 export const restoreMergeDropRadius = () => {
     try {
         const stored = localStorage.getItem(MERGE_DROP_RADIUS_STORAGE_KEY)
@@ -547,12 +449,9 @@ export const restoreMergeDropRadius = () => {
     } catch (e) { /* ignore */ }
 }
 
-// Molette sur le bouton #mergePoints quand la fusion par déplacement
-// est armée : reglage du rayon de fusion (8-64 px) — meme langage que
-// la molette sur le bouton grille pour le pas / sur #shapes pour le
-// nombre de cotes du cercle (sans effet hors mode armé).
-// `{ passive: false }` pour pouvoir preventDefault (sinon le scroll
-// vertical de la toolbar avalerait l'evenement).
+// Molette sur #mergePoints quand la fusion par déplacement est armée :
+// reglage du rayon (8-64 px). `{ passive: false }` pour pouvoir
+// preventDefault (sinon le scroll de la toolbar avalerait l'evenement).
 export const wireMergeDropWheelControl = () => {
     const btn = document.querySelector('#mergePoints')
     if (!btn) return
@@ -568,22 +467,14 @@ export const onBoardWheel = (e) => {
     if (!state.board) return
     const boardRect = state.board.getBoundingClientRect()
     const cursorScreen = { x: e.x - boardRect.x, y: e.y - boardRect.y }
-    // Mode cercle / anneau : la molette regle le nombre de cotes du
-    // polygone genere (au lieu de zoomer/pivoter). Meme langage que le
-    // reglage du pas de grille a la molette : retour immediat via la
-    // preview (draw.js renderTransient) + le libellé « cercle N » /
-    // « anneau N » du bouton #shapes. Desactive en preview (la molette
-    // y zoome toujours, cf. §2.6).
+    // Mode cercle/anneau (hors preview) : la molette regle les cotes au lieu de zoomer.
     if ((state.circleMode || state.annulusMode) && !state.previewMode) {
         adjustCircleSegments(e.deltaY < 0 ? 1 : -1)
         return
     }
     const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))
-    // Preview = visualisation seule : la molette NE PEUT PAS muter la
-    // scene. On bloque les deux chemins de rotation (AltGr = tourner
-    // chaque forme, selection >= 2 points = pivoter la selection) pour
-    // que la molette zoome TOUJOURS en preview — meme si la selection
-    // n'est pas vide (elle reste masquee mais toujours dans l'etat).
+    // En preview la molette zoome TOUJOURS : les chemins de rotation
+    // (AltGr / selection >= 2) sont bloques car ils muteraient la scene.
     if (isAltGrDown && !state.previewMode) {
         state.altGrRotationPivot = screenToModel(cursorScreen)
         const angle = e.deltaY < 0 ? -ROTATE_STEP : ROTATE_STEP
@@ -628,7 +519,6 @@ export const startPan = (mouseScreen) => {
     state.panStartViewCenter = { x: state.ctx.viewCenter.x, y: state.ctx.viewCenter.y }
 }
 
-// Rationale : voir DESIGN.md §2.3
 export const updatePan = (mouseScreen) => {
     if (!state.isPanning) return
     const dx = mouseScreen.x - state.panStartMouse.x

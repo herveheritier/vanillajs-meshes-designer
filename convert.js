@@ -85,12 +85,8 @@ export const importMeshesFromFile = (file) => {
             }
             let shapePayload = meshes.map((m) => ({ tris: m.tris, pointList: m.pointList }))
             let json = JSON.stringify({ shapes: shapePayload, activeShapeIndex: 0 })
-            // Passe le basename sans extension comme sourceName pour
-            // que le sceneName soit adopte (cf. importMeshFromText :
-            // precedes sur le wire-format embed name).
-            // Meme regex que io.stripFileExtension — inline ici car
-            // le pattern est trivial et on veut eviter un nouvel
-            // export croise entre modules de domaine distincts.
+            // Basename sans extension (meme regex que io.stripFileExtension,
+            // inline pour eviter un import croise entre domaines).
             const sourceName = typeof file.name === 'string' ? file.name.replace(/\.[^.]+$/, '') : ''
             importMeshFromText(json, sourceName)
             let totalTris = meshes.reduce((acc, m) => acc + m.tris.length, 0)

@@ -44,23 +44,11 @@ export const nextShape = () => {
     goToShape((state.activeShapeIndex + 1) % state.shapes.length)
 }
 
-// (évolution « boutons pour gérer l'ordre des formes ») — déplacement
-// de la forme active dans l'ordre du tableau. L'ordre EST la sémantique
-// des plans : dans la vue plans (cf. DESIGN.md §2.6), drawShapes
-// rend les formes dans l'ordre du tableau — forme n = plan n, la forme
-// d'indice le plus haut est dessinée en dernier donc recouvre les
-// précédentes. MONTER la forme = augmenter son indice (elle passe
-// au-dessus, plan n → plan n+1, le compteur monte : 1/3 → 2/3),
-// DESCENDRE = diminuer son indice (elle passe en dessous). La forme
-// active suit son déplacement (activeShapeIndexPatch accolé au
-// shapeMovePatch : l'undo/redo restaure aussi l'index actif).
-//
-// Un déplacement = une entry undo (2 patches : shapeMove + index),
-// comme addShape/performDeleteShape. Le splice en mémoire est le miroir
-// exact de l'applicateur history.js applyShapeMove (même direction
-// forward : remove at from, insert at to). goToShape(to) réutilise le
-// nettoyage d'état transitoire (sélection, hover, HUDs) du même chemin
-// que prevShape/nextShape.
+// Déplacement de la forme active dans l'ordre du tableau (l'ordre EST
+// la sémantique des plans, cf. DESIGN.md §2.6 : monter = indice +1,
+// descendre = indice -1 ; la forme active suit). Une entry undo de
+// 2 patches (shapeMove + activeShapeIndex) ; le splice est le miroir
+// de l'applicateur history.js applyShapeMove.
 const moveShape = (from, to) => {
     if (from === to) return
     saveState({
@@ -72,10 +60,6 @@ const moveShape = (from, to) => {
     const [moved] = state.shapes.splice(from, 1)
     state.shapes.splice(to, 0, moved)
     goToShape(to)
-    // (évolution « commentaire dans le HUD ») — logique prospective :
-    // après un déplacement d'ordre, le toast invite à continuer avec le
-    // même raccourci (Alt+↑/↓) et rappelle l'annulation. Le compteur
-    // (n/m) reste lisible dans le HUD forme (#shapeLabel).
     showActionComment(
         `Ctrl+Z pour annuler — Alt+↑ / Alt+↓ pour continuer à réordonner`
     )
@@ -84,27 +68,20 @@ const moveShape = (from, to) => {
 
 export const moveShapeUp = () => {
     if (state.shapes.length <= 1) return
-    // Défense en profondeur (le bouton est déjà grisé à cette borne) :
-    // un appel programmatique sur la dernière forme ne doit pas faire
-    // de splice hors bornes (ex. index+1 = length → splice invalide).
+    // Defense en profondeur : le bouton est deja grise a cette borne.
     if (state.activeShapeIndex >= state.shapes.length - 1) return
     moveShape(state.activeShapeIndex, state.activeShapeIndex + 1)
 }
 
 export const moveShapeDown = () => {
     if (state.shapes.length <= 1) return
-    // Défense en profondeur (le bouton est déjà grisé à cette borne) :
-    // un appel programmatique sur la 1re forme ne doit pas faire un
-    // splice à l'index -1 (qui retirerait le DERNIER élément — bug
-    // attrapé par smoke-shapeorder).
+    // Defense en profondeur : splice a l'index -1 retirerait le dernier element.
     if (state.activeShapeIndex <= 0) return
     moveShape(state.activeShapeIndex, state.activeShapeIndex - 1)
 }
 
 export const addShape = () => {
-    // (delta) shapeArrayPatch.insert : new empty shape at end
-    // of state.shapes + activeShapeIndexPatch from current to new.
-    // Insert ≈ 200 B vs full cloneScene ≈ O(scene) — gain typique.
+    // shapeArrayPatch.insert + activeShapeIndexPatch (delta ~200 B vs clone O(scene)).
     const fromIndex = state.activeShapeIndex
     const newShape = { pointList: [], tris: [] }
     const newIndex = state.shapes.length
@@ -116,9 +93,6 @@ export const addShape = () => {
     })
     state.shapes.push(newShape)
     goToShape(newIndex)
-    // (évolution « commentaire dans le HUD ») — logique prospective :
-    // la nouvelle forme est vide et active (goToShape) ; le toast guide
-    // le tout premier geste à faire sur elle.
     showActionComment(
         `Cette forme est vide : cliquez pour poser le 1er point`
     )
@@ -132,10 +106,8 @@ export const deleteShape = () => {
 export const performDeleteShape = () => {
     hideDeleteShapeModal()
 
-    // (delta) shapeArrayPatch.remove : shape supprimé à l'index
-    // courant + sa valeur pré-mut (pour pouvoir le restaurer à
-    // l'undo). On capture aussi activeShapeIndex pour la nouvelle
-    // valeur (post-splice).
+    // shapeArrayPatch.remove : shape + valeur pre-mut, et le nouvel
+    // activeShapeIndex (post-splice).
     const removedIndex = state.activeShapeIndex
     const removedShape = state.shapes[removedIndex]
     const newActiveIndex = state.shapes.length === 1
@@ -145,10 +117,8 @@ export const performDeleteShape = () => {
             : removedIndex)
 
     if (state.shapes.length === 1) {
-        // Cas spécial : une seule forme → on la REMPLACE par une
-        // forme vide (re-place au lieu de remove-then-insert pour
-        // éviter d'avoir à gérer une transition activeShapeIndex
-        // bizarre). Patch replace : before = old, after = empty.
+        // Cas special : une seule forme -> remplacement par une forme
+        // vide (pas de remove-then-insert a gerer).
         const clonedBefore = cloneShape(removedShape)
         saveState({
             patches: [
@@ -159,7 +129,7 @@ export const performDeleteShape = () => {
         state.shapes = [{ pointList: [], tris: [] }]
         state.activeShapeIndex = 0
     } else {
-        // Forward direction = remove : before = removedShape, after = null.
+        // Forward = remove : before = removedShape, after = null.
         saveState({
             patches: [
                 shapeArrayPatch(removedIndex, removedShape, null),

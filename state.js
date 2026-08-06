@@ -1,5 +1,3 @@
-// Rationale : voir DESIGN.md §1.1
-
 import { DEFAULT_GRID_STEP, CIRCLE_DEFAULT_SEGMENTS, SHAPE_STAR_INNER_RATIO, ANNULUS_INNER_RATIO_DEFAULT, TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_DEFAULT_ALPHA, MERGE_DROP_RADIUS_DEFAULT_PX } from './constants.js'
 
 export const state = {
@@ -34,226 +32,82 @@ export const state = {
     selectionMode: 'vertex',
     sceneDirty: false,
 
-    // ===== Outil cercle (creation par eventail de triangles) =====
-    // Mode transitoire (non persiste, comme la preview) : tant qu'il
-    // est actif, le geste « 1er clic = centre, mouvement de la
-    // souris = rayon + angle de depart, 2e clic = valider » trace
-    // un cercle (orientation par souris, cf. cahier des charges des
-    // evolutions). L'utilisateur peut relacher la souris entre les
-    // deux clics (le mode reste armé, l'angle se fige sur la
-    // dernière valeur du curseur).
-    // circleCenterModel : centre du cercle en cours en coords model
-    // (snapToGrid applique sur le 1er mousedown), undefined par
-    // defaut (= pas encore pose). Sa presence signale qu'on est en
-    // milieu de geste : le prochain 1er mousedown validera via
-    // commitCircleGesture au lieu de reinitialiser le centre.
-    // circleRadiusModel : rayon courant en coords model, mis a
-    // jour a chaque mousemove (pilote la previsualisation).
-    // circleOffsetAngle : angle de depart du polygone en radians
-    // (atan2 du vecteur curseur - centre, evalue en coords screen
-    // pour rester intuitif malgre l'axe Y inverse du canvas).
-    // Reset a 0 a chaque debut / annulation / fin de geste.
-    // circleSegments : nombre de cotes du polygone genere,
-    // reglable a la molette en mode cercle (clamp
-    // CIRCLE_MIN_SEGMENTS..CIRCLE_MAX_SEGMENTS), persiste en
-    // localStorage.
+    // ===== Outil cercle =====
+    // Mode transitoire (non persiste, comme la preview) : 1er clic = centre,
+    // mouvement = rayon + angle, 2e clic = valider. circleCenterModel defini
+    // = geste en cours (le prochain clic valide au lieu de reinitialiser).
     circleMode: false,
     circleCenterModel: undefined,
     circleRadiusModel: 0,
     circleOffsetAngle: 0,
+    // Nombre de cotes du polygone, reglable a la molette, persiste.
     circleSegments: CIRCLE_DEFAULT_SEGMENTS,
 
     // ===== Outil étoile (creation en 3 clics) =====
-    // Mode transitoire (non persiste, comme le cercle) calqué sur le
-    // geste du cercle + une phase supplementaire :
-    //   1. 1er clic = centre (starCenterModel), mouvement = rayon +
-    //      angle de depart (le 1er pic de l'etoile pointe vers la
-    //      souris, cf. updateStarGesture : offset = atan2 + PI/2
-    //      compense le -PI/2 canonique de starGeometry).
-    //   2. 2e clic = verrouille rayon + angle (starPhase -> 1) ; le
-    //      mouvement regle alors la PROFONDEUR des branches
-    //      (starInnerRatio = distance curseur - centre / rayon).
-    //   3. 3e clic = valide l'etoile (rayon, angle, profondeur
-    //      courants) puis desarme le mode (comme le cercle).
-    // La molette du cercle (cotes) ne s'applique pas ici ; Echap
-    // quitte le mode, clic droit / Backspace annulent le trace en
-    // cours sans desarmer.
+    // 1er clic = centre, 2e = verrouille rayon + angle (starPhase -> 1) et
+    // regle la profondeur des branches (starInnerRatio), 3e = valide.
     starMode: false,
     starCenterModel: undefined,
     starRadiusModel: 0,
     starOffsetAngle: 0,
-    // Phase du geste : 0 = reglage rayon + angle (apres le 1er clic),
-    // 1 = reglage profondeur des branches (apres le 2e clic).
     starPhase: 0,
-    // Profondeur des branches : ratio rayon interne / rayon externe,
-    // regle au mouvement entre le 2e et le 3e clic (clamp
-    // STAR_INNER_RATIO_MIN..MAX), initie a la valeur par defaut du
-    // catalogue (SHAPE_STAR_INNER_RATIO).
     starInnerRatio: SHAPE_STAR_INNER_RATIO,
 
-    // ===== Outil anneau (cercle perçé d'un trou, creation en 3 clics) =====
-    // Mode transitoire (non persiste, comme le cercle / l'étoile)
-    // calqué sur le geste de l'étoile (meme logique que le cercle +
-    // reglage supplementaire au 3e clic) :
-    //   1. 1er clic = centre (annulusCenterModel), mouvement = rayon
-    //      EXTERIEUR + angle de depart (le sommet exterieur 0 pointe
-    //      vers la souris, meme convention que le cercle).
-    //   2. 2e clic = verrouille rayon externe + angle
-    //      (annulusPhase -> 1) ; le mouvement regle alors le rayon du
-    //      TROU (annulusInnerRatio = distance curseur - centre /
-    //      rayon externe, clamp ANNULUS_INNER_RATIO_MIN..MAX).
-    //   3. 3e clic = valide l'anneau (rayon externe, angle, trou
-    //      courants) puis desarme le mode (comme le cercle).
-    // La molette regle le nombre de cotes (meme compteur que le
-    // cercle, state.circleSegments) ; Echap quitte le mode, clic
-    // droit / Backspace annulent le trace en cours sans desarmer.
+    // ===== Outil anneau (cercle perçé d'un trou, 3 clics) =====
+    // Meme geste que l'etoile ; le 2e clic verrouille le rayon externe et
+    // le 3e regle le trou (annulusInnerRatio, ratio interne / externe).
     annulusMode: false,
     annulusCenterModel: undefined,
     annulusOuterRadiusModel: 0,
     annulusOffsetAngle: 0,
-    // Phase du geste : 0 = reglage rayon externe + angle (apres le
-    // 1er clic), 1 = reglage rayon du trou (apres le 2e clic).
     annulusPhase: 0,
-    // Taille du trou : ratio rayon interne / rayon externe, reglee au
-    // mouvement entre le 2e et le 3e clic (clamp
-    // ANNULUS_INNER_RATIO_MIN..MAX), initiee a la valeur par defaut
-    // (ANNULUS_INNER_RATIO_DEFAULT).
     annulusInnerRatio: ANNULUS_INNER_RATIO_DEFAULT,
 
     // ===== Formes prédéfinies (panneau #shapes) =====
-    // Panneau flottant du bouton #shapes (liste des formes
-    // prédéfinies), ouvert/ferme par le bouton ou clic exterieur.
     shapesPanelOpen: false,
 
     // ===== Alignement / répartition des points sélectionnés =====
-    // (évolution « boutons pour forcer l'alignement et la répartition
-    // des points sélectionnés », cf. DESIGN.md §7.14) — panneau
-    // flottant du bouton #align (4 actions : aligner X / aligner Y /
-    // répartir X / répartir Y), ouvert/ferme par le bouton ou clic
-    // exterieur. Non persisté comme les autres états d'UI transitoires.
     alignPanelOpen: false,
-    // Outil de forme armé : shapeKind = 'rect' | 'square' | 'tri' |
-    // 'penta' | 'hexa' | 'star' (clé du catalogue SHAPE_DEFS). Une
-    // forme armée attend un geste clic + glisser sur le canvas :
-    //   - rect / square : shapeAnchorModel = 1er coin, courant = 2e coin
-    //   - polygones / étoile : shapeAnchorModel = centre,
-    //     shapeRadiusModel = rayon
-    // L'outil se désarme automatiquement après la création (comme le
-    // cercle) ou via Echap / re-clic sur le bouton.
+    // Outil de forme armé : shapeKind = cle du catalogue SHAPE_DEFS ;
+    // shapeAnchorModel = 1er coin (rect/square) ou centre (polygones),
+    // shapeRadiusModel = rayon. Desarme apres la creation ou via Echap.
     shapeKind: undefined,
     shapeAnchorModel: undefined,
     shapeCurrentModel: undefined,
     shapeRadiusModel: 0,
-    // Orientation par souris des polygones reguliers (tri / penta /
-    // hexa) : angle de depart du sommet 0 en radians, calcule en coords
-    // model comme le cercle (le sommet 0 pointe vers la souris).
-    // rect / square restent axis-aligned (taille seule). Initie a 0
-    // a chaque armement / debut / annulation / fin de geste.
+    // Orientation par souris des polygones reguliers : angle du sommet 0.
     shapeOffsetAngle: 0,
 
     // ===== Scene baseline (dirty reconciliation) =====
-    // Fingerprint JSON de `state.shapes` capture a chaque evenement
-    // qui pose un nouvel etat de reference propre :
-    //   - saveMesh (post-export) : baseline = la scene qui vient
-    //     d'etre serialisee en fichier.
-    //   - applyImport REPLACE/MERGE (post-load) : baseline = la
-    //     scene qui vient d'etre importee (= le fichier source).
-    //   - loadState (post-restore) : baseline = la scene restauree
-    //     depuis localStorage (= dernier save connu).
-    //   - resetAll (post-wipe) : baseline = scene vide.
-    // La valeur est un string (JSON.stringify) pour comparaison O(1)
-    // dans history.undo / history.redo via recomputeSceneDirty
-    // (io.js). Default vide : captureSceneBaseline est invoque au
-    // boot par loadState() ou, en absence de sauvegarde, applique
-    // l'etat vide (forme vide indexe [{ pointList: [], tris: [] }]).
-    // Maintient invariant : sceneDirty = true <=> state.shapes
-    // diverge de la baseline (= une mutation utilisateur non
-    // annulee ni sauvegardee s'est produite depuis le dernier
-    // evenement « clean »).
+    // Fingerprint JSON de state.shapes pose a chaque evenement « propre »
+    // (saveMesh, import, loadState, resetAll) ; invariant : sceneDirty = true
+    // <=> state.shapes diverge de la baseline.
     sceneBaselineFingerprint: '',
 
     // ===== Scene name =====
-    // Nom logique de la scene affiche dans #sceneStatus (hud.js
-    // updateSceneStatus). Trois sources possibles :
-    //   - nom de fichier a l'import (mesh-wail.json -> 'mesh-wail',
-    //     extension strippee via replace(/\.[^.]+$/, ''))
-    //   - default 'nouvelleScene' au boot frais, apres
-    //     resetAll, ou quand un fichier n'a pas de nom exploitable
-    //     (autoImportMeshesFromUrl, fichiers importes sans nom)
-    //   - persiste a travers les reloads via le wire format
-    //     (io.js serializeState inclut 'name', loadState le
-    //     restaure ; anciens fichiers sans 'name' retombent sur le
-    //     default)
-    // En mode MERGE, le nom existant est preserve (les formes
-    // ajoutees ne renommment pas la scene — seul l'import REPLACE
-    // adopte le nom du fichier source).
+    // Nom affiche dans #sceneStatus : nom de fichier a l'import (extension
+    // strippee), 'nouvelleScene' par defaut, persiste via le wire format.
+    // En mode MERGE, le nom existant est conserve.
     sceneName: 'nouvelleScene',
 
     // ===== Palette de couleurs (#triangleColor) =====
-    // Trois champs couvrent le cycle de vie de la palette, groupes
-    // ici parce qu'ils sont lus ensemble par hud.js + editor.js :
-    //
-    // isTriangleColorPanelOpen : true tant que le panneau flottant
-    // est deploye (cache ou visible via positionPanelUnderButton).
-    // Indépendant de brushMode — un utilisateur peut ouvrir le
-    // panneau sans armer le pinceau (clic sur Reset, qui pose
-    // brushMode = false tout en laissant le panneau ouvert à la
-    // recherche d'une nouvelle couleur).
-    //
-    // brushMode / brushColor : non persistés (meme politique que
-    // previewMode / circleMode / shapeKind). Le pinceau peut etre
-    // armé ou non pendant que la palette est ouverte :
-    //   - à l'ouverture (showTriangleColorPanel), brushMode = true
-    //     ET brushColor = 1er preset actif (1er swatch mis en
-    //     surbrillance) — l'utilisateur peut peindre des le
-    //     premier coup, sans cliquer une couleur.
-    //   - clic sur un swatch / input color picker = maj
-    //     brushColor, brushMode reste true.
-    //   - clic sur le bouton Reset du panneau = brushMode = false
-    //     (panneau reste ouvert).
-    //   - fermeture du panneau (re-clic bouton, Escape, clic
-    //     exterieur) = brushMode = false ET brushColor =
-    //     undefined.
-    // Le pipeline souris (main.js mousedown) court-circuite la
-    // branche lasso quand brushMode est vrai : clic gauche sur un
-    // triangle = peintresTriangleAtCursor. Les clics milieu (pan)
-    // et droit (grab selon le mode) ne sont PAS affectes —
-    // l'evolution precise que le bouton droit garde la semantique
-    // de deplacement.
+    // isTriangleColorPanelOpen : panneau deploye (independant de brushMode).
+    // brushMode / brushColor : non persistes ; le pinceau est arme a
+    // l'ouverture du panneau (1er preset actif), desarme a la fermeture
+    // (Escape / clic exterieur) ou au Reset (panneau reste ouvert).
     isTriangleColorPanelOpen: false,
     brushMode: false,
     brushColor: undefined,
-
-    // (evolution palette persitee + opacite unique, cf. DESIGN.md
-    // §7.3.1 / §7.3.2) — la palette est une PREFERENCE utilisateur :
-    // tableau de { bg, fill } initialise aux presets historiques
-    // (TRIANGLE_COLOR_PRESETS), remplace au boot par
-    // restoreColorPalette (editor.js) si une sauvegarde existe dans
-    // COLOR_PALETTE_STORAGE_KEY, et re-ecrit a chaque mutation
-    // (ajout / retrait / edition / restauration des defauts). La
-    // palette ne stocke QUE des couleurs (bg) — l'opacite de peinture
-    // est UNIQUE et globale (state.colorAlpha, curseur #colorAlpha) ;
-    // fill est TOUJOURS derive du couple (bg, colorAlpha) par
-    // triangleFillFromBg (refreshPaletteFills a chaque changement
-    // d'opacite). Contrairement a brushMode/brushColor (session
-    // seule), la palette survit aux rechargements.
-    // colorPaletteEditingIndex : index du swatch en cours d'edition
-    // (double-clic) — tant qu'il est defini, le picker met a jour la
-    // couleur du swatch en direct. colorPaletteEditingBefore : bg
-    // d'origine du swatch edite, pour annuler (Echap).
+    // Palette = PREFERENCE persistee : tableau {bg, fill} initie aux presets,
+    // restaure au boot, re-ecrit a chaque mutation ; fill TOUJOURS derive de
+    // (bg, colorAlpha) par triangleFillFromBg. colorPaletteEditingIndex =
+    // swatch en cours d'edition (double-clic), EditingBefore = bg d'origine
+    // pour annuler (Echap).
     colorPalette: TRIANGLE_COLOR_PRESETS.map(p => ({ bg: p.bg, fill: p.fill })),
     colorPaletteEditingIndex: undefined,
     colorPaletteEditingBefore: undefined,
-
-    // colorAlpha : opacite de travail du curseur #colorAlpha ([0,1],
-    // defaut TRIANGLE_COLOR_DEFAULT_ALPHA) — l'opacite APPLIQUEE a
-    // chaque peinture, quelle que soit la couleur armee (swatch ou
-    // picker). Valeur de SESSION synchronisee par
-    // setColorAlphaSlider ; la valeur PERSISTEE
-    // (COLOR_ALPHA_STORAGE_KEY) n'est mise a jour que par un reglage
-    // MANUEL du curseur (drag) — cliquer un swatch ne remplace pas la
-    // preference de l'utilisateur (cf. DESIGN §7.3.2). Restauree au
-    // boot par restoreColorPalette (editor.js).
+    // Opacite de travail [0,1] appliquee a chaque peinture ; la valeur
+    // persistee n'est mise a jour QUE par un reglage MANUEL du curseur.
     colorAlpha: TRIANGLE_COLOR_DEFAULT_ALPHA,
 
     // ===== Selection / box =====
@@ -267,57 +121,26 @@ export const state = {
     grabHistorySaved: false,
     hasDragged: false,
     activeConstructionTriangle: undefined,
-    // (fusion par déplacement, cf. DESIGN.md §7.11) — 2e fonction du
-    // bouton #mergePoints, armée quand exactement 1 point est
-    // sélectionné : glisser ce point puis le relâcher près d'un autre
-    // point (rayon MERGE_DROP_RADIUS_PX en pixels écran) le fusionne
-    // avec lui. mergeOnDropActive = le mode est armé (bouton en accent
-    // vert) ; mergeDropCandidate = index pointList du point cible le
-    // plus proche pendant le drag armé (undefined = aucun candidat
-    // dans la limite), calculé à chaque tick par editor.js
-    // (updateMergeDropCandidate), affiché par draw.js (renderTransient,
-    // anneau orange) et consommé par merge.js (attemptDropMerge) au
-    // relâchement.
+    // Fusion par deplacement (2e fonction de #mergePoints) : mode arme quand
+    // exactement 1 point est selectionne ; mergeDropCandidate = point cible
+    // le plus proche pendant le drag (undefined si aucun dans la limite),
+    // consomme au relachement (attemptDropMerge).
     mergeOnDropActive: false,
-    // (évolution verrouillage, cf. DESIGN.md §7.11) — sous-état du mode
-    // armé : le bouton est VERROUILLÉ (2e clic quand le mode est armé,
-    // icône cadenas + ring inset). Signification : après une fusion
-    // réussie, le mode RESTE armé (et verrouillé) au lieu de se
-    // désarmer, pour enchaîner plusieurs fusions sans réarmer.
-    // Transitoire comme mergeOnDropActive (jamais persisté) : n'est
-    // vrai que si mergeOnDropActive est vrai. Effacé par le clic sur le
-    // bouton verrouillé (désarme tout), par une sélection multi-points
-    // (garde updateSelectionHud) et par la fusion classique.
+    // Sous-etat verrouille (2e clic sur le bouton arme) : apres une fusion
+    // reussie, le mode RESTE arme pour enchaner. Transitoire, n'est vrai que
+    // si mergeOnDropActive.
     mergeOnDropLocked: false,
     mergeDropCandidate: undefined,
-    // Rayon courant de la fusion par déplacement (px écran), réglé à la
-    // molette sur le bouton Fusionner quand le mode est armé (même
-    // statut de préférence que circleSegments : clampé [MIN, MAX],
-    // persisté dans MERGE_DROP_RADIUS_STORAGE_KEY, restauré au boot
-    // par restoreMergeDropRadius). Cf. DESIGN.md §7.11.
+    // Rayon courant (px ecran) de la fusion par deplacement, regle a la
+    // molette, preference de session persistee (meme statut que circleSegments).
     mergeDropRadius: MERGE_DROP_RADIUS_DEFAULT_PX,
 
     // ===== Presse-papiers interne (couper / copier / coller) =====
-    // (évolution « couper, copier, coller les éléments sélectionnés »)
-    // Contenu du presse-papiers INTERNE de l'application — pas l'API
-    // navigateur navigator.clipboard : le contenu est un sous-ensemble
-    // du modèle {pointList, tris} (format interne que le presse-papiers
-    // système ne transporte pas fidèlement, et accès async + permissions
-    // fragiles sous file:// — cf. build portable). Non persisté en
-    // localStorage (session seule, comme la preview).
-    // Shape : { points: [{x, y}...], tris: [{p1, p2, p3, fill}...],
-    // offset: n }.
-    //   - points = coords (model) des points copiés de la forme active.
-    //   - tris = les triangles ENTIÈREMENT contenus dans la sélection,
-    //     ré-indexés en indices RELATIFS à la liste points copiée (le
-    //     collage re-base sur la longueur de pointList de la forme
-    //     active au moment du collé).
-    //   - offset = compteur de collages de la chaîne courante,
-    //     réinitialisé à 0 à chaque copier/couper et incrémenté après
-    //     chaque coller — le décalage de collage (un demi-pas de grille
-    //     par collage, cf. editor.js pasteClipboard) fait cascader les
-    //     copies successives et les distingue visuellement de la source.
-    // undefined = presse-papiers vide (bouton Coller désactivé).
+    // { points: [{x,y}...], tris: [{p1,p2,p3,fill}...], offset } — pas l'API
+    // navigateur (format interne + fragile sous file://). Tris re-indexes en
+    // indices RELATIFS a la liste copiee ; offset = compteur de collages
+    // (decalage d'un demi-pas de grille par collage). undefined = vide.
+    // Session seule, jamais persiste.
     clipboard: undefined,
 
     // ===== Move-all (AltGr grab) =====
@@ -358,37 +181,26 @@ export const state = {
     fpsVisible: false,
 
     // ===== Preview (mode visualisation seule) =====
-    // Vue transitoire de focus : masque les points de contrôle, axes,
-    // grille, HUD et boutons pour ne laisser que la géométrie. Non
-    // persistée en localStorage (cf. viewport.js togglePreview) : au
-    // reload, on retombe toujours sur l'état d'édition par défaut.
+    // Transitoire, jamais persiste : masque points de controle, axes, grille,
+    // HUD et boutons pour ne laisser que la geometrie.
     previewMode: false,
-    // Sous-état « plans » (évolution bouton prévisualiser, cf. DESIGN.md
-    // §2.6) : 2e état du cycle off -> preview simple -> plans -> off
-    // (bouton / P). Ne vaut que si previewMode est true. En plans,
-    // TOUTES les formes sont rendues comme des plans remplis dans
-    // l'ORDRE du tableau (forme n = plan n — la forme d'indice le plus
-    // haut recouvre les précédentes là où elles se chevauchent, cf.
-    // draw.js drawShapes) au lieu de la vue édition (forme active
-    // remplie + autres en contours atténués). Même non-persistance que
-    // previewMode.
+    // Sous-etat « plans » (cycle off -> preview -> plans -> off) : TOUTES les
+    // formes rendues comme plans remplis dans l'ordre du tableau (forme n =
+    // plan n, la plus haute recouvre les precedentes).
     previewPlans: false,
 
     // ===== Render time instrumentation (gate) =====
-    // Flag dev pour activer console.time('renderScene')/timeEnd dans
-    // renderSceneToOffscreen (cf. draw.js). Default false pour eviter
-    // la pollution devtools en prod. Activation runtime depuis la
-    // console navigateur : `state.debugRenderTime = true`. Voir
-    // DESIGN.md §2.5.5 pour le protocole de capture.
+    // Flag dev : `state.debugRenderTime = true` (console navigateur) active
+    // console.time autour de renderSceneToOffscreen. Voir DESIGN.md §2.5.5.
     debugRenderTime: false,
 
     // ===== Modal focus restoration =====
     lastFocusedElement: undefined,
 
     // ===== Pending deferred history patches (delta storage §8) =====
-    // Patch "en attente" dont le slot `after` sera rempli depuis
-    // le live state à la fin du geste (mouseup pour grab, fin de
-    // debounce pour rotation). Cf. history.js resolveDeferredAfter.
+    // Patchs « en attente » dont le slot `after` est rempli depuis le live
+    // state a la fin du geste (mouseup pour grab, fin de debounce pour
+    // rotation). Cf. history.js resolveDeferredAfter.
     _pendingGrabPatch: null,
     _pendingEachShapeRotatePatch: null,
     _pendingSelectedRotatePatch: null,

@@ -1,15 +1,7 @@
-// Rationale : voir DESIGN.md §7.2 (history stack) + §8 (delta storage) +
-// modifyShapeModel-spec §3.8 (cloneShape schema post-{pointList, tris}).
-//
-// La pile d'historique stocke des **entries delta** plutôt que des
-// clones complets de la scène. Une entry est
-// `{ activeShapeIndex, patches: [Patch, ...] }` où chaque patch
-// représente la diff entre deux états (before / after) et sait
-// s'appliquer dans les deux directions. La mémoire par entry est
-// proportionnelle à la **taille de la tranche modifiée** (points
-// déplacés, indices touchés, fills changés), pas à la scène entière.
-// Un snapshot full reste disponible en fallback (path legacy /
-// callers qui ne capturent pas encore de patches).
+// Pile d'historique en **entries delta** : chaque patch est une diff
+// (before / after) applicable dans les deux directions, la memoire par
+// entry est proportionnelle a la tranche modifiee (cf. DESIGN.md §8).
+// Snapshot full en fallback (path legacy / callers sans patches).
 
 import { state } from './state.js'
 import { MAX_HISTORY, ACTION_NONE } from './constants.js'
@@ -20,16 +12,8 @@ import { persistState, recomputeSceneDirty, markUndoPersistDirty } from './io.js
 
 // ===== Snapshot fallback =====
 
-// (modifyShapeModel-spec §3.8) : deep-clone canonique aligné sur
-// { pointList, tris }. Le pointList est dupliqué par entrée — chaque
-// coord est une copie peu profonde des {x, y} ; les références
-// partagées avec l'origine sont rompues (une mutation ultérieure de
-// la scène n'affecte pas l'entry de l'historique). Les tris conservent
-// leurs indices tels quels (pas de dedup de pointMap comme dans
-// l'ancien cloneTriArray : les indices suffisent, la canonique du
-// pointList est déjà dedupliquée par invariant I3). Q1b : les slots
-// `undefined` (triangles partiels) restent `undefined` — invariant I5
-// préservé.
+// Deep-clone { pointList, tris } : coords dupliquees (rupture des refs
+// avec la scene), tris avec leurs indices, slots undefined conserves.
 const cloneShape = (shape) => {
     if (!shape) return shape
     return {
@@ -47,29 +31,17 @@ const cloneShape = (shape) => {
     }
 }
 
-// Clone profond de la scène entière. Utilisé comme **fallback
-// snapshot** quand un call site n'exprime pas sa mutation comme un
-// patch (chemin legacy, ou chemin pathologique où le patch serait
-// plus gros que la scène). Conservé public pour rétrocompat (le
-// writer de patch peut l'utiliser pour son seuil de bascule
-// snapshot).
+// Fallback snapshot : clone profond de la scene entiere.
 export const cloneScene = (shapesArray) => {
     if (!Array.isArray(shapesArray)) return []
     return shapesArray.map(cloneShape)
 }
 
-// Clone profonde d'un seul shape. Exporté pour réutilisation par les
-// call sites `replaceShapePatch` (deleteSelectedPoint/Segment/Triangle
-// dans editor.js, mergeSelectedPoints dans merge.js) afin d'éviter
-// que la même logique de deep-clone (pointList.map + tris.map) soit
-// dupliquée 4× dans 2 fichiers (source unique de vérité = single
-// point de maintenance pour les invariants fill/partial).
+// Exporte pour les call sites replaceShapePatch (source unique de
+// verite pour les invariants fill/partial).
 export { cloneShape }
 
-// Estimation de la taille mémoire d'une entry `snapshot` (full clone).
-// Sert de seuil pour basculer en snapshot si un patch cumulé
-// dépasserait la taille d'un clone complet. Comptage conservateur par
-// objet du modèle (pas d'overhead hashmap / closures).
+// Seuil de bascule delta -> snapshot : estimation conservatrice par objet.
 const SCENE_BYTE_PER_OBJ = 24  // approx overhead JS object + 2 floats typiques
 const snapshotByteSize = (shapesArray) => {
     if (!Array.isArray(shapesArray)) return 0
@@ -83,19 +55,10 @@ const snapshotByteSize = (shapesArray) => {
 }
 
 // ===== Patch factories =====
-//
-// Chaque patch est un objet `{ kind, ... }` qui décrit le delta à
-// appliquer + les données nécessaires pour applyForward (rejouer la
-// mutation) ou applyInverse (annuler la mutation). Le couple
-// before / after est conservé pour permettre les deux directions
-// sans coût de re-capture à l'undo / redo.
+// Chaque patch = `{ kind, ... }` + donnees before/after pour
+// applyForward (rejouer) et applyInverse (annuler) sans re-capture.
 
-// 1) movePoints : un ensemble de points a vu ses coordonnées changer.
-//    Le plus économe (≈ 32 B / point × 2 directions = 64 B).
-//    Utilisé pour grab, rotate (sélection ou AltGr global). Le cas
-//    AltGr + molette génère une entry unique grossière
-//    (O(totalPoints)) mais reste largement < un cloneScene complet
-//    (qui clone aussi les tris).
+// 1) movePoints : coords changees (grab, rotate). Le plus econome.
 //    before / after = [{ s, i, x, y }, ...]
 export const movePointsPatch = (before, after) => ({
     kind: 'movePoints',
@@ -103,29 +66,9 @@ export const movePointsPatch = (before, after) => ({
     after,
 })
 
-// 2) insertPoint : un point est pushé à la fin de pointList + le
-//    dernier tri est soit updated (p2/p3 défini), soit remplacé, soit
-//    un nouveau tri créé. Pour annuler on pop le point et on restaure
-//    lastTri (si elle existait avant). Très compact (≈ 50 B).
-//    Cas d'usage : addPoint (tous les 3 sous-cas convergent vers
-//    "push une coord + update/append last tri").
-//
-//    Convention :
-//    - lastTriIndexBefore = -1 si shape vide avant mutation ; sinon
-//      index du last tri dans tris (avant mutation).
-//    - lastTriBefore = null si triangle vide pré-mutation, sinon
-//      deep-cloné du dernier tri.
-//    - lastTriAfter = idem pour l'état post-mutation.
-//    - lastTriIndexAfter n'est utilisé QUE dans le cas modify. Pour
-//      les cas push (empty → 1 tri ou push-new-tri), voir triDelta.
-//    - triDelta : 0 = modification in-place du last tri existant,
-//      1 = push d'un nouveau tri (forward : tris.push ; inverse :
-//      tris.pop). Indispensable pour distinguer addPoint('push'
-//      empty) ET addPoint('push-new-tri') du cas modify où
-//      lastTriIndexAfter >= 0 mais le tri à cet index est pré-existant.
-//      Le pré-fix avec `-1` était ambigu (0 valide mais = "modify at
-//      index 0 pas encore créé").
-//    - insertedPoint = { x, y } (la coord à push).
+// 2) insertPoint : push d'un point + update/remplace/append du dernier
+//    tri (addPoint). triDelta : 0 = modif in-place, 1 = push d'un tri
+//    (inverse : pop). lastTriIndexBefore = -1 si shape vide avant.
 export const insertPointPatch = (shapeIdx, lastTriIndexBefore, lastTriBefore, lastTriIndexAfter, lastTriAfter, insertedPoint, triDelta) => ({
     kind: 'insertPoint',
     shapeIdx,
@@ -137,14 +80,8 @@ export const insertPointPatch = (shapeIdx, lastTriIndexBefore, lastTriBefore, la
     triDelta,
 })
 
-// 3) replaceShape : wholesale replacement du pointList ET tris d'un
-//    seul shape. Utilisé pour delete+compact et merge où l'invariant
-//    I2 (re-indexation) rend un patch plus chirurgical compliqué.
-//    Stocke 2 × (pointList + tris) — acceptable quand la scène
-//    contient plusieurs formes (gain = (N-1)/N). Pour une scène
-//    mono-shape, equals `snapshot` ; un appelant avisé peut mesurer
-//    et basculer en snapshot dans ce cas (voir shouldUseSnapshot
-//    plus bas).
+// 3) replaceShape : remplacement complet pointList + tris d'un shape
+//    (delete+compact, merge). Stocke 2 × (pointList + tris).
 export const replaceShapePatch = (shapeIdx, pointListBefore, trisBefore, pointListAfter, trisAfter) => ({
     kind: 'replaceShape',
     shapeIdx,
@@ -154,18 +91,15 @@ export const replaceShapePatch = (shapeIdx, pointListBefore, trisBefore, pointLi
     trisAfter,
 })
 
-// 4) setFills : un ensemble de tris a vu son fill changer (set /
-//    clear). Très compact (≈ 24 B par tri × 2 directions).
+// 4) setFills : fill change (set/clear). Tres compact.
 export const setFillsPatch = (before, after) => ({
     kind: 'setFills',
     before,  // [{ s, t, fill }, ...]
     after,   // [{ s, t, fill }, ...]
 })
 
-// 5) shapeArray : une forme est insérée ou retirée à un index donné
-//    dans state.shapes. before = la forme à l'index (ou null si
-//    insertion), after = pareil (null si removed). Utilisé pour
-//    addShape et performDeleteShape.
+// 5) shapeArray : forme inseree ou retiree a un index (addShape,
+//    performDeleteShape). before/after = forme ou null.
 export const shapeArrayPatch = (shapeIndex, before, after) => ({
     kind: 'shapeArray',
     shapeIndex,
@@ -173,23 +107,16 @@ export const shapeArrayPatch = (shapeIndex, before, after) => ({
     after,
 })
 
-// 6) activeShapeIndex : changement de la forme active. Trivial.
+// 6) activeShapeIndex : changement de la forme active.
 export const activeShapeIndexPatch = (from, to) => ({
     kind: 'activeShapeIndex',
     from,
     to,
 })
 
-// 7) shapeMove : la forme à l'index `from` est déplacée à l'index
-//    `to` dans state.shapes (évolution « boutons pour gérer l'ordre
-//    des formes »). Un déplacement ne change ni le pointList ni les
-//    tris d'aucune forme — seuls les indices du tableau bougent —,
-//    donc le patch le plus économe ne stocke que les deux positions
-//    (≈ 16 B) ; l'applicateur fait le splice dans les deux directions
-//    (forward = from→to, inverse = to→from). La forme active suit le
-//    déplacement : le call site (shapes.js moveShapeUp/moveShapeDown)
-//    accole un activeShapeIndexPatch(from, to) pour que l'undo
-//    restaure aussi l'index actif.
+// 7) shapeMove : forme deplacee de `from` a `to` (ordre des formes) ;
+//    seuls les indices bougent (≈ 16 B), splice dans les deux sens.
+//    Le call site accole un activeShapeIndexPatch pour l'undo.
 export const shapeMovePatch = (from, to) => ({
     kind: 'shapeMove',
     from,
@@ -197,16 +124,10 @@ export const shapeMovePatch = (from, to) => ({
 })
 
 // ===== Patch resolution =====
-//
-// À l'enregistrement (`saveState`), certains patches peuvent être passés
-// avec leur slot `after` à `null` (= "complete from live state").
-// C'est le pattern **deferred** : l'appelant capture le `before` au
-// début d'un geste long (grab, rotation wheel), passe le patch à
-// saveState à la fin du geste — le slot `after` est alors rempli en
-// lisant les coords live. Évite de re-cloner la scène pour les gestes
-// où l'état post-mutation n'est connu qu'à la release.
-//
-// Cf. §8 DESIGN.md (deferred fill).
+// Pattern **deferred** : un patch passe avec `after` = null voit son
+// slot rempli depuis le live state au saveState (gestes longs : grab,
+// rotation wheel — l'etat post-mutation n'est connu qu'a la release).
+// Cf. DESIGN.md §8.
 
 const resolveDeferredAfter = (patches) => {
     for (const p of patches) {
@@ -258,11 +179,8 @@ const applyInsertPoint = (patch, direction) => {
     if (!shape) return
     const tris = Array.isArray(shape.tris) ? shape.tris : []
     if (direction === 'forward') {
-        // Pousser le point + appliquer la transformation du last tri
-        // selon `triDelta`. triDelta===1 : nouveau tri pushé à la fin
-        // (cas addPoint 'push' sur shape vide OU 'push-new-tri').
-        // triDelta===0 : modification in-place du tri existant à
-        // lastTriIndexAfter (cas addPoint 'modify-p2' ou 'modify-p3').
+        // Push du point + transformation du last tri selon triDelta
+        // (1 = push d'un tri, 0 = modif in-place a lastTriIndexAfter).
         shape.pointList.push({ x: patch.insertedPoint.x, y: patch.insertedPoint.y })
         if (patch.triDelta === 1) {
             tris.push({
@@ -280,15 +198,8 @@ const applyInsertPoint = (patch, direction) => {
                 target.fill = patch.lastTriAfter.fill
             }
         }
-        // Note : on n'indexe PAS explicitement le newPointIdx dans
-        // lastTriAfter ; l'appelant (addPoint dans editor.js) stocke
-        // lastTriAfter AVEC le bon index (pointList.length au moment
-        // du saveState) — utilisé tel quel.
     } else {
-        // Inverse : pop le dernier point + défaire la transformation
-        // du last tri selon `triDelta`. triDelta===1 : un tri avait
-        // été pushé en forward → on le pop. triDelta===0 : on restaure
-        // le contenu du last tri à son état pré-mutation.
+        // Inverse : pop du point ; triDelta 1 -> pop du tri, 0 -> restauration.
         shape.pointList.pop()
         if (patch.triDelta === 1) {
             tris.pop()
@@ -413,21 +324,9 @@ const clampActiveShapeIndex = () => {
     }
 }
 
-// applyEntry : applique toutes les patches d'une entry dans la
-// direction `direction` ('forward' = redo, 'inverse' = undo).
-// Les entries legacy snapshot sont supportées en fallback
-// (entry.snapshotShapes).
-//
-// Gestion activeShapeIndex : si un patch `activeShapeIndex` est
-// présent dans la liste, l'applicateur du patch gère déjà
-// l'override (forward `to`, inverse `from`). Le tail n'écrase
-// PAS pour éviter les conflits avec ces patches (cf. addShape
-// où activeShapeIndex change pendant la mutation). Si aucun
-// activeShapeIndexPatch n'est présent, on retombe sur
-// `entry.activeShapeIndex` comme filet (utile pour les mutations
-// qui n'ont pas mappé activeShapeIndex, ex. deleteSelectedPoint
-// où active est resté constant — le tail est idempotent dans ce
-// cas).
+// Applique les patches d'une entry ('forward' = redo, 'inverse' = undo) ;
+// fallback snapshot (entry.snapshotShapes). activeShapeIndex : un patch
+// explicite prime ; sinon `entry.activeShapeIndex` sert de filet.
 const applyEntry = (entry, direction) => {
     if (!entry) return
     const hasActiveIndexPatch = Array.isArray(entry.patches)
@@ -445,17 +344,10 @@ const applyEntry = (entry, direction) => {
 
 const serializeSnapshot = (shapes) => cloneScene(shapes)
 
-// (delta §8.5) Reconstruit l'état PRE-mutation de la scène à partir
-// des patches, pour l'entry snapshot du fallback shouldUseSnapshot.
-// Les call sites patche-courants (delete*/create*/merge/rotate)
-// appellent saveState APRÈS la mutation : la scène courante est
-// l'état post-mutation, et la cible d'undo s'obtient en rejouant
-// l'inverse des patches sur un clone (les applicateurs ne touchent
-// que state.shapes + state.activeShapeIndex, qu'on restaure).
-// Exception : addPoint appelle saveState AVANT la mutation
-// (insertPoint) — la scène courante EST déjà l'état pré-mutation ;
-// rejouer l'inverse dessus détruirait un point/tri pré-existant, on
-// laisse donc les patches insertPoint de côté (cas avant-mutation).
+// Reconstruit l'etat PRE-mutation (cible d'undo) en rejouant l'inverse
+// des patches sur un clone. Les call sites appellent saveState APRES
+// la mutation ; exception : insertPoint et shapeMove (saveState AVANT)
+// sont sautes car la scene courante est deja pre-mutation.
 const snapshotBeforeState = (patches) => {
     const liveShapes = state.shapes
     const liveActiveIndex = state.activeShapeIndex
@@ -464,29 +356,19 @@ const snapshotBeforeState = (patches) => {
     try {
         for (const p of patches) {
             if (p.kind === 'insertPoint') continue
-            // shapeMove : même exception que insertPoint — le call site
-            // (shapes.js moveShape) appelle saveState AVANT la mutation,
-            // la scène courante EST déjà l'état pré-mutation ; rejouer
-            // l'inverse d'un déplacement sur un clone pré-mutation
-            // réordonnerait le clone (snapshot corrompu, undo d'ordre
-            // faux). Le snapshot doit refléter l'ordre PRÉ-déplacement.
             if (p.kind === 'shapeMove') continue
             applyPatch(p, 'inverse')
         }
     } finally {
-        // Garantit la restauration de l'état live même si un patch
-        // lève (patch malformé, garde défensive) : sans cela, la
-        // scène de travail resterait pointée sur le clone de travail.
+        // Restaure l'etat live meme si un patch leve (garde defensive).
         state.shapes = liveShapes
         state.activeShapeIndex = liveActiveIndex
     }
     return rebuilt
 }
 
-// Helper : décide si un batch de patches doit être promu en snapshot
-// complet. Heuristique pragmatique : si la taille cumulée estimée
-// dépasse la taille d'un snapshot, on bascule en snapshot simple.
-// Les callers passent les patches et la scène courante pour estimer.
+// Bascule en snapshot si la taille cumulee estimee depasse ~2× celle
+// d'un clone complet (le delta est plus economique structurellement).
 const shouldUseSnapshot = (patches, shapes) => {
     if (!Array.isArray(patches) || patches.length === 0) return true
     let estBytes = 0
@@ -510,24 +392,15 @@ const shouldUseSnapshot = (patches, shapes) => {
             estBytes += 8
         }
     }
+    // ×2 : snapshot est structurellement plus simple (pas de redondance before/after).
     return estBytes > snapshotByteSize(shapes) * 2
-        // ×2 tolérance : snapshot est plus simple structurellement
-        // (un seul tableau de références, pas de redondance
-        // before/after), donc on garde delta tant qu'il ne dépasse
-        // pas 2× la taille d'un snapshot.
 }
 
 // ===== Pile d'historique =====
 
-// saveState signature :
-//   saveState()                            — snapshot full (fallback legacy)
-//   saveState({ patches: [...] })          — entry delta
-//                                            (preferred, voir §DESIGN.md 8)
-//   saveState({ snapshot: true })          — force snapshot full
-//
-// Invariant : si `patches` est fourni, l'entry stocke la liste
-// exactement. Si `snapshot: true` ou `patches` est manquant/array
-// vide, on bascule en clone complet.
+// saveState() = snapshot full (fallback) ; saveState({ patches }) =
+// entry delta (preferred, cf. DESIGN.md §8) ; saveState({ snapshot: true })
+// force le snapshot.
 export const saveState = (opts) => {
     state.sceneDirty = true
     updateSceneStatus()
@@ -537,13 +410,8 @@ export const saveState = (opts) => {
         resolveDeferredAfter(opts.patches)
         if (shouldUseSnapshot(opts.patches, state.shapes)) {
             entry = {
-                // (delta §8.5) Le snapshot stocke l'état PRE-mutation
-                // (cible de l'undo), pas l'état courant : les call
-                // sites patche-courants appellent saveState APRÈS la
-                // mutation, et applyEntry('inverse') d'une entry
-                // snapshot restaure `snapshotShapes` tel quel — un
-                // snapshot post-mutation rendrait l'undo no-op
-                // (régression fixée ici).
+                // Le snapshot stocke l'etat PRE-mutation (cible de
+                // l'undo), pas l'etat courant post-saveState.
                 snapshotShapes: snapshotBeforeState(opts.patches),
                 activeShapeIndex: state.activeShapeIndex,
             }
@@ -565,18 +433,12 @@ export const saveState = (opts) => {
         state.historyStack.shift()
     }
     state.redoStack = []
-    // L'historique a change : la prochaine persistState (appelee par
-    // le call site juste apres saveState) re-ecrira UNDO_STORAGE_KEY
-    // avec le fingerprint de scene courant (cf. io.js persistState).
     markUndoPersistDirty()
     updateUndoRedoHud()
 }
 
-// Transfère une entry entre historyStack et redoStack (ou
-// l'inverse). Conserve les patches tels quels (ils portent before
-// ET after) ; ne capture que activeShapeIndex à l'instant du
-// transfert (= état post-mutation courant, qui sera le redo target
-// OU l'undo target).
+// Transfere une entry entre historyStack et redoStack ; ne re-capture
+// que activeShapeIndex (etat post-mutation courant).
 const transferEntry = (entry, activeShapeIndexOverride) => {
     if (Array.isArray(entry.patches)) {
         return { patches: entry.patches, activeShapeIndex: activeShapeIndexOverride }
@@ -588,14 +450,8 @@ export const undo = () => {
     if (state.historyStack.length === 0) return
     state.currentAction = ACTION_NONE
     const entry = state.historyStack.pop()
-    // Sauvegarde de l'état courant (qui sera le redo target) :
-    // on capture l'activeShapeIndex post-mutation actuel puis on
-    // transfère l'entry vers redoStack. Ses patches restent
-    // identiques (before/after conservés) ; la direction est
-    // appliquée via 'inverse' ci-dessous puis 'forward' au redo.
+    // Capture de l'etat courant (redo target) puis transfert vers redoStack.
     state.redoStack.push(transferEntry(entry, state.activeShapeIndex))
-    // Historique transfere : re-ecriture de la cle persiste dans la
-    // persistState() ci-dessous (fingerprint = scene post-undo).
     markUndoPersistDirty()
     applyEntry(entry, 'inverse')
     clearEditingTransientState()
@@ -604,20 +460,10 @@ export const undo = () => {
     updateShapeHud()
     updateUndoRedoHud()
     updateSelectionHud()
-    // (évolution « commentaire dans le HUD ») — logique prospective :
-    // ne pas dire « Annulé », mais ce que l'utilisateur peut faire
-    // maintenant : rétablir avec le raccourci inverse.
     showActionComment('Ctrl+Shift+Z (ou Ctrl+Y) pour rétablir')
-    // Spec utilisateur : « si on fait un undo complet c'est la
-    // même chose [que le chargement : pas d'indicateur de
-    // sauvegarde] ». La baseline est capturee sur load/import/
-    // save/reset. Si l'undo ramène l'etat courant au baseline
-    // (= state.shapes == baselineShapes), dirty = false ; sinon
-    // dirty = true (l'undo n'a pas efface completement la
-    // divergence). Gere aussi le cas partiel save → modify → undo
-    // : la pile contient encore [pre-modify] mais l'etat matche
-    // le baseline, donc dirty = false (la baseline reflete le
-    // dernier save connu, pas forcement le bottom de la pile).
+    // dirty = false si l'undo ramene l'etat courant au baseline
+    // (dernier save/import/load connu), sinon true — la baseline
+    // reflete le dernier save, pas forcement le bottom de la pile.
     recomputeSceneDirty()
     persistState()
 }
@@ -637,21 +483,12 @@ export const redo = () => {
     updateShapeHud()
     updateUndoRedoHud()
     updateSelectionHud()
-    // (évolution « commentaire dans le HUD ») — logique prospective :
-    // après un rétablissement, le toast rappelle le raccourci inverse.
     showActionComment('Ctrl+Z pour annuler à nouveau')
-    // Symetrique du undo : le redo re-applique une mutation
-    // preexistante. Si l'etat post-redo matche encore la baseline
-    // (= l'undo avait ramene au baseline AVANT le redo, et la
-    // mutation annulee puis rejouee est un round-trip neutre),
-    // dirty = false. Cas general : dirty = true (la scene a
-    // diverge du baseline via cette mutation). Le calcul explicite
-    // par comparaison couvre les deux branches.
+    // Symetrique : dirty = false si l'etat post-redo matche encore la baseline.
     recomputeSceneDirty()
     persistState()
 }
 
-// Rationale : voir DESIGN.md §7.2
 const clearEditingTransientState = () => {
     state.selectedPoints = []
     state.selectedTriangles = []
@@ -668,10 +505,7 @@ const clearEditingTransientState = () => {
     clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
-    // Filet : tout patch deferred non committé (delta §8) doit
-    // etre efface pour qu'un nouveau geste reprenne d'un etat
-    // propre (un undo mid-grab, par exemple, laisse le gerant
-    // orphelin : on l'elimine ici).
+    // Filet : purge des patchs deferred non committes (undo mid-grab).
     state._pendingGrabPatch = null
     state._pendingEachShapeRotatePatch = null
     state._pendingSelectedRotatePatch = null

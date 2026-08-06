@@ -1,5 +1,3 @@
-// Rationale : voir DESIGN.md §7.5
-
 import { state } from './state.js'
 import { activeTriangles, adjacentPoints } from './geometry.js'
 import { ACTION_NONE } from './constants.js'
@@ -49,14 +47,10 @@ export const wireMergeErrorModal = () => {
 
 // ===== Helpers =====
 
-// (modifyShapeModel-spec §3.9 Q1c) : active shape et pointList
-// sont les structures canoniques. selectedPoints est un tableau d'indices.
+// selectedPoints = tableau d'indices dans le pointList de la forme active.
 const activeShape = () => state.shapes[state.activeShapeIndex]
 
-// Regroupe les indices selectionnes en clusters de coords adjacentes
-// (tol 0.01). Cluster = ensemble d'indices pointList occupant la meme
-// position physique. Renvoie un tableau vide si la liste de points est
-// absente ou si un indice designe une entree manquante (defense).
+// Clusterise les indices selectionnes par position physique adjacente (tol 0.01).
 const clusterSelected = (selectedIndices) => {
     const clusters = []
     const pointList = (activeShape() && Array.isArray(activeShape().pointList)) ? activeShape().pointList : []
@@ -70,10 +64,7 @@ const clusterSelected = (selectedIndices) => {
     return clusters
 }
 
-// Re-index d'une valeur t.pX post-compactage : on soustrait 1 pour
-// chaque deleteIndex strictement inferieur (les autres ne deplacent
-// pas l'entite). deleteIndicesAsc doit etre trie asc et unique. Pour
-// un index `undefined`, retourne `undefined` (defense, conforme Q1b).
+// Re-index t.pX apres compactage : -1 par deleteIndex strictement inferieur.
 const reindexOne = (oldIdx, deleteIndicesAsc) => {
     if (!Number.isInteger(oldIdx)) return undefined
     let newIdx = oldIdx
@@ -85,11 +76,8 @@ const reindexOne = (oldIdx, deleteIndicesAsc) => {
 
 // ===== Validation =====
 
-// Q1c : compte les slots distincts du tri dont l'indice
-// pointList est dans state.selectedPoints (les slots undefined ne
-// contribuent pas, conforme I5). Un tri avec 2+ slots selectionnes
-// devient degenere apres fusion (3 sommets sur <= 2 positions) ->
-// conflit.
+// Slots du tri selectionnes (slots undefined exclus) ; 2+ = conflit
+// (le tri deviendrait degenere apres fusion).
 const countSelectedSlots = (tri) => {
     let count = 0
     if (Number.isInteger(tri.p1) && state.selectedPoints.includes(tri.p1)) count++
@@ -102,14 +90,8 @@ const findMergeConflicts = () => {
     const tris = activeTriangles()
     const conflicting = []
     tris.forEach((t, i) => {
-        // On ignore les triangles partiels (au moins p1 ou p2 undefined,
-        // conforme Q1b). Un partiel n'a que 2 slots definis max — apres
-        // fusion, les 2 peuvent collapser en survivor sans degenerer
-        // puisqu'il manque deja p3 (= segment partiel = pas de surface).
-        // C'est un changement de comportement vs l'ancien code (qui
-        // flaggait tous les tris), mais il est safe : invariant I5
-        // garantit qu'un partiel == 1 seul tri ne devient jamais une
-        // surface degeneree par fusion.
+        // Triangles partiels ignores : sans p3 ils ne peuvent pas devenir
+        // une surface degeneree par fusion.
         if (!Number.isInteger(t.p1) || !Number.isInteger(t.p2)) return
         if (countSelectedSlots(t) >= 2) conflicting.push(i + 1)
     })
@@ -118,9 +100,7 @@ const findMergeConflicts = () => {
 
 // ===== Centroid =====
 
-// centroid = moyenne des coords uniques (un representant par
-// cluster de doublons adjacents, via clusterSelected). Meme semantique
-// qu'avant : si N points sont colocalises, ils comptent 1 fois (et non N).
+// Moyenne des coords uniques (1 representant par cluster de doublons).
 const computeMergeCentroid = (clusters) => {
     if (clusters.length === 0) return { x: 0, y: 0 }
     const sum = clusters.reduce(
@@ -139,9 +119,7 @@ export const mergeSelectedPoints = () => {
     const selected = state.selectedPoints
 
     if (selected.length < 2) {
-        // 2e fonction du bouton (cf. DESIGN.md §7.11) : avec exactement
-        // 1 point sélectionné, le clic ARME la fusion par déplacement au
-        // lieu de signaler une sélection insuffisante.
+        // 1 point selectionne : le clic arme la fusion par deplacement (cf. DESIGN.md §7.11).
         if (selected.length === 1) return toggleMergeOnDrop()
         showMergeErrorModal(
             `Sélection insuffisante : la fusion nécessite au moins 2 points.\n` +
@@ -150,9 +128,6 @@ export const mergeSelectedPoints = () => {
         return false
     }
 
-    // La fusion classique désarme la fusion par déplacement si elle
-    // était encore armée (défensif : la garde d'updateSelectionHud l'a
-    // déjà désarmée dès que la sélection a dépassé 1 point).
     disarmMergeOnDrop()
 
     const clusters = clusterSelected(selected)
@@ -160,15 +135,11 @@ export const mergeSelectedPoints = () => {
     return applyMergeToSelection(centroid, 'Fusion')
 }
 
-// Coeur commun des deux fonctions de fusion (classique et par
-// déplacement, cf. DESIGN.md §7.11) : fusionne state.selectedPoints
-// vers un survivant unique (plus petit indice) posé sur `mergePos`. Les
-// slots de tous les triangles référençant un point sélectionné sont
-// redirigés vers le survivant, le compactage immédiat (Q2a) supprime
-// les autres entrées, et l'historique enregistre un replaceShapePatch
-// (before/after clone). La seule différence entre les deux chemins est
-// la position du survivant : centroid des positions uniques (bouton) vs
-// position de la cible (relâchement du drag armé).
+// Coeur commun des deux fusions (cf. DESIGN.md §7.11) : tous les
+// points selectionnes convergent vers un survivant (plus petit indice)
+// pose sur `mergePos` — centroid des positions uniques (bouton) ou
+// position de la cible (drag arme) —, slots rediriges, compactage
+// immediat, replaceShapePatch dans l'historique.
 const applyMergeToSelection = (mergePos, label) => {
     const selected = state.selectedPoints
 
@@ -186,10 +157,8 @@ const applyMergeToSelection = (mergePos, label) => {
         return false
     }
 
-    // (delta) capture l'état pré-mutation du shape actif pour le
-    // replaceShapePatch (gain net dès que la scène contient
-    // plusieurs formes). Pour une scène mono-shape, le seuil
-    // shouldUseSnapshot bascule automatiquement en snapshot.
+    // Capture pre-mutation pour le replaceShapePatch (gain net des
+    // que la scene contient plusieurs formes ; sinon bascule snapshot).
     const shapeIdx = state.activeShapeIndex
     const shape = activeShape()
     const clonedShapeBefore = cloneShape(shape)
@@ -198,26 +167,18 @@ const applyMergeToSelection = (mergePos, label) => {
     const pointList = shape.pointList
     const tris = shape.tris
 
-    // Survivant = plus petit indice parmi toutes les selections. Choix
-    // stable : minimise les shifts ulterieurs pour les tris non concernes
-    // et garantit newSurvivor === survivor apres reindex (= pas de shift
-    // sur lui-meme puisque tous les deleteIndices sont >= survivor).
+    // Survivant = plus petit indice : choix stable (newSurvivor ===
+    // survivor apres reindex, pas de shift sur lui-meme).
     const survivor = selected.reduce(
         (acc, idx) => (idx < acc ? idx : acc),
         Number.MAX_SAFE_INTEGER
     )
 
-    // Mutation 1 : la position du survivant devient mergePos (centroid
-    // pour le bouton, position de la CIBLE pour la fusion par
-    // déplacement — le point déplacé « entre » dans la cible, il ne
-    // crée pas de position intermédiaire). Tous les slots concernes
-    // referent cette entree partagee.
+    // Mutation 1 : le survivant prend mergePos (centroid ou position de la cible).
     pointList[survivor].x = mergePos.x
     pointList[survivor].y = mergePos.y
 
-    // Mutation 2 : remplacer t.pX par survivor pour toute slot dont
-    // l'indice est selectionne. Le survivant lui-meme -> survivor est un
-    // no-op mais garde la logique uniforme.
+    // Mutation 2 : rediriger les slots selectionnes vers le survivant.
     const selectedSet = new Set(selected)
     const replaced = tris.map((t) => ({
         p1: Number.isInteger(t.p1) && selectedSet.has(t.p1) ? survivor : t.p1,
@@ -226,9 +187,7 @@ const applyMergeToSelection = (mergePos, label) => {
         fill: t.fill,
     }))
 
-    // Q2a compactage immediat : splice les indices selectionnes non
-    // survivant en ordre descendant (reverse sorted) pour que les
-    // indices inferieurs restent valides jusqu'au prochain splice.
+    // Compactage : splice en ordre descendant pour garder les indices valides.
     const deleteIndicesDesc = selected
         .filter((idx) => idx !== survivor)
         .sort((a, b) => b - a)
@@ -239,10 +198,7 @@ const applyMergeToSelection = (mergePos, label) => {
         .filter((idx) => idx !== survivor)
         .sort((a, b) => a - b)
 
-    // Mutation 3 : re-indexer les slots non concernes par la suppression.
-    // Maintient I1 (pX ∈ [0, pointList.length) ∪ undefined) et I2
-    // (chaque entree pointList restante reste referencee par au moins
-    // un tri) apres compactage.
+    // Mutation 3 : re-indexation des slots non concernes (I1/I2).
     shape.tris = replaced.map((t) => ({
         p1: t.p1 === undefined ? undefined : reindexOne(t.p1, deleteIndicesAsc),
         p2: t.p2 === undefined ? undefined : reindexOne(t.p2, deleteIndicesAsc),
@@ -250,10 +206,7 @@ const applyMergeToSelection = (mergePos, label) => {
         fill: t.fill,
     }))
 
-    // Mutation 4 : re-indexer activeConstructionTriangle (Q1b). Si un
-    // slot est dans la selection, on le remplace par survivor ; sinon on
-    // le re-indexe selon les suppressions. Les slots undefined restent
-    // undefined (maintient l'invariant I5).
+    // Mutation 4 : re-indexer activeConstructionTriangle (selection -> survivor).
     const act = state.activeConstructionTriangle
     if (act) {
         const rewriteSlot = (slotKey) => {
@@ -267,8 +220,7 @@ const applyMergeToSelection = (mergePos, label) => {
         rewriteSlot('p3')
     }
 
-    // State cleanup : toutes les indirections utilisant des indices
-    // obsoletes sont reinitialisees. Meme clautre qu'avant.
+    // Cleanup : toutes les indirections a indices obsoletes sont reinitialisees.
     state.selectedPoints = [survivor]
     state.selectedTriangles = []
     state.nearestPoint = undefined
@@ -286,12 +238,9 @@ const applyMergeToSelection = (mergePos, label) => {
     state.eachShapeRotateTimer = undefined
     state.isEachShapeRotating = false
     state.moveAllActive = false
-    // Candidat de la fusion par déplacement (cf. §7.11) : consommé par
-    // attemptDropMerge avant d'arriver ici ; nettoyé pour ne pas laisser
-    // un index obsolète pointer vers le pointList compacté.
     state.mergeDropCandidate = undefined
 
-    // (delta) capture post-mutation et saveState avec replaceShapePatch.
+    // Capture post-mutation et saveState en replaceShapePatch.
     const clonedShapeAfter = cloneShape(shape)
     saveState({
         patches: [replaceShapePatch(
@@ -309,10 +258,6 @@ const applyMergeToSelection = (mergePos, label) => {
         `${label} : ${selected.length} ref(s) -> 1 point cible en ` +
         `(${mergePos.x.toFixed(2)}, ${mergePos.y.toFixed(2)})`
     )
-    // (évolution « commentaire dans le HUD ») — logique prospective :
-    // après une fusion, le toast propose le geste suivant (fusionner
-    // d'autres points) et rappelle l'annulation possible. Le détail
-    // chiffré (N refs -> 1) reste dans la console (log ci-dessus).
     showActionComment(
         `Ctrl+Z pour annuler — sélectionnez ≥ 2 points pour une autre fusion`
     )
@@ -320,43 +265,20 @@ const applyMergeToSelection = (mergePos, label) => {
 }
 
 // ===== Fusion par déplacement (2e fonction du bouton #mergePoints) =====
-// Rationale : voir DESIGN.md §7.11
-//
-// Le bouton Fusionner porte deux fonctions :
-//   1. Fusion « classique » : >= 2 points sélectionnés → ils
-//      convergent vers le centroid des positions uniques.
-//   2. Fusion « par déplacement » : exactement 1 point sélectionné →
-//      le clic ARME le mode (bouton en accent vert, log explicatif).
-//      Glisser le point sélectionné (clic droit + drag, le geste de
-//      déplacement habituel) puis le RELÂCHER près d'un autre point
-//      (rayon MERGE_DROP_RADIUS_PX en pixels écran, indépendant du
-//      zoom) le fusionne avec le point le plus proche : la position de
-//      la CIBLE est conservée, le point déplacé disparaît et ses
-//      références triangle sont redirigées vers la cible.
-// Le mode se désarme : au clic sur le bouton verrouillé, après une
-// fusion réussie NON verrouillée, ou dès que la sélection n'est plus un
-// point unique (garde dans updateSelectionHud, hud.js).
-//
-// Cycle du bouton en 3 états (évolution verrouillage, cf. DESIGN.md
-// §7.11) : désarmé → clic = ARME ; armé → clic = VERROUILLE (le mode
-// survivra aux fusions réussies pour enchaîner plusieurs fusions) ;
-// armé + verrouillé → clic = DÉSARME tout (mode + verrou).
-
-// Fait avancer le cycle du bouton (arme / verrouille / désarme).
-// N'arme QUE si exactement 1 point est sélectionné (la fonction n'est
-// utilisable que dans ce cas, cf. cahier des charges) ; sinon, désarme
-// silencieusement.
+// 1 point selectionne -> le clic ARME le mode : glisser le point puis
+// le RELÂCHER pres d'un autre (rayon MERGE_DROP_RADIUS_PX en px ecran)
+// le fusionne avec lui (position de la CIBLE conservee, refs redirigees).
+// Cycle du bouton en 3 etats (cf. DESIGN.md §7.11) : desarme -> ARME ->
+// VERROUILLE (enchainement) -> DESARME. Le mode se desarme aussi quand
+// la selection n'est plus un point unique (garde updateSelectionHud).
 export const toggleMergeOnDrop = () => {
     if (state.mergeOnDropActive) {
         if (state.mergeOnDropLocked) {
-            // 3e état du cycle : clic sur le bouton VERROUILLÉ →
-            // désarme tout (mode + verrou), même contrat que l'ancien
-            // re-clic.
+            // 3e état : clic sur verrouillé → désarme tout (mode + verrou).
             disarmMergeOnDrop()
             log('Fusion par déplacement desarmée')
         } else {
-            // 2e état du cycle : clic sur le mode ARMÉ → verrouille.
-            // Le mode restera armé après les fusions réussies.
+            // 2e état : clic sur armé → verrouille (le mode survit aux fusions).
             state.mergeOnDropLocked = true
             updateMergeButtonState()
             log('Fusion par déplacement verrouillée : le mode reste armé après chaque fusion ' +
@@ -387,11 +309,9 @@ export const disarmMergeOnDrop = () => {
     updateMergeButtonState()
 }
 
-// Tentée par main.js au mouseup d'un grab armé qui a réellement
-// déplacé la géométrie : fusionne le point déplacé avec le candidat
-// cible calculé par updateMergeDropCandidate (editor.js) au dernier
-// tick du drag. Un clic droit simple (pas de drag) ne déclenche jamais
-// cette fonction (endGrabbing retourne movedScene=false dans ce cas).
+// Tentee par main.js au mouseup d'un grab arme ayant reellement
+// deplace la geometrie : fusion du point deplace avec le candidat
+// cible calcule par updateMergeDropCandidate (editor.js).
 export const attemptDropMerge = () => {
     if (!state.mergeOnDropActive) return false
     if (state.selectedPoints.length !== 1) return false
@@ -403,10 +323,8 @@ export const attemptDropMerge = () => {
     const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
     const targetPt = pointList[targetIdx]
     if (!targetPt) return false
-    // Fusion du point déplacé DANS la cible : la position de la cible
-    // est conservée (le déplacement du point sélectionné s'est déjà
-    // produit pendant le drag ; la fusion ne doit pas le faire
-    // « rebondir » vers un centroïde intermédiaire).
+    // Position de la cible conservee : le drag a deja deplace le point,
+    // la fusion ne doit pas le faire « rebondir » vers un centroide.
     const previousSelection = state.selectedPoints
     state.selectedPoints = [draggedIdx, targetIdx]
     const merged = applyMergeToSelection(
@@ -414,16 +332,11 @@ export const attemptDropMerge = () => {
         'Fusion par déplacement'
     )
     if (merged) {
-        // Succès : désarmement SAUF si le mode est verrouillé — le
-        // verrou exprime l'intention d'enchaîner plusieurs fusions, le
-        // mode reste donc armé ET verrouillé (le survivant est l'unique
-        // point sélectionné, le geste est immédiatement réutilisable).
+        // Succès : désarme sauf si verrouillé (l'intention d'enchaîner
+        // est exprimée par le verrou).
         if (!state.mergeOnDropLocked) disarmMergeOnDrop()
     } else {
-        // Échec (conflit topologique : la cible et le point déplacé
-        // partagent un triangle) : la sélection utilisateur est
-        // restaurée et le mode reste armé (verrouillé ou non) pour
-        // permettre un nouvel essai.
+        // Échec (conflit topologique) : sélection restaurée, mode armé.
         state.selectedPoints = previousSelection
     }
     return merged

@@ -75,14 +75,10 @@ export const wireResetModal = (onValidate) => {
 }
 
 // ===== Fenêtre d'enregistrement de la scène =====
-// Évolution « enregistrement scène » : au lieu de télécharger
-// directement, la sauvegarde ouvre une fenêtre de sélection de
-// l'emplacement — liste des scènes déjà sauvegardées (clé
-// SAVED_SCENES_STORAGE_KEY, gérée par io.js) — avec possibilité de
-// renommage, et se positionne sur l'emplacement PRÉCÉDENT (le plus
-// récent). Le nom choisi devient le nom de la scène (HUD + wire
-// format) et le fichier téléchargé est « <nom>.json » (saveMesh(name),
-// io.js).
+// Liste des emplacements deja sauvegardes (io.js) avec renommage,
+// positionnee sur l'emplacement precedent. Le nom choisi devient le
+// nom de scene (HUD + wire format) et le fichier « <nom>.json ».
+
 
 const saveModal = () => document.querySelector('#saveModal')
 
@@ -92,9 +88,7 @@ const saveModal = () => document.querySelector('#saveModal')
 let saveModalShown = false
 let saveValidateHandler = null
 
-// Réarme la rangée « courante » (vert accent) sur l'emplacement dont
-// le nom correspond au texte du champ ; aucune rangée si le champ ne
-// correspond à aucun emplacement (renommage en cours).
+// Rangée « courante » sur l'emplacement correspondant au texte du champ.
 const syncCurrentSaveSlot = () => {
     const slots = document.querySelector('#saveSlots')
     const nameInput = document.querySelector('#saveName')
@@ -106,11 +100,8 @@ const syncCurrentSaveSlot = () => {
 }
 
 const validateSave = () => {
-    // Garde anti-réentrance (miroir de saveModalShown dans
-    // showSaveModal) : un Enter maintenu (répétition de touche) ou un
-    // double-clic en file sur « Enregistrer » ne doit pas déclencher
-    // deux téléchargements — la première validation referme la fenêtre
-    // et libère le flag avant la seconde.
+    // Anti-reentrance : Enter maintenu ou double-clic ne doit pas
+    // declencher deux telechargements.
     if (!saveModalShown) return
     const nameInput = document.querySelector('#saveName')
     if (!nameInput) return
@@ -131,9 +122,7 @@ export const showSaveModal = () => {
     saveModalShown = true
     state.lastFocusedElement = document.activeElement
 
-    // Emplacements connus : la liste affichée, « l'emplacement
-    // précédent » étant le plus récent (= en tête de liste,
-    // recordSavedSceneName unshift le nom au moment de l'enregistrement).
+    // « Emplacement precedent » = le plus recent (tete de liste).
     const names = getSavedSceneNames()
     const previous = names.length > 0 ? names[0] : null
     const currentName = (typeof state.sceneName === 'string' && state.sceneName.trim().length > 0)
@@ -191,9 +180,7 @@ export const showSaveModal = () => {
 
     m.hidden = false
     m.setAttribute('aria-hidden', 'false')
-    // Focus + sélection APRÈS l'affichage : focus() et select() sont
-    // des no-op sur un élément d'un container display:none (le champ
-    // garderait la valeur mais le texte ne serait pas sélectionné).
+    // Focus + select apres l'affichage (no-op sur un container display:none).
     if (nameInput) {
         nameInput.focus()
         nameInput.select()
@@ -220,17 +207,14 @@ export const wireSaveModal = (onValidate) => {
     if (cancelBtn) cancelBtn.addEventListener('click', () => hideSaveModal())
     if (validateBtn) validateBtn.addEventListener('click', () => validateSave())
     if (nameInput) {
-        // Entrée dans le champ valide l'enregistrement (pattern
-        // standard des boîtes de dialogue).
+        // Entrée dans le champ valide l'enregistrement.
         nameInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault()
                 validateSave()
             }
         })
-        // Pendant la frappe, la rangée « courante » suit le texte du
-        // champ : taper un nom connu le resélectionne, taper autre
-        // chose = renommage (aucune rangée active).
+        // La rangée « courante » suit le texte du champ pendant la frappe.
         nameInput.addEventListener('input', syncCurrentSaveSlot)
     }
     m.addEventListener('click', (e) => {

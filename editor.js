@@ -62,10 +62,8 @@ const modelToleranceForPixels = (pixels) => pixels / Math.max(state.ctx.zoomLeve
 const pointHitRadiusModel = () => modelToleranceForPixels(POINT_HIT_RADIUS_PX)
 const lineHitRadiusModel = () => modelToleranceForPixels(LINE_HIT_RADIUS_PX)
 const triangleCentroidHitRadiusModel = () => modelToleranceForPixels(TRIANGLE_CENTROID_HIT_RADIUS_PX)
-// les slots tris.pX sont des indices dans activeShape().pointList.
-// On accede aux coordonnees via pointList[t.pX]. Renvoie pointIndices
-// (= [t.p1, t.p2, t.p3]) pour permettre aux callers editor.js de
-// faire cluster/selection par indice sans de-referencement manuel.
+// slots tris.pX = indices pointList ; renvoie aussi pointIndices pour
+// que les callers fassent cluster/selection par indice.
 export const findNearestTriangle = (point) => {
     const tris = activeShape() && Array.isArray(activeShape().tris) ? activeShape().tris : []
     const pointList = activeShape() && Array.isArray(activeShape().pointList) ? activeShape().pointList : []
@@ -165,19 +163,10 @@ export const findSelectedLine = (point) => {
 
 // ===== Hover et HUD bas-gauche =====
 
-// (feature/performance) clef de dedup pour updateMouseHover :
-// combine la position du curseur (arrondie a l'unite pour ignorer le
-// sub-pixel jitter) + les indices de nearest point/line/triangle (qui
-// changent a chaque franchissement de hit-radius) + l'indicateur
-// selection-dimmed + l'etat lasso (car le rectangle de selection est
-// peint dans le calque transitoire, pas dans les overlays d'update-
-// MouseHover). Tant que la clef est inchangee entre deux appels ET que
-// le cache scene n'est pas dirty, aucun redraw n'est necessaire (la
-// scene cachee du frame precedent contient deja le bon contenu).
-// isSceneDirty() est inclus dans la garde pour absorber les cas ou la
-// scene est mutee SANS avoir explicitement appele requestDraw (drag
-// raw qui mute pointList a la volee) — la garde seule sur la clef ne
-// suffirait pas.
+// Clef de dedup : tant que la signature visuelle (curseur, nearest*,
+// selection dimmed, lasso) est inchangee ET que le cache scene n'est
+// pas dirty, aucun redraw n'est necessaire. isSceneDirty() absorbe
+// les mutations raw (drag qui mute pointList sans requestDraw).
 let lastHoverSignature = null
 const computeHoverSignature = (cursorScreen) => {
     const npKey = state.nearestPoint ? state.nearestPoint.pointIndex : '_'
@@ -187,43 +176,20 @@ const computeHoverSignature = (cursorScreen) => {
     const boxKey = state.isSelectingBox && state.selectionBoxStart && state.selectionBoxCurrent
         ? '1|' + Math.round(state.selectionBoxCurrent.x) + ',' + Math.round(state.selectionBoxCurrent.y)
         : '0'
-    // (évolution « message prospectif ») — selectionMode / brushMode
-    // changent le MESSAGE de survol sans changer les nearest* ni le
-    // curseur (ex. bascule vertex→segment pendant qu'on survole le
-    // même segment : le message « créer un nouveau triangle » doit
-    // devenir « sélectionner ce segment »). Ils sont dans la signature
-    // pour que la bascule de mode (toggleSelectionMode / ouverture de
-    // la palette, qui appellent updateMouseHover) force le recalcul du
-    // toast — sans ça, la garde ci-dessous early-returnerait sur une
-    // signature pourtant inchangée.
+    // selectionMode / brushMode changent le MESSAGE de survol sans
+    // changer les nearest* : inclus pour forcer le recalcul du toast
+    // a la bascule de mode.
     return cKey + '|' + npKey + '|' + nlKey + '|' + ntKey + '|' + (state.isSelectionDimmed ? 'd' : 'n') + '|' + boxKey + '|' + state.selectionMode + '|' + (state.brushMode ? 'b' : 'n') + '|' + (state.activeConstructionTriangle ? 'c' : 'n')
 }
 
 export const updateMouseHover = (cursorScreen) => {
-    // Preview (mode visualisation seule) : aucun overlay de survol
-    // (cercle vert du point le plus proche, labels §7.8/§7.9, ligne /
-    // triangle highlights) — ils sont des aides d'edition, pas de la
-    // geometrie. Le rendu canvas est deja propre cote draw.js ; on
-    // retourne avant tout calcul de hover (et avant le drawBoard).
-    // Rationale : voir DESIGN.md §2.6
+    // Preview : aucun overlay de survol (aides d'edition, pas de geometrie).
     if (state.previewMode) return
     updateCoordsDisplay(cursorScreen)
     if (!cursorScreen) return
-    // Mode cercle : les overlays de survol (cercle vert du point le
-    // plus proche, labels §7.8/§7.9, ligne/triangle highlights) ne
-    // sont que du bruit pendant la construction d'un cercle. On se
-    // limite au HUD coordonnees + au repaint : la previsualisation
-    // du cercle est dessinee dans le calque transitoire (draw.js
-    // renderTransient), qui repeint aussi le curseur (drawMouse) a
-    // chaque drawBoard — plus besoin de le rappeler ici.
-    // Mode cercle / étoile / anneau OU forme predéfinie armee : meme
-    // traitement — les overlays de survol (point le plus proche,
-    // labels, highlights) sont du bruit pendant la construction ;
-    // seule la preview (renderTransient) + le curseur sont dessines.
-    // (évolution « message prospectif ») le toast guide la PHASE
-    // courante du geste de construction (cf. computeHoverComment) —
-    // pas de survol d'élément ici : le clic est entièrement consommé
-    // par le geste.
+    // Modes de construction : les overlays de survol sont du bruit ;
+    // seule la preview (renderTransient) + le curseur + le toast de
+    // phase (computeHoverComment) sont dessines.
     if (state.circleMode || state.starMode || state.annulusMode || state.shapeKind !== undefined) {
         updateHoverComment()
         drawBoard()
@@ -244,45 +210,27 @@ export const updateMouseHover = (cursorScreen) => {
     if (!state.nearestLine || state.nearestLine.distance > lineHitRadiusModel()) state.nearestLine = undefined
     state.nearestTriangle = findNearestTriangle(target)
 
-    // (feature/performance) skip frame integral si la signature
-    // visuelle est inchangee ET que la scene cachee est encore
-    // valide. Le 2e terme absorbe les paths de mutation raw (drag qui
-    // mute pointList sans passer par un requestDraw explicite) — sans
-    // lui, on pourrait avoir un drag qui ne se reflete jamais a
-    // l'ecran si hover signature ne change pas. updateCoordsDisplay a
-    // deja ete execute (= le HUD bas-gauche reflete bien le curseur
-    // courant, on n'est pas en train de mentir a l'utilisateur).
+    // Skip de frame si la signature est inchangee ET que le cache
+    // scene est valide (le 2e terme absorbe les drags qui muent
+    // pointList sans requestDraw).
     const signature = computeHoverSignature(cursorScreen)
     if (signature === lastHoverSignature && !isSceneDirty()) return
     lastHoverSignature = signature
 
-    // (évolution « message prospectif ») le toast de survol suit le
-    // changement de signature : il ne se met à jour que quand le
-    // pointeur change d'élément (point / segment / triangle / zone
-    // vide) — le message reste affiché tant que le survol est stable
-    // (garde de dédup côté showHoverComment).
+    // Le toast de survol ne se met à jour que quand la signature change
+    // (dedup cote showHoverComment).
     updateHoverComment()
 
-    // Le curseur est repeint par renderTransient pendant drawBoard
-    // (cf. plus haut) ; les overlays de survol ci-dessous (nearest
-    // point vert, labels, highlights) se dessinent par-dessus, comme
-    // avant.
+    // Le curseur est repeint par renderTransient ; les overlays de
+    // survol se dessinent par-dessus.
     drawBoard()
 
     if (state.nearestPoint && state.nearestPoint.point) {
         drawPoint(state.nearestPoint.point, 5, COLOR_HOVER_NEAREST_POINT)
-        // DESIGN.md §7.8 — label d'identifiant stable du sommet surve.
-        // Affiche directement l'index 0-based retourne par
-        // getVertexIndex (= position dans getAllVertices()), convention
-        // dev-friendly alignee sur les arrays JS (idx sur state.nearestPoint,
-        // state.shapes, etc.). Si p est absent de la liste (defense,
-        // devrait pas arriver dans le call site normal), fallback '?'
-        // plutot que planter.
+        // §7.8 : index 0-based du sommet (fallback '?' si absent).
         const vertexIdx = getVertexIndex(state.nearestPoint.point)
         drawVertexLabel(state.nearestPoint.point, vertexIdx >= 0 ? vertexIdx : '?')
-        // DESIGN.md §7.9 — liste des slots triangles qui partagent cette
-        // position. N'affiche la pill 2-lignes que si > 1 ref (sinon la
-        // liste est triviale = 1 entree, redondante avec §7.8).
+        // §7.9 : pill des slots partageant la position, si > 1 ref.
         const stackRefs = getStackTriangleRefs(state.nearestPoint.point)
         if (stackRefs.length > 1) drawStackList(state.nearestPoint.point, stackRefs)
     }
@@ -303,8 +251,6 @@ export const updateMouseHover = (cursorScreen) => {
     if (state.selectionMode === 'triangle') {
         if (state.nearestTriangle) {
             const t = state.nearestTriangle.triangle
-            // les slots tris sont des indices dans pointList ;
-            // on resout les coords avant de projeter en SCREEN.
             const pointList = activeShape().pointList
             const p1 = pointList[t.p1], p2 = pointList[t.p2], p3 = pointList[t.p3]
             if (p1 && p2 && p3) {
@@ -341,43 +287,17 @@ export const updateCoordsDisplay = (cursorScreen) => {
 }
 
 // ===== Commentaire contextuel de survol (toast prospectif) =====
-//
-// (évolution « message prospectif ») — le toast #actionComment dit à
-// l'utilisateur ce qu'il PEUT faire, au moment où il peut le faire :
-// quand un élément est en surbrillance sous le pointeur (point,
-// segment, triangle), le message décrit le geste que cet élément
-// permet — l'exemple fondateur : survoler un côté de triangle affiché
-// en surbrillance → « Clic gauche pour créer un nouveau triangle à
-// partir de ce segment ». Hiérarchie (cf. DESIGN.md §7.15) :
-//   1. modes de construction (cercle / étoile / anneau / forme) — le
-//      clic est entièrement consommé par le geste, le message guide la
-//      phase courante ;
-//   2. construction en cours (triangle partiel) — le geste SUIVANT du
-//      triangle en cours prime sur tout le reste (un clic posera un
-//      sommet) ;
-//   3. pinceau armé (brushMode) — le clic gauche peindra le triangle
-//      sous le curseur ;
-//   4. survol d'élément, dans le MÊME ordre de résolution que le clic
-//      (processMouseUpSelection) pour que le message annonce
-//      EXACTEMENT l'effet du clic gauche : triangle (mode triangle) >
-//      segment (mode segment) > point > segment (mode vertex, où le
-//      clic gauche branche un nouveau triangle) ;
-//   5. zone vide — si un post-action est en cours, on le laisse finir
-//      ses 3 s (isActionCommentActive) ; sinon message générique selon
-//      l'état de la forme (scène vide vs forme fermée).
-// Appelée depuis updateMouseHover (mousemove) ; les messages de survol
-// persistent tant que le pointeur est sur l'élément — aucun timer, le
-// survol suivant les remplace (showHoverComment, hud.js).
+// Le toast dit ce que l'utilisateur PEUT faire maintenant, au moment
+// où il peut le faire (cf. DESIGN.md §7.15). Hierarchie : construction
+// (phase courante) > triangle partiel en cours > pinceau > survol
+// d'element (meme ordre que le clic) > zone vide (post-action d'abord,
+// sinon message generique). Messages persistants tant que le survol dure.
 const computeHoverComment = () => {
     const shape = activeShape()
     const tris = shape && Array.isArray(shape.tris) ? shape.tris : []
     const lastTri = tris.at(-1)
 
-    // 1. Modes de construction : le message guide la phase courante du
-    //    geste (cf. les commentaires des handlers mousedown, main.js).
-    //    Prioritaire sur la construction d'un triangle : l'utilisateur
-    //    a explicitement armé l'outil, le geste en cours prime sur un
-    //    triangle partiel laissé en attente.
+    // 1. Construction : le geste arme prime sur un triangle partiel laisse en attente.
     if (state.circleMode) {
         return state.circleCenterModel
             ? '2e clic gauche : valide le cercle — molette pour les côtés, clic droit pour annuler'
@@ -405,11 +325,8 @@ const computeHoverComment = () => {
             : '1er clic gauche : pose l\'ancre de la forme — clic droit pour annuler'
     }
 
-    // 2. Construction en cours : le geste suivant du triangle partiel.
-    //    Un tri avec p2 undefined est TOUJOURS resumable (addPoint le
-    //    modifie même s'il n'est plus actif) ; un tri avec p3
-    //    undefined ne l'est que s'il est le activeConstructionTriangle
-    //    (sinon le clic serait ignoré — on ne le suggère pas).
+    // 2. Triangle partiel : p2 manquant toujours resumable ; p3 manquant
+    //    seulement si c'est le activeConstructionTriangle.
     if (lastTri && lastTri.p2 === undefined) {
         return 'Cliquez pour poser le 2e sommet — le 3e clic ferme le triangle'
     }
@@ -417,18 +334,14 @@ const computeHoverComment = () => {
         return 'Cliquez pour poser le 3e sommet — il fermera le triangle'
     }
 
-    // 3. Pinceau armé : le clic gauche peint le triangle sous le
-    //    curseur (paintTriangleAtCursor, mousedown main.js) — le survol
-    //    n'a pas d'autre effet que de viser.
+    // 3. Pinceau : le clic peint le triangle sous le curseur.
     if (state.brushMode) {
         return state.nearestTriangle
             ? 'Clic gauche pour peindre ce triangle avec la couleur choisie'
             : 'Survolez un triangle puis cliquez pour le peindre'
     }
 
-    // 4. Survol d'élément — même ordre de résolution que le clic
-    //    (processMouseUpSelection) pour que le message annonce
-    //    EXACTEMENT l'effet du clic gauche.
+    // 4. Survol d'element, meme ordre de resolution que le clic.
     if (state.selectionMode === 'triangle' && (state.nearestTriangle || state.nearestLine)) {
         return 'Clic gauche pour sélectionner ce triangle — clic droit pour le déplacer'
     }
@@ -439,16 +352,12 @@ const computeHoverComment = () => {
         return 'Clic gauche pour sélectionner ce sommet — clic droit pour le déplacer'
     }
     if (state.nearestLine) {
-        // Mode vertex : le clic gauche sur un segment (hors sélection)
-        // n'est pas une sélection mais la création d'un point qui
-        // BRANCHE un nouveau triangle sur ce segment (addPoint →
-        // push-new-tri, cf. DESIGN.md §3.3).
+        // Mode vertex : le clic sur un segment branche un nouveau
+        // triangle (addPoint -> push-new-tri).
         return 'Clic gauche pour créer un nouveau triangle à partir de ce segment'
     }
 
-    // 5. Zone vide : un post-action en cours finit ses 3 s (le toast
-    //    le laisse parler, c'est le rappel du geste suivant après une
-    //    action) ; sinon message générique selon l'état de la forme.
+    // 5. Zone vide : le post-action finit ses 3 s, sinon message generique.
     if (isActionCommentActive()) return null
     if (tris.length === 0) {
         return 'Cliquez pour poser le 1er point de votre forme'
@@ -456,13 +365,8 @@ const computeHoverComment = () => {
     return 'Survolez un segment pour y brancher un nouveau triangle — ou cliquez sur un sommet pour le sélectionner'
 }
 
-// Diffuse le commentaire de survol courant dans le toast. Appelée à
-// chaque mousemove (après le calcul des nearest*) et pendant les
-// gestes de construction ; retourne sans rien faire si la zone vide
-// laisse un post-action finir ses 3 s (text === null). La garde de
-// dédup vit dans showHoverComment (hud.js) : même texte + survol
-// déjà affiché = pas de ré-écriture DOM à chaque mousemove.
-// (non exportée : interne à editor.js, seul updateMouseHover l'appelle)
+// Diffuse le commentaire de survol (dedup cote showHoverComment) ;
+// no-op si la zone vide laisse un post-action finir ses 3 s (null).
 const updateHoverComment = () => {
     const text = computeHoverComment()
     if (text === null) return
@@ -481,28 +385,15 @@ export const resolveMouseClickOnBoard = (e) => {
     state.nearestLine = findSelectedLine(pointToAdd)
     if (!state.nearestLine || state.nearestLine.distance > lineHitRadiusModel()) state.nearestLine = undefined
     addPoint(pointToAdd)
-    // Même sync que les gestes cercle/forme : le drawBoard différé
-    // (requestDraw) repeint le curseur via renderTransient, donc
-    // lastMousePos doit pointer sur la position du clic pour que le
-    // pointeur survive au repaint.
+    // lastMousePos = position du clic pour que le pointeur survive au repaint.
     state.lastMousePos = mouseScreen
     requestDraw()
 }
 
-// (modifyShapeModel-spec §3.6) : dedup tolerance 1 px scanne
-// directement le pointList canonique (invariant I3 garantit <= 1
-// entree par coord unique, donc le test ne fait pas de tour
-// triangulaire). On push le nouveau point dans pointList et on
-// assigne son INDEX dans le slot du triangle. Maintient l'invariant
-// I5 (p1/p2/p3 toujours definis pour le tri en cours).
-//
-// (delta) l'entry d'historique utilise le patch `insertPoint` (DESIGN
-// §8) : ne stocke que la coord insérée + le tri concerné (before +
-// after) au lieu de cloner toute la scène. Le cas-path est codé en
-// 4 actions atomiques (push | modify-p2 | modify-p3 | push-new-tri)
-// — chaque branche construit lastTriAfter au saveState time (avant
-// la mutation) à partir de la connaissance complète des entrées
-// (coord pushée, indices nearestLine, état pré-mutation).
+// Dedup tol 1 px sur le pointList canonique, puis push + assignation
+// de l'INDEX dans le slot du tri (invariants I3/I5). Entry historique
+// en patch insertPoint (DESIGN §8) : 4 cas atomiques (push | modify-p2
+// | modify-p3 | push-new-tri), lastTriAfter construit au saveState.
 export const addPoint = (point) => {
     const shape = activeShape()
     const tris = Array.isArray(shape.tris) ? shape.tris : []
@@ -529,17 +420,10 @@ export const addPoint = (point) => {
         return
     }
 
-    // (delta) construction du patch AVANT la mutation (toutes les
-    // entrées sont connues : coord pushée, indices nearestLine, état
-    // pré-mutation du shape). On capture aussi le lastTri pré-mut
-    // pour permettre le rollback undo.
-    // NOTE invariant §5.3 (insertPointPatch conv) :
-    //   - lastTriIndexBefore = -1 si shape vide avant, sinon index.
-    //   - triDelta = 1 si on pousse un nouveau tri (cas 'push' empty
-    //     OU 'push-new-tri'), 0 si on modifie en place.
-    // Le pré-fix (lastTriIndexAfter < 0 = "push") était ambigu car 0
-    // est un index valide post-mutation pour le tri #0 ; on a donc
-    // externalisé le signal via triDelta.
+    // Patch construit AVANT la mutation (toutes les entrees connues) ;
+    // lastTriIndexBefore = -1 si shape vide, triDelta = 1 si push de
+    // tri (0 si modif in-place — le pre-fix < 0 etait ambigu car 0 est
+    // un index valide).
     const insertedPoint = { x: point.x, y: point.y }
     const newPointIdx = pointList.length  // index après le push
     const lastTriIndexBefore = tris.length - 1  // -1 si vide
@@ -611,12 +495,7 @@ export const addPoint = (point) => {
     }
     state.ctx.workIsSaved = 0
     state.ctx.workIsBackuped = 0
-    // (évolution « commentaire dans le HUD ») — logique PROSPECTIVE :
-    // le toast ne fait PAS le compte-rendu de l'action passée, il dit à
-    // l'utilisateur ce qu'il PEUT faire maintenant et comment. Après un
-    // clic de construction, le message guide le geste suivant du
-    // triangle en cours (ou la seule suite possible : brancher sur un
-    // segment — un clic loin d'un segment est ignoré).
+    // Toast prospectif : guide le geste suivant du triangle en cours.
     const stepComment = {
         push: 'Cliquez pour poser le 2e sommet — le 3e clic ferme le triangle',
         'modify-p2': 'Cliquez pour poser le 3e sommet — il fermera le triangle',
@@ -627,10 +506,7 @@ export const addPoint = (point) => {
     persistState()
 }
 
-// Q1c : state.selectedPoints = [0, 1, ..., pointList.length-1].
-// La conversion par indices evite l'ambiguite ref-vs-cluster heritage de
-// la representation inline-coord : un sommet == une entree pointList, et
-// le doublonnage est impossible par invariant I3.
+// selectedPoints = tous les indices pointList (1 sommet == 1 entree, I3).
 export const selectAllPoints = () => {
     const shape = activeShape()
     const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
@@ -651,31 +527,15 @@ export const selectAllPoints = () => {
 }
 
 // ===== Presse-papiers interne : couper / copier / coller =====
-//
-// (évolution « couper, copier, coller les éléments sélectionnés »)
-// Le presse-papiers est INTERNE à l'application (pas navigator.clipboard)
-// : le contenu est un sous-ensemble du modèle {pointList, tris} — format
-// interne que le presse-papiers système ne sait pas transporter, et
-// l'accès async + permissions serait fragile sous file:// (build
-// portable). state.clipboard = { points, tris, offset } (cf. state.js).
-// Le copier/couper capture les points sélectionnés de la FORME ACTIVE +
-// les triangles ENTIÈREMENT contenus (les 3 slots pX sont des indices
-// sélectionnés ; les triangles partiels, pX undefined, sont de la
-// construction en cours et ne sont jamais copiés). Le fill des triangles
-// survit (propriété du triangle, même convention que compactPointList /
-// cloneShape). Le coller cible TOUJOURS la forme active (les coords sont
-// absolues) : il append les points à la fin de son pointList, re-indexe
-// les triangles dessus (base = longueur pré-mutation) et sélectionne la
-// copie collée. Chaque collage décale d'un demi-pas de grille
-// (GRID_STEP / 2) par rapport à la source, cumulé via clipboard.offset,
-// pour que les copies successives se cascadent visuellement et restent
-// distinctes de la source (grabbables sans ambiguïté malgré les
-// doublons de position).
+// INTERNE a l'app (pas navigator.clipboard : format modele + fragile
+// sous file://). Capture les points selectionnes de la FORME ACTIVE +
+// les tris ENTIEREMENT contenus (partiels jamais copies), fill
+// conserve. Le coller cible la forme active (coords absolues) avec un
+// decalage d'un demi-pas de grille par collage (clipboard.offset) pour
+// cascader les copies.
 
-// Capture (sans log ni effet de bord) du contenu de la sélection
-// courante : { points, tris } ou null si rien à copier. Les tris sont
-// ré-indexés en indices RELATIFS à la liste points copiée (le coller
-// re-base sur pointList.length de la forme active).
+// Capture de la selection : { points, tris } (indices relatifs a la
+// liste copiee) ou null si rien a copier.
 const captureClipboard = () => {
     if (state.selectedPoints.length === 0) return null
     const shape = activeShape()
@@ -694,25 +554,19 @@ const captureClipboard = () => {
     const tris = (Array.isArray(shape.tris) ? shape.tris : [])
         .filter(t => Number.isInteger(t.p1) && Number.isInteger(t.p2) && Number.isInteger(t.p3)
             && selectedSet.has(t.p1) && selectedSet.has(t.p2) && selectedSet.has(t.p3)
-            // Garde défensive : un indice de sélection périmé (hors
-            // bornes de pointList) reste dans selectedSet mais n'a pas
-            // d'entrée `rel` — le tri serait copié avec des slots
-            // undefined. On exige que les 3 slots aient une image
-            // relative valide.
+            // Indice perime (hors pointList) = pas d'image relative -> exclu.
             && rel.has(t.p1) && rel.has(t.p2) && rel.has(t.p3))
         .map(t => ({
             p1: rel.get(t.p1),
             p2: rel.get(t.p2),
             p3: rel.get(t.p3),
-            // Le fill est une propriété du TRIANGLE : il survit au
-            // copier/coller (même convention que compactPointList).
+            // Le fill survit au copier/coller (propriete du triangle).
             fill: typeof t.fill === 'string' ? t.fill : undefined,
         }))
     return { points, tris }
 }
 
-// Copie la sélection dans le presse-papiers interne (la sélection est
-// conservée). Raccourci Ctrl+C + bouton #copy.
+// Copie la selection (selection conservee). Ctrl+C / bouton #copy.
 export const copySelection = () => {
     const captured = captureClipboard()
     if (!captured) return false
@@ -725,12 +579,8 @@ export const copySelection = () => {
     return true
 }
 
-// Coupe la sélection : copie dans le presse-papiers puis suppression.
-// deleteSelectedPoint partage déjà la sémantique exacte (tris à < 2
-// survivants filtrés, compactage I2, replaceShapePatch before/after,
-// HUD + persist) — un seul chemin de vérité pour la suppression. Le
-// presse-papiers reste rempli pour coller. Raccourci Ctrl+X + bouton
-// #cut. Annulable en une étape (Ctrl+Z).
+// Coupe : copie puis suppression via deleteSelectedPoint (chemin de
+// verite unique). Presse-papiers reste rempli. Ctrl+X / bouton #cut.
 export const cutSelection = () => {
     const captured = captureClipboard()
     if (!captured) return false
@@ -744,11 +594,8 @@ export const cutSelection = () => {
     return true
 }
 
-// Colle le presse-papiers dans la FORME ACTIVE : les points sont
-// appendés à la fin de son pointList (décalés d'un demi-pas de grille
-// par collage depuis la source), les triangles ré-indexés dessus, et la
-// copie collée devient la sélection courante. Raccourci Ctrl+V + bouton
-// #paste. Annulable en une étape (Ctrl+Z).
+// Colle dans la FORME ACTIVE : points appends (decalage GRID_STEP/2 par
+// collage), tris re-indexes, copie collée = selection courante. Ctrl+V.
 export const pasteClipboard = () => {
     const clip = state.clipboard
     if (!clip || !Array.isArray(clip.points) || clip.points.length === 0) return false
@@ -803,28 +650,11 @@ export const pasteClipboard = () => {
 }
 
 // ===== Alignement / répartition des points sélectionnés =====
-//
-// (évolution « boutons pour forcer l'alignement et la répartition des
-// points sélectionnés ») 4 actions sur la sélection de la FORME ACTIVE,
-// accessibles via le panneau du bouton #align et les raccourcis
-// Alt+←/→ / Alt+Shift+←/→ (cf. DESIGN.md §7.14) :
-//   - aligner X : tous les points sélectionnés prennent la coordonnée
-//     X du PREMIER point sélectionné (leur Y est conservé) — le premier
-//     point de la sélection est l'ancre de référence explicite (convention
-//     des éditeurs vectoriels).
-//   - aligner Y : idem sur la coordonnée Y (X conservé).
-//   - répartir X : les points sélectionnés sont espacés uniformément
-//     selon X ENTRE les deux points extrêmes (min et max X restent en
-//     place, les points intermédiaires sont répartis à pas égaux —
-//     position_i = min + (max - min) * i / (n-1)).
-//   - répartir Y : idem sur Y.
-// Chaque action est une entry undo UNIQUE : mutation des coords du
-// pointList seul (les tris ne changent pas — les indices restent
-// valides, les fills survivent), enregistrée via replaceShapePatch
-// before/after (même pattern que pasteClipboard / deleteSelectedPoint).
-// L'action est un no-op si elle ne déplace aucun point (align < 2
-// points, répartir < 3 points). Les boutons du panneau sont grisés en
-// conséquence (updateAlignPanelButtons, hud.js).
+// 4 actions (cf. DESIGN.md §7.14) : aligner X/Y = les points prennent
+// la coord du PREMIER selectionne (ancre, Y/X conserve) ; repartir X/Y
+// = espacement uniforme entre les extremes (qui restent en place).
+// Une entry undo unique (replaceShapePatch) ; no-op si align < 2 ou
+// repartir < 3 points ; boutons grises via updateAlignPanelButtons.
 
 // Aligne les points sélectionnés sur la coordonnée X du premier point
 // sélectionné. Retourne true si au moins un point a bougé.
@@ -852,32 +682,23 @@ export const distributeSelectedPointsY = () => {
     return alignOrDistribute('distribute', 'y')
 }
 
-// Implémentation commune align / répartir. `mode` = 'align' |
-// 'distribute', `axis` = 'x' | 'y'. La référence d'alignement est le
-// premier point sélectionné (state.selectedPoints[0]) ; la répartition
-// trie les points sélectionnés par coordonnée et répartit les rangs
-// intermédiaires à pas égal entre min et max (les extrêmes sont des
-// invariants de l'opération). Une entry undo par appel.
+// Commun align/repartir : ancre = premier selectionne (align), tri par
+// coord puis pas egal entre extremes (repartir). Une entry undo par appel.
 const alignOrDistribute = (mode, axis) => {
     const shape = activeShape()
     if (!shape) return false
     const selected = state.selectedPoints
     const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
-    // bornes minimales : align = 2 points (1 seule ancre), répartir =
-    // 3 points (2 extrêmes + 1 intermédiaire au moins).
+    // Bornes : align >= 2, repartir >= 3.
     const minCount = mode === 'align' ? 2 : 3
     if (selected.length < minCount) return false
     const valid = selected.filter(idx => Number.isInteger(idx) && pointList[idx])
     if (valid.length < minCount) return false
 
-    // Calcule la map { idx -> nouvelle coordonnée } SANS muter la
-    // scène (le clone before du patch doit capturer l'état pré-mutation).
+    // Map { idx -> nouvelle coord } calculee sans muter (clone before du patch).
     const target = new Map()
     if (mode === 'align') {
-        // L'ancre est le premier point sélectionné VALIDE (selected[0]
-        // peut être un indice périmé — même garde défensive que
-        // captureClipboard : un indice hors pointList reste dans
-        // selectedSet mais n'a pas d'entrée valide).
+        // Ancre = premier selectionne VALIDE (selected[0] peut etre perime).
         const anchor = pointList[valid[0]]
         if (!anchor) return false
         const anchorCoord = axis === 'x' ? anchor.x : anchor.y
@@ -886,9 +707,7 @@ const alignOrDistribute = (mode, axis) => {
             target.set(idx, anchorCoord)
         })
     } else {
-        // Tri des indices sélectionnés par coordonnée croissante. Les
-        // rangs 0 et n-1 (extrêmes) restent en place ; les rangs
-        // intermédiaires sont répartis à pas égal entre eux.
+        // Tri par coord : extremes en place, rangs intermediaires a pas egal.
         const sorted = [...valid].sort((a, b) => (axis === 'x' ? pointList[a].x - pointList[b].x : pointList[a].y - pointList[b].y))
         const n = sorted.length
         const min = axis === 'x' ? pointList[sorted[0]].x : pointList[sorted[0]].y
@@ -934,19 +753,9 @@ const alignOrDistribute = (mode, axis) => {
 }
 
 // ===== Panneau #align (aligner / répartir) =====
-//
-// (évolution « boutons pour forcer l'alignement et la répartition des
-// points sélectionnés ») le bouton #align ouvre un panneau flottant de
-// 4 actions (même pattern que #shapesPanel / #triangleColorPanel) :
-// Aligner X, Aligner Y, Répartir X, Répartir Y. Le panneau reste
-// OUVERT après une action (contrairement à #shapesPanel qui se ferme
-// quand on arme un outil) pour permettre d'enchaîner aligner X puis
-// aligner Y par exemple ; il se ferme par re-clic sur #align, Echap ou
-// clic extérieur. État du bouton synchronisé par updateAlignButton
-// (hud.js, classe .align-panel-open — même langage que
-// #shapes.shapes-panel-open). Le positionnement sous le bouton
-// réutilise positionPanelUnderButton (partagé avec #shapesPanel /
-// #triangleColorPanel — clamp aux bords de la fenêtre).
+// Panneau flottant de 4 actions (meme pattern que #shapesPanel) qui
+// reste OUVERT apres une action (enchainer align X puis align Y) ;
+// fermeture par re-clic, Echap ou clic exterieur.
 export const openAlignPanel = () => {
     const btn = document.querySelector('#align')
     const panel = document.querySelector('#alignPanel')
@@ -989,10 +798,6 @@ export const wireAlignPanel = () => {
         if (!actionBtn) return
         actionBtn.addEventListener('click', (e) => {
             if (e.button !== 0) return
-            // Le panneau reste ouvert après l'action pour enchaîner
-            // (aligner X puis aligner Y) ; les gardes de bornes sont
-            // dans alignOrDistribute (no-op) et le grisage des boutons
-            // dans updateAlignPanelButtons.
             actions[key]()
         })
     })
@@ -1007,46 +812,22 @@ export const wireAlignPanel = () => {
 }
 
 // ===== Creation d'un cercle (outil cercle) =====
-//
-// Mode transitoire (choisi dans le panneau #shapes ou via le raccourci
-// C, non persiste — meme statut que la preview) : geste en 2 temps
-// (orientation par souris, cf. cahier des charges des evolutions) :
-//   1. 1er mousedown sur le canvas = pose le centre du cercle
-//      (snapToGrid comme addPoint), initialise le rayon a 0 et
-//      l'angle a 0 (seront mis a jour au 1er mousemove).
-//   2. mouvement de la souris (avec ou sans bouton enfonce) = regle
-//      en continu le rayon (distance curseur - centre en coords
-//      model) ET l'angle de depart du polygone (atan2 du vecteur
-//      curseur - centre en coords screen, pour rester intuitif : le
-//      sommet 0 du futur polygone pointera vers la souris).
-//      L'utilisateur peut relacher la souris entre les 2 clics — le
-//      mode reste arme, l'angle se fige sur la derniere valeur
-//      observee.
-//   3. 2e mousedown sur le canvas = valide le cercle (genere
-//      l'eventail de triangles avec l'angle courant, desarme le
-//      mode). Si le rayon est trop petit (< CIRCLE_MIN_RADIUS_PX
-//      en pixels ecran), le 2e clic est ignore sans creer de
-//      cercle et le mode cercle est quitte.
-//
-// La molette regle N (viewport.js onBoardWheel ou bouton #shapes
-// actif), Echap quitte le mode (sans creer, comme si clic droit),
-// clic droit / Backspace annulent le trace en cours (reinitialise
-// centre + rayon + angle, sans desarmer le mode).
+// Mode transitoire, geste en 2 temps : 1er clic = centre (snapToGrid),
+// mousemove = rayon + angle (sommet 0 vers la souris, l'utilisateur
+// peut relacher entre les clics), 2e clic = valide (rayon trop petit
+// < CIRCLE_MIN_RADIUS_PX = ignore). Molette = N, Echap = quitte, clic
+// droit / Backspace = annule le trace sans desarmer.
 export const toggleCircleMode = () => {
     if (state.circleMode) exitCircleMode()
     else enterCircleMode()
 }
 
 const enterCircleMode = () => {
-    // Exclusion mutuelle avec l'outil forme predéfinie ET les modes
-    // étoile / anneau : un seul geste de creation actif a la fois.
+    // Exclusion mutuelle (un seul geste de creation actif) + fermeture
+    // du panneau #shapes (un seul Echap suffit alors a tout annuler).
     if (state.starMode) exitStarMode()
     if (state.annulusMode) exitAnnulusMode()
     if (state.shapeKind !== undefined) disarmShapeTool()
-    // Ferme le panneau #shapes s'il est ouvert (meme comportement
-    // qu'armShapeTool) : entrer en mode cercle depuis le panneau ouvert
-    // (raccourci C) ne laisse pas un mode actif sous le panneau — un
-    // seul Echap suffit alors a tout annuler.
     state.shapesPanelOpen = false
     const panel = document.querySelector('#shapesPanel')
     if (panel) panel.hidden = true
@@ -1079,15 +860,9 @@ export const beginCircleGesture = (e) => {
     const center = state.activeGrid ? snapToGrid(rawCenter) : rawCenter
     state.circleCenterModel = { x: center.x, y: center.y }
     state.circleRadiusModel = 0
-    // L'angle de depart est pose a 0 par defaut ; le 1er mousemove
-    // qui suit le mousedown alimentera circleOffsetAngle via
-    // updateCircleGesture (memes coordonnees ecran que la souris du
-    // geste, pour eviter tout drift entre les deux).
     state.circleOffsetAngle = 0
-    // Synchronise lastMousePos (memes coordonnees que la souris du
-    // geste) : le drawBoard differe par requestDraw repeint le curseur
-    // via renderTransient a CETTE position (cf. draw.js) — sans ce
-    // sync, un 1er clic sans mouvement ferait disparaître le pointeur.
+    // lastMousePos sync : sans lui, un 1er clic sans mouvement
+    // ferait disparaître le pointeur au repaint differe.
     state.lastMousePos = mouseScreen
     requestDraw()
 }
@@ -1100,27 +875,11 @@ const updateCircleGesture = (mouseScreen) => {
         edge.x - state.circleCenterModel.x,
         edge.y - state.circleCenterModel.y,
     )
-    // Angle de depart du polygone : on calcule l'angle en COORDS
-    // MODEL (Y up, meme convention que circleGeometry) pour que le
-    // sommet 0 tombe pile sous le curseur a l'ecran. Si on calculait
-    // l'angle en coords screen avec atan2(dy_screen, dx_screen), on
-    // recupererait un angle en convention math Y-up applique a un
-    // edgeModel lui-meme en Y-up : les deux vecteurs seraient
-    // colineaires mais dans le sens vertical inverse (atan2 voit la
-    // souris en bas comme angle +pi/2 « en haut en math », circleGeometry
-    // place donc le sommet 0 EN HAUT en model, et le modelToScreen
-    // flippant Y le rend AU-DESSUS de la souris a l'ecran). En passant
-    // par screenToModel d'abord, le vecteur (edge - center) est
-    // evalue en coords model (Y up) comme le reste du pipeline : le
-    // sommet 0 sort alors SOUS la souris sur l'ecran, sans symetrie
-    // parasite. Meme maths que la conversion souris -> modele -> vertex
-    // de geometry.js (le Y-flip n'est compte qu'une fois, cote
-    // modelToScreen, et pas du tout cote generation). A noter aussi
-    // : l'ancienne version calculait le rayon depuis `edge` (snap ON)
-    // mais l'angle depuis `mouseScreen` non-snappe — source de
-    // desaccord jusqu'a un demi-pas de grille quand activeGrid.
-    // Avec `edge` pour les deux, rayon et angle derivent du meme point
-    // snappe — comportement coherent.
+    // Angle calcule en COORDS MODEL (Y up) : le vecteur (edge - center)
+    // passe par screenToModel pour que le sommet 0 tombe sous la souris
+    // a l'ecran (le Y-flip n'est compte qu'une fois, cote modelToScreen).
+    // Rayon et angle derivent du meme point snappe (`edge`) — coherence
+    // jusqu'au demi-pas de grille pres.
     state.circleOffsetAngle = Math.atan2(
         edge.y - state.circleCenterModel.y,
         edge.x - state.circleCenterModel.x,
@@ -1134,10 +893,7 @@ export const commitCircleGesture = (e) => {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
     }
-    // Refraichir rayon + angle sur la position exacte du 2e mousedown
-    // au cas ou le curseur aurait bouge entre le dernier mousemove
-    // et ce mousedown (peu probable en pratique mais symetrique avec
-    // l'ancien geste « mouseup avec rayon = distance finale »).
+    // Refraichit rayon + angle sur la position exacte du 2e mousedown.
     updateCircleGesture(mouseScreen)
     const center = state.circleCenterModel
     const radius = state.circleRadiusModel
@@ -1161,14 +917,8 @@ export const cancelCircleGesture = () => {
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
 }
 
-// Commite un cercle dans la forme active : append du pointList et des
-// tris de circleGeometry (indices decales du nombre de points deja
-// presents) + entry d'historique replaceShape (before/after clone du
-// shape actif — meme pattern que deleteSelectedPoint). `offsetAngle`
-// (defaut 0) est transmis tel quel a circleGeometry ; le caller
-// (commitCircleGesture) le derive de la position du curseur dans le
-// repere screen pour que le sommet 0 du polygone pointe vers la
-// souris sur le canvas.
+// Commite un cercle : append des points/tris de circleGeometry (indices
+// decales de base) + entry replaceShape. offsetAngle oriente le sommet 0.
 export const createCircle = (center, radius, segments, offsetAngle = 0) => {
     const shapeIdx = state.activeShapeIndex
     const shape = activeShape()
@@ -1671,13 +1421,11 @@ export const toggleShapesPanel = () => {
     else openShapesPanel()
 }
 
-// Arme l'outil pour une forme du panneau : ferme le panneau et attend
-// le geste clic + glisser. Reste arme jusqu'a la creation (desarme
-// automatique) ou Echap (annulation).
+// Arme l'outil forme : ferme le panneau, attend le geste clic + glisser.
+// Reste arme jusqu'a la creation (desarme auto) ou Echap.
 export const armShapeTool = (kind) => {
     if (!SHAPE_DEFS[kind]) return
-    // Exclusion mutuelle avec les modes cercle / étoile / anneau (un
-    // seul geste de creation actif a la fois).
+    // Un seul geste de creation actif a la fois : sort des modes cercle/etoile/anneau.
     if (state.circleMode) exitCircleMode()
     if (state.starMode) exitStarMode()
     if (state.annulusMode) exitAnnulusMode()
@@ -1719,10 +1467,8 @@ export const beginShapeGesture = (e) => {
     state.shapeCurrentModel = { x: anchor.x, y: anchor.y }
     state.shapeRadiusModel = 0
     state.shapeOffsetAngle = 0
-    // Meme sync que beginCircleGesture : le curseur est repeint par
-    // renderTransient au drawBoard differe, il faut donc pointer
-    // lastMousePos sur la position du 1er clic (pointeur visible meme
-    // sans mouvement, cf. cahier des charges).
+    // Meme sync que beginCircleGesture : lastMousePos pointe le 1er clic pour
+    // que renderTransient repeigne le curseur (visible meme sans mouvement).
     state.lastMousePos = mouseScreen
     requestDraw()
 }
@@ -1736,12 +1482,9 @@ const updateShapeGesture = (mouseScreen) => {
         current.x - state.shapeAnchorModel.x,
         current.y - state.shapeAnchorModel.y,
     )
-    // Orientation par souris des polygones reguliers (tri / penta /
-    // hexa), meme convention que le cercle : angle evalue en coords
-    // MODEL (le Y-flip de modelToScreen n'est compte qu'une fois) pour
-    // que le sommet 0 du polygone pointe vers la souris. rect / carre
-    // restent axis-aligned (taille seule) — leur angle n'est pas
-    // reglable, la preview rect est inchangee.
+    // Orientation souris des polygones (tri/penta/hexa) : angle en coords
+    // MODEL (Y-flip compte une fois) pour que le sommet 0 pointe vers la souris.
+    // rect/carre restent axis-aligned.
     if (state.shapeKind !== 'rect' && state.shapeKind !== 'square') {
         state.shapeOffsetAngle = Math.atan2(
             current.y - state.shapeAnchorModel.y,
@@ -1801,14 +1544,9 @@ export const commitShapeGesture = (e) => {
     }
 }
 
-// Commite une forme dans la forme active : append du pointList et des
-// tris de la geometrie du kind (indices decales du nombre de points
-// existants) + entry d'historique replaceShape (meme pattern que
-// createCircle / deleteSelectedPoint), puis desarme automatiquement
-// (un geste = une forme, comme le cercle). `offsetAngle` (defaut 0)
-// est transmis a circleGeometry pour les polygones reguliers : le
-// sommet 0 pointe vers la souris (orientation du 2e temps du geste,
-// cf. updateShapeGesture).
+// Append la geometrie du kind au shape actif + patch replaceShape (meme
+// pattern que createCircle), puis desarme (un geste = une forme).
+// offsetAngle (defaut 0) oriente le sommet 0 des polygones vers la souris.
 export const createShape = (kind, anchor, current, radius, offsetAngle = 0) => {
     const shapeIdx = state.activeShapeIndex
     const shape = activeShape()
@@ -1819,18 +1557,11 @@ export const createShape = (kind, anchor, current, radius, offsetAngle = 0) => {
     } else if (kind === 'star') {
         geometry = starGeometry(anchor, radius, SHAPE_STAR_POINTS, SHAPE_STAR_INNER_RATIO)
     } else if (kind === 'tri') {
-        // Evolution « la forme triangle doit être composée d'un seul
-        // triangle au lieu de trois » : le triangle est genere en 3
-        // sommets + UN SEUL triangle, sans le point central ni
-        // l'eventail que produirait circleGeometry(n=3).
+        // Triangle = 3 sommets + UN SEUL triangle (pas l'eventail de circleGeometry).
         geometry = triangleGeometry(anchor, radius, offsetAngle)
     } else if (kind === 'annulus') {
-        // Branche DEFENSIVE : le panneau route l'anneau vers
-        // enterAnnulusMode (mode 3 clics), jamais vers armShapeTool —
-        // mais SHAPE_DEFS.annulus existe, donc un appel direct (tests,
-        // console) doit produire un anneau coherent (trou au ratio par
-        // defaut, clamp interne a annulusGeometry) et pas un 24-gone
-        // silencieux via la branche circleGeometry ci-dessous.
+        // Branche defensive : SHAPE_DEFS.annulus existe donc un appel direct
+        // (tests/console) produit un anneau coherent, pas un 24-gone.
         geometry = annulusGeometry(anchor, radius, ANNULUS_INNER_RATIO_DEFAULT * radius, state.circleSegments, offsetAngle)
     } else {
         const n = { penta: 5, hexa: 6 }[kind]
@@ -1865,9 +1596,7 @@ export const createShape = (kind, anchor, current, radius, offsetAngle = 0) => {
     persistState()
 }
 
-// Cablage du panneau #shapes : bouton (ouvrir/fermer/desarmer) +
-// boutons de formes (armer) + fermeture au clic exterieur (meme
-// pattern que wireTriangleColorPanel).
+// Cable le panneau #shapes : bouton, boutons formes, fermeture clic exterieur.
 export const wireShapesPanel = () => {
     const btn = document.querySelector('#shapes')
     const panel = document.querySelector('#shapesPanel')
@@ -1891,28 +1620,18 @@ export const wireShapesPanel = () => {
     panel.querySelectorAll('button[data-shape]').forEach((shapeBtn) => {
         shapeBtn.addEventListener('click', (e) => {
             if (e.button !== 0) return
-            // Le cercle vit dans le panneau depuis le deplacement du
-            // bouton : choisir « Cercle » entre dans le mode cercle
-            // (raccourci C equivalent) au lieu d'armer un shapeKind.
-            // enterCircleMode ferme le panneau lui-meme.
+            // « Cercle » = mode cercle (raccourci C) ; enterCircleMode ferme le panneau.
             if (shapeBtn.dataset.shape === 'circle') {
                 enterCircleMode()
                 return
             }
-            // L'etoile vit aussi dans le panneau : le bouton entre dans
-            // le mode 3 clics (meme logique que le cercle + profondeur
-            // des branches au 3e clic, cf. cahier des charges des
-            // evolutions) au lieu d'armer l'outil clic + glisser.
-            // enterStarMode ferme le panneau lui-meme.
+            // « Etoile » = mode 3 clics (profondeur des branches au 3e clic).
             if (shapeBtn.dataset.shape === 'star') {
                 enterStarMode()
                 return
             }
-            // L'anneau (cercle perçé d'un trou) vit aussi dans le
-            // panneau : le bouton entre dans le mode 3 clics (meme
-            // logique que l'etoile : 1er = centre, 2e = verrouille
-            // rayon externe + angle, mouvement = taille du trou,
-            // 3e = valider). enterAnnulusMode ferme le panneau lui-meme.
+            // « Anneau » = mode 3 clics : 1er = centre, 2e = rayon + angle,
+            // mouvement = taille du trou, 3e = valider.
             if (shapeBtn.dataset.shape === 'annulus') {
                 enterAnnulusMode()
                 return
@@ -1932,10 +1651,8 @@ export const wireShapesPanel = () => {
 
 // ===== Mouseup (selection par click sur point) =====
 
-// findNearestTriangle/Line renvoient maintenant des pointIndices
-// ([t.p1, t.p2, t.p3]) et pas des refs. collectUnderlyingPoints prend
-// des coords en entree et renvoie des indices ; le pipeline reste logique
-// et juste change le type de sortie.
+// findNearest* renvoie des pointIndices ; collectUnderlyingPoints prend
+// des coords et renvoie des indices (un seul aller-retour via pointList).
 export const processMouseUpSelection = (e) => {
     if (!state.board) return
     const mouseScreen = {
@@ -1946,13 +1663,9 @@ export const processMouseUpSelection = (e) => {
     const targetModel = state.activeGrid ? snapToGrid(rawTargetModel) : rawTargetModel
     const np = findNearestPoint(targetModel)
     const pointHit = np && np.distance <= pointHitRadiusModel() ? np : undefined
-    // NB : le spread {...e} ne copie PAS les getters du prototype MouseEvent
-    // (shiftKey / ctrlKey / metaKey sont des accesseurs, pas des propriétés
-    // propres) — sans re-posé explicite, e.shiftKey serait toujours
-    // undefined ici et le toggle Shift documenté (DESIGN.md §3.6) ne
-    // fonctionnerait jamais (la branche « replace » écraserait la
-    // sélection). ctrlKey/metaKey sont déjà forcés à false volontairement
-    // (le geste gauche neutralise Ctrl/Cmd, cf. §3.6).
+    // NB : le spread {...e} ne copie pas les getters du MouseEvent (shiftKey
+    // etc.) — re-pose explicite obligatoire pour que le toggle Shift marche.
+    // ctrlKey/metaKey forces a false : le geste gauche neutralise Ctrl/Cmd.
     const leftSelectionEvent = { ...e, ctrlKey: false, metaKey: false, shiftKey: e.shiftKey }
 
     if (state.selectionMode === 'segment') {
@@ -1990,9 +1703,7 @@ export const processMouseUpSelection = (e) => {
     }
 }
 
-// prend un array de coords (sortie brute de findNearest*)
-// et renvoit les indices correspondants dans pointList. Pas de
-// doublonnage par I3.
+// coords -> indices pointList correspondants (I3 : pas de doublon).
 const collectUnderlyingPoints = (baseCoords) => {
     const result = []
     if (!Array.isArray(baseCoords)) return result
@@ -2007,9 +1718,7 @@ const collectUnderlyingPoints = (baseCoords) => {
     return result
 }
 
-// grabPoints est un array d'indices. On match les tris par
-// equity d'indices sur les 3 slots (plus fiable que adjacentPoints
-// par coord, et plus rapide O(N) au lieu de O(N*3)).
+// Match des tris par egalite d'indices sur les 3 slots (O(N)).
 const applyGrabTriangleSync = (grabIndices, e) => {
     const tris = activeShape() && Array.isArray(activeShape().tris) ? activeShape().tris : []
     const matching = []
@@ -2030,11 +1739,7 @@ const applyGrabTriangleSync = (grabIndices, e) => {
             state.selectedTriangles = state.selectedTriangles.filter(i => !matching.includes(i))
         } else {
             matching.forEach(i => {
-                // Cohérence selectedTriangles ↔ selectedPoints : on ne push
-                // i que si ses 3 indices sont dans selectedPoints (les modes
-                // vertex/segment/triangle basculent la cohérence en
-                // applySelectionModifiers ; ici on reapplique la garde pour
-                // eviter selectedTriangles indep des sommets engages).
+                // Garde de coherence : ne push i que si ses 3 indices sont dans selectedPoints.
                 const t = tris[i]
                 const inSel = t && t.p1 !== undefined && t.p2 !== undefined && t.p3 !== undefined
                     && [t.p1, t.p2, t.p3].every(idx => state.selectedPoints.includes(idx))
@@ -2051,11 +1756,8 @@ const applyGrabTriangleSync = (grabIndices, e) => {
     state.selectedTriangles.sort((a, b) => a - b)
 }
 
-// Q1c : indicesAtPos est un array d'indices. La notion de
-// 'meme point' est une egalite stricte d'indice (plus de tolerance
-// coord necessaire grace a l'invariant I3). Si l'un des indices est
-// deja dans selectedPoints, on retire TOUT le cluster ; sinon on
-// ajoute chaque indice manquant.
+// Q1c : 'meme point' = egalite stricte d'indice (I3). Si un indice du
+// cluster est deja selectionne, on retire TOUT le cluster ; sinon ajout.
 const toggleSelectionPoints = (indicesAtPos) => {
     const set = new Set(state.selectedPoints)
     const overlap = indicesAtPos.some(idx => set.has(idx))
@@ -2069,9 +1771,7 @@ const toggleSelectionPoints = (indicesAtPos) => {
     }
 }
 
-// Rationale : voir DESIGN.md §3.6
-// Q1c : pointsAtPos est un array d'indices. ctrlToggles
-// conservé pour le toggle additif cluster (mode vertex).
+// Q1c : pointsAtPos = array d'indices ; ctrlToggles = toggle additif cluster (vertex).
 const applySelectionModifiers = (indicesAtPos, e, ctrlToggles = false) => {
     if (e.shiftKey) {
         toggleSelectionPoints(indicesAtPos)
@@ -2109,11 +1809,8 @@ const applyTriangleIndexModifier = (triangleIndex, e) => {
     updateColorButtonState()
 }
 
-// Q1c + invariant I2 : helper qui compacte pointList apres
-// une mutation des tris. Retire les entrees pointList non referencees
-// par aucun slot, puis re-indexe les slots et renvoie une map
-// oldIdx -> newIdx pour les callers qui ajustent selectedPoints
-// (qui est un array d'indices, Q1c).
+// Compacte pointList apres mutation des tris (I2) : retire les points non
+// references, re-indexe les slots, renvoie oldIdx -> newIdx.
 const compactPointList = (shape) => {
     const oldPointList = Array.isArray(shape.pointList) ? shape.pointList : []
     const tris = Array.isArray(shape.tris) ? shape.tris : []
@@ -2138,11 +1835,8 @@ const compactPointList = (shape) => {
         p1: Number.isInteger(t.p1) ? idxMap.get(t.p1) : undefined,
         p2: Number.isInteger(t.p2) ? idxMap.get(t.p2) : undefined,
         p3: Number.isInteger(t.p3) ? idxMap.get(t.p3) : undefined,
-        // Le fill est une propriete du TRIANGLE, pas du sommet : il doit
-        // survivre au re-indexage. Regression fixee : sa perte effaçait la
-        // couleur de TOUS les triangles survivants a chaque suppression
-        // (sommet, segment ou triangle). Même convention que cloneShape
-        // (fill: string seulement).
+        // Le fill appartient au TRIANGLE : il doit survivre au re-indexage
+        // (regression fixee : sa perte effaçait la couleur des tris survivants).
         fill: typeof t.fill === 'string' ? t.fill : undefined,
     }))
     return idxMap
@@ -2150,16 +1844,8 @@ const compactPointList = (shape) => {
 
 // ===== Suppression d'un point =====
 
-// (modifyShapeModel-spec §4.1, alterne invariants I1-I8) :
-// suppression d'un sommet = retirer ses refs des slots puis compacter
-// (invariant I2). Les tris avec < 2 sommets survivants disparaissent
-// (regle §4.1 'segment oppose survit').
-//
-// (delta) on capture l'état avant+après du shape actif et on
-// émet un `replaceShapePatch` (DESIGN §8). C'est PLUS ÉCONOME qu'un
-// cloneScene plein dès que la scène contient plusieurs formes
-// (pour une scène mono-shape, le seuil shouldUseSnapshot bascule en
-// snapshot, parité avec l'ancien comportement).
+// §4.1 : retirer les refs des slots puis compacter (I2) ; les tris avec
+// < 2 sommets survivants disparaissent. Emet un replaceShapePatch (DESIGN §8).
 export const deleteSelectedPoint = () => {
     const shape = activeShape()
     let targets = []
@@ -2170,16 +1856,14 @@ export const deleteSelectedPoint = () => {
     }
     if (targets.length === 0) return
 
-    // Capture pré-mutation du shape actif (pour la branche BEFORE du patch).
+    // Capture pre-mutation (branche BEFORE du patch).
     const shapeIdx = state.activeShapeIndex
     const clonedShapeBefore = cloneShape(shape)
     const pointListBefore = clonedShapeBefore.pointList
     const trisBefore = clonedShapeBefore.tris
 
     const targetSet = new Set(targets)
-    // Retrait par slot : un slot pX egal a un indice cible devient
-    // undefined ; les tris avec < 2 survivants sont filtres. p3
-    // (partial eventuel) reste undefined si manquant.
+    // Un slot egal a une cible devient undefined ; tris < 2 survivants filtres.
     const trisBeforeFilter = shape.tris
     const filteredTris = []
     for (let i = 0; i < trisBeforeFilter.length; i++) {
@@ -2193,8 +1877,7 @@ export const deleteSelectedPoint = () => {
             p1: surviving[0],
             p2: surviving[1],
             p3: surviving[2] !== undefined ? surviving[2] : undefined,
-            // Le fill du tri survive (regression : sa perte effaçait la
-            // couleur des triangles survivants apres suppression).
+            // Le fill du tri survive (regression fixee).
             fill: typeof t.fill === 'string' ? t.fill : undefined,
         })
     }
@@ -2209,9 +1892,7 @@ export const deleteSelectedPoint = () => {
     state.nearestLine = undefined
     state.activeConstructionTriangle = undefined
 
-    // (delta) capture post-mutation du shape actif et saveState
-    // avec patch replaceShape (snapshot fallback automatique si
-    // mono-shape, voir shouldUseSnapshot).
+    // Capture post-mutation + saveState avec patch replaceShape.
     const clonedShapeAfter = cloneShape(shape)
     saveState({
         patches: [replaceShapePatch(
@@ -2233,11 +1914,8 @@ export const deleteSelectedPoint = () => {
 
 // ===== Suppression d'un segment (mode 'segment') =====
 
-// §4.1 : suppression des triangles dont 2+ slots matchent les
-// endpoints du segment. Les triangles avec 0-1 match survivent (leurs
-// autres slots conservent leur ref). Compact pointList invariant I2.
-//
-// (delta) replaceShapePatch pré + post, voir deleteSelectedPoint.
+// §4.1 : supprime les tris dont 2+ slots matchent les endpoints du segment
+// (0-1 match = survie). Compacte pointList (I2).
 export const deleteSelectedSegment = () => {
     const shape = activeShape()
     let targets = []
@@ -2294,12 +1972,8 @@ export const deleteSelectedSegment = () => {
 
 // ===== Suppression d'un triangle (mode 'triangle') =====
 
-// §4.1 : suppression stricte des triangles dont les 3 slots
-// matchent le triangle selectionne (matchCount === 3). Distinct du
-// mode segment : on ne supprime pas les triangles partageant un sommet.
-// Compact pointList I2.
-//
-// (delta) replaceShapePatch pré + post, voir deleteSelectedPoint.
+// §4.1 : supprime uniquement les tris dont les 3 slots matchent
+// (matchCount === 3), pas ceux partageant un seul sommet.
 export const deleteSelectedTriangle = () => {
     const shape = activeShape()
     let targets = []
@@ -2357,11 +2031,7 @@ export const deleteSelectedTriangle = () => {
 
 export const grabbed = () => state.currentAction === ACTION_GRABBING
 
-// Q1c : findNearestTriangle/Line renvoient des pointIndices
-// (arrays d'indices) ; collectUnderlyingPoints prend des coords et
-// renvoie des indices ; applySelectionModifiers attend des indices.
-// Pas de doublance coords <=> indices entre les helpers : un seul
-// aller-retour via pointList.
+// Pipeline indices : findNearest* -> collectUnderlyingPoints -> applySelectionModifiers.
 const selectAtRightClick = (e, targetModel, additive = true) => {
     let indices = []
     let triangleIndex = -1
@@ -2428,21 +2098,12 @@ export const processRightClickSelection = (e) => {
 // devient {shapeIndex, pointIndex, triangleIndex, slotId, startX, startY}
 // (Q2c supprime selectedPointRef). buildGrabbedGroupFromSelection
 // produit cette nouvelle structure (drag d'une selection engageante).
-// §3.6.1 sparse-replace, mode-aware (Q1c) — la detection est faite
-// sur la topologie canonique (pointList + tris) et retourne un
-// predicat O(N) qui permet la parite click/drag WYSIWYG sur les 3
-// modes (vertex / segment / triangle).
-// - vertex : 0 entree OU tous les indices selectedPoints au meme
-//   coord (cluster, tol §3.2 0.01).
-// - segment : 0 entree OU <= 1 edge couvert par la selection
-//   (edges = paires consecutives (p1,p2)/(p2,p3)/(p3,p1) d'un
-//   triangle avec ses 2 endpoints dans selectedPoints et distincts).
-// - triangle : 0 entree OU <= 1 triangle dont les 3 slots sont
-//   dans selectedPoints.
-// Anti-flicker gere separement plus bas (le check
-// !sparseCursorGrabIndices.every(idx => state.selectedPoints.includes(idx))).
-// Returns early des que covered > 1 (memes bornes O(N) que l'ancien
-// isSingleCluster, pas de degradation mesurable).
+// §3.6.1 sparse-replace mode-aware : predicat O(N) sur la topologie
+// (pointList + tris) pour la parite click/drag WYSIWYG :
+// - vertex : tous les indices selectionnes au meme coord (cluster, tol 0.01)
+// - segment : <= 1 edge couverte (paire consecutive de slots, endpoints distincts)
+// - triangle : <= 1 tri complet (3 slots dans selectedPoints)
+// Early return des que covered > 1 ; anti-flicker gere plus bas.
 const isSelectionSparse = () => {
     const sp = state.selectedPoints
     if (!Array.isArray(sp) || sp.length === 0) return true
@@ -2457,14 +2118,8 @@ const isSelectionSparse = () => {
         )
     }
     if (mode === 'segment') {
-        // Une edge partagee entre plusieurs triangles (ex. fan autour
-        // d'un axe) reste un seul segment logique : dedup par paire
-        // non ordonnee (min-max) sinon le compteur gonfle a N pour
-        // une edge presente dans N tris et le predicat devient faux
-        // positif en 'not sparse' alors que l'utilisateur n'a bien
-        // qu'1 entite engagee. Regression report : clic sur
-        // l'edge AB dans T1={p1:0,p2:1,p3:2} / T2={p1:0,p2:1,p3:3}
-        // => selectedPoints=[0,1], cover=2 (avant) au lieu de 1.
+        // Une edge partagee entre plusieurs tris reste UN seul segment logique :
+        // dedup par paire non ordonnee (min-max), sinon le compteur gonfle a N.
         const set = new Set(sp)
         const coveredEdges = new Set()
         for (const t of tris) {
@@ -2505,15 +2160,10 @@ export const beginGrabbing = (e) => {
     state.grabbedGroup = []
     state.grabHistorySaved = false
     state.hasDragged = false
-    // Filet défensif : tout patch deferred non committé d'un grab
-    // précédent est effacé. Sans cela, un grab interrompu avant
-    // mouseup (très rare, ex. via Ctrl+Z mid-grab) laisserait un
-    // _pendingGrabPatch orphelin qui pourrait être commité à tort
-    // par un grab futur. Reset pour partir propre.
+    // Filet defensif : efface tout _pendingGrabPatch orphelin d'un grab
+    // interrompu (sinon il serait committe a tort par un grab futur).
     state._pendingGrabPatch = null
-    // Candidat de fusion par déplacement (§7.11) : effacé en tête de
-    // grab pour qu'un candidat périmé du drag précédent ne s'affiche
-    // pas sur le premier tick du nouveau drag (avant le recalcul).
+    // Efface le candidat de fusion périmé du drag precedent (§7.11).
     state.mergeDropCandidate = undefined
 
     if (isAltGrDown) {
@@ -2555,11 +2205,8 @@ export const beginGrabbing = (e) => {
         return false
     }
 
-    // §3.6.1 sparse-replace WYSIWYG, mode-aware : predicate
-    // isSelectionSparse() juste au-dessus couvre les 3 modes
-    // (vertex cluster / segment edge / triangle complet) pour la
-    // parite click/drag. Maintient l'invariant I4 (selectedPoints
-    // ⊆ [0, pointList.length)) : la detection n'insere aucun index.
+    // §3.6.1 sparse-replace WYSIWYG : parite click/drag, invariant I4
+    // respecte (la detection n'insere aucun index).
     let sparseCursorGrabIndices = []
     const pointList = activeShape().pointList || []
     if (isSelectionSparse()) {
@@ -2598,10 +2245,8 @@ export const beginGrabbing = (e) => {
         }
     }
 
-    // A right drag moves the committed selection as a group. The sparse
-    // case (1 cluster + cursor on a different entity) has already been
-    // replaced above §3.6.1 ; multi-element selections are preserved
-    // (filet défensif §3.6.1).
+    // Drag droit : deplace la selection commitee en groupe (le cas sparse
+    // a deja ete remplace ci-dessus §3.6.1).
     if (state.selectedPoints.length > 0) {
         state.currentAction = ACTION_GRABBING
         state.grabStartMouse = mouseScreen
@@ -2617,8 +2262,7 @@ export const beginGrabbing = (e) => {
         return true
     }
 
-    // preserveExisting : Shift remains available for the historical
-    // right-click target-selection behavior; Ctrl/Cmd was handled above.
+    // Shift conserve le comportement historique de selection cible (Ctrl traite plus haut).
     const hasModifier = e.shiftKey
     const rawTargetModel = screenToModel(mouseScreen)
     const targetModel = state.activeGrid ? snapToGrid(rawTargetModel) : rawTargetModel
@@ -2674,20 +2318,11 @@ export const beginGrabbing = (e) => {
 }
 
 // ===== Fusion par déplacement (2e fonction de #mergePoints) =====
-// Rationale : voir DESIGN.md §7.11
-// Pendant un drag armé (bouton Fusionner actif avec 1 point
-// sélectionné), on calcule à chaque tick le candidat cible : le point
-// le plus proche du point déplacé, s'il est dans la limite prédéfinie
-// (MERGE_DROP_RADIUS_PX en pixels écran, converti via le zoom comme
-// les tolérances de hit-testing §1.4). Le résultat est stocké dans
-// state.mergeDropCandidate (index pointList, undefined = aucun) :
-// renderTransient (draw.js) l'affiche en anneau orange et
-// merge.js.attemptDropMerge le consomme au relâchement. Même
-// conversion px-écran → unités modèle que les tolérances de
-// hit-testing (modelToleranceForPixels, §1.4). Le rayon vient de
-// state.mergeDropRadius (réglable à la molette sur le bouton Fusionner,
-// cf. §7.11) : lu à chaque tick, un changement de rayon pendant le
-// drag est pris en compte immédiatement.
+// §7.11 : pendant un drag armé (1 point sélectionné), calcule a chaque
+// tick le candidat cible (point le plus proche dans le rayon mergeDropRadius,
+// px ecran via modelToleranceForPixels). Stocke dans state.mergeDropCandidate
+// (indice pointList, undefined = aucun) : renderTransient l'affiche en
+// anneau orange, merge.js.attemptDropMerge le consomme au relachement.
 const mergeDropRadiusModel = () => modelToleranceForPixels(state.mergeDropRadius)
 const updateMergeDropCandidate = () => {
     state.mergeDropCandidate = undefined
@@ -2709,11 +2344,8 @@ const updateMergeDropCandidate = () => {
     state.mergeDropCandidate = best ? best.i : undefined
 }
 
-// Q2c : nouvelle structure d'entree — {shapeIndex, pointIndex,
-// triangleIndex, slotId, startX, startY} plus de selectedPointRef (la
-// coherence avec state.selectedPoints est assuree par construction :
-// une mutation de pointList[idx].x propage directement aux coords
-// observees par drawSelectedPoints/Q7.6).
+// Structure d'entree : {shapeIndex, pointIndex, triangleIndex, slotId, startX, startY}.
+// Coherence avec selectedPoints par construction (mutation directe de pointList[idx]).
 const buildGrabbedGroupFromSelection = () => {
     const group = []
     const shape = activeShape()
@@ -2757,10 +2389,8 @@ export const endGrabbing = (e) => {
         processRightClickSelection(e)
     }
 
-    // (delta) commit le patch deferred capturé dans
-    // resolveMouseMoveOnBoard à la première tick de mouvement
-    // significatif. L'AFTER est résolu ici depuis le live state
-    // (les points mutés sont à leur position finale).
+    // (delta) commit le patch deferred capture a la 1re tick de mouvement
+    // significatif ; l'AFTER est resolu ici depuis le live state.
     if (state._pendingGrabPatch) {
         saveState({ patches: [state._pendingGrabPatch] })
         state._pendingGrabPatch = null
@@ -2775,9 +2405,8 @@ export const endGrabbing = (e) => {
     state.moveAllActive = false
     persistState()
     // Retourne true si le geste a réellement déplacé la géométrie (vs
-    // simple clic droit de sélection) : main.js s'en sert pour tenter la
-    // fusion par déplacement (2e fonction de #mergePoints, §7.11) — qui
-    // ne doit jamais se déclencher sur un clic droit simple.
+    // clic droit de sélection) : main.js s'en sert pour la fusion par
+    // déplacement (§7.11), jamais sur un clic droit simple.
     return movedScene
 }
 
@@ -2787,12 +2416,8 @@ export const resolveMouseMoveOnBoard = (e) => {
         y: e.y - state.board.getBoundingClientRect().y,
     }
 
-    // Mode cercle : le glisser regle le rayon du cercle en cours de
-    // tracé (geste de construction, pas un lasso ni un grab).
-    // updateMouseHover repaint (la preview est dans renderTransient)
-    // et met a jour le HUD coordonnees. La garde !previewMode laisse
-    // la molette zoomer normalement si un P a été pressé en mode
-    // cercle.
+    // Mode cercle : le glisser regle le rayon (preview dans
+    // renderTransient). La garde !previewMode laisse la molette zoomer.
     if (state.circleMode && !state.previewMode) {
         updateCircleGesture(mouseScreen)
         state.lastMousePos = mouseScreen
@@ -2800,30 +2425,23 @@ export const resolveMouseMoveOnBoard = (e) => {
         return
     }
     // Mode étoile (3 clics) : le glisser regle rayon + angle (phase 1)
-    // puis la profondeur des branches (phase 2, apres le 2e clic).
-    // Meme pattern que le cercle : preview via renderTransient + HUD
-    // coordonnees. La garde !previewMode laisse la molette zoomer si un
-    // P a été pressé en mode étoile.
+    // puis la profondeur des branches (phase 2). Même pattern que le cercle.
     if (state.starMode && !state.previewMode) {
         updateStarGesture(mouseScreen)
         state.lastMousePos = mouseScreen
         updateMouseHover(mouseScreen)
         return
     }
-    // Mode anneau (3 clics) : le glisser regle le rayon externe + angle
-    // (phase 1) puis la taille du trou (phase 2, apres le 2e clic).
-    // Meme pattern que le cercle / l'etoile : preview via
-    // renderTransient + HUD coordonnees. La garde !previewMode laisse
-    // la molette zoomer si un P a été pressé en mode anneau.
+    // Mode anneau (3 clics) : le glisser regle rayon externe + angle
+    // (phase 1) puis la taille du trou (phase 2). Même pattern que le cercle.
     if (state.annulusMode && !state.previewMode) {
         updateAnnulusGesture(mouseScreen)
         state.lastMousePos = mouseScreen
         updateMouseHover(mouseScreen)
         return
     }
-    // Forme predéfinie armee : le glisser regle la taille (coin oppose
-    // pour rect/carre, rayon pour les polygones/etoile). Meme pattern
-    // que le cercle : preview via renderTransient + HUD coordonnees.
+    // Forme armee : le glisser regle la taille (coin oppose pour
+    // rect/carre, rayon pour les polygones). Même pattern que le cercle.
     if (state.shapeKind !== undefined && !state.previewMode) {
         updateShapeGesture(mouseScreen)
         state.lastMousePos = mouseScreen
@@ -2846,10 +2464,8 @@ export const resolveMouseMoveOnBoard = (e) => {
             const maxYM = Math.max(m1.y, m2.y)
             const shape = activeShape()
             const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
-            // Q1c : la selection du lasso est un array d'indices
-            // dans le pointList canonique. On garde invariant I3 (pas de
-            // doublon intra-coord) ; l'unique coord-matching est
-            // inBox.indexOf(idx) sans passer par un cluster.
+            // Q1c : selection lasso = array d'indices dans le pointList
+            // canonique (I3 respecte : pas de doublon intra-coord).
             const inBoxIndices = []
             for (let i = 0; i < pointList.length; i++) {
                 const p = pointList[i]
@@ -2857,14 +2473,9 @@ export const resolveMouseMoveOnBoard = (e) => {
                 if (p.x >= minXM && p.x <= maxXM && p.y >= minYM && p.y <= maxYM) inBoxIndices.push(i)
             }
             state.selectedPoints = inBoxIndices
-            // (feature/performance) signale que la scene stable a change
-            // (state.selectedPoints mute a la volee pendant le drag du
-            // lasso). Sans le flag `sceneDirty` leve ici, renderSceneToOffscreen
-            // garderait le cache offscreen avec l'ancienne selection et les
-            // points engages ne seraient visibles qu'apres un grab/rotate (qui
-            // appelle requestDraw). Le rAF interne a requestDraw coalescera
-            // les 60+ ticks de drag en au plus 1 paint / frame. Meme pattern
-            // que la branche grab au-dessus.
+            // (perf) sceneDirty leve ici pour invalider le cache offscreen
+            // (selection mute pendant le drag du lasso) ; le rAF interne a
+            // requestDraw coalesce les ticks de drag en 1 paint / frame.
             requestDraw()
         }
     } else if (grabbed()) {
@@ -2882,10 +2493,8 @@ export const resolveMouseMoveOnBoard = (e) => {
                 const targetPos = getGrabTargetPosition(item, dx, dy)
                 return Math.abs(targetPos.x - item.startX) > 0.01 || Math.abs(targetPos.y - item.startY) > 0.01
             })) {
-                // (delta) movePointsPatch *deferred* : on capture
-                // le BEFORE (startX/startY de chaque item du
-                // grabbedGroup) à ce tick, l'AFTER est résolu en
-                // lisant le live state à la fin du geste (mouseup).
+                // (delta) movePointsPatch *deferred* : BEFORE capture ici
+                // (startX/startY de chaque item), AFTER resolu au mouseup.
                 // Cf. §8 DESIGN.md (deferred fill).
                 state._pendingGrabPatch = movePointsPatch(
                     state.grabbedGroup.map(item => ({
@@ -2899,19 +2508,13 @@ export const resolveMouseMoveOnBoard = (e) => {
             state.grabbedGroup.forEach(item => {
                 applyGrabToPoint(item, getGrabTargetPosition(item, dx, dy))
             })
-            // (feature/performance) signale que la scene stable a
-            // change (positions des points drags mutees a la volee
-            // dans pointList). Sans ce flag, updateMouseHover pourrait
-            // early-return sur une signature inchangee et laisser la
-            // nouvelle position invisible. Le rAF interne a requestDraw
-            // coalescera les 60+ ticks de drag en au plus 1 paint / frame.
+            // (perf) sceneDirty leve ici pour invalider le cache offscreen
+            // (positions des points drags mutees a la volee) ; le rAF interne
+            // a requestDraw coalesce les ticks de drag en 1 paint / frame.
             requestDraw()
-            // (fusion par déplacement, §7.11) candidat cible du drag
-            // armé : recalculé à chaque tick pour refléter la position
-            // courante du point déplacé (l'anneau orange le suit en
-            // direct). Le dernier tick du geste — le resolveMouseMoveOnBoard
-            // de endGrabbing — laisse le candidat à la position finale,
-            // celle que attemptDropMerge (merge.js) lira au relâchement.
+            // (§7.11) candidat cible du drag armé : recalculé a chaque tick
+            // pour suivre le point déplacé (le dernier tick de endGrabbing
+            // laisse le candidat a la position finale, lue par attemptDropMerge).
             updateMergeDropCandidate()
         }
     }
@@ -2933,11 +2536,8 @@ const getGrabTargetPosition = (item, dx, dy) => {
     return (state.activeGrid && !state.moveAllActive) ? snapToGrid(rawPos) : rawPos
 }
 
-// Q2c : plus de selectedPointRef (Q2c). L'item porte un
-// pointIndex direct ; on mute pointList[item.pointIndex] en place.
-// Cette mutation couvre tous les slots partagant cet indice (les N
-// triangles qui referencent le meme sommet visuelle bougent en
-// O(1)).
+// Q2c : l'item porte un pointIndex direct ; on mute pointList[pointIndex]
+// en place (couvre tous les slots partageant cet indice en O(1)).
 const applyGrabToPoint = (item, targetPos) => {
     const shape = state.shapes[item.shapeIndex]
     if (!shape || !Array.isArray(shape.pointList)) return
@@ -2945,29 +2545,21 @@ const applyGrabToPoint = (item, targetPos) => {
     if (!pt) return
     pt.x = targetPos.x
     pt.y = targetPos.y
-    // Validation granulometre : si la mutation rend le slot indefini
-    // partiellement (item.slotId etait 'p3' mais l'utilisateur a drag
-    // un vertex partage avec un triangle en cours de construction),
-    // on ecrase tous les slots de la triple qui touchent cet idx -
-    // deja couvert par definition identique `pointList[idx].x`.
 }
 
 // ===== Rotation runtime =====
 
-// la rotation opere sur le pointList canonique (Q1a per-shape),
-// une seule mutation par sommet logique (au lieu de N mutations sur les
-// slots triangulaires).
+// La rotation opere sur le pointList canonique (Q1a) : une seule
+// mutation par sommet logique (au lieu de N mutations sur les slots).
 //
-// (delta) le patch movePoints sur tous les points de toutes les
-// formes est *deferred* : capture du BEFORE à la première tick, fill
-// du AFTER au commit à la fin du geste (debounce 400 ms). Gros patch
-// (~5 N points × 2 directions) mais reste ≪ full cloneScene qui
-// clonerait aussi les tris — gain typique marqué sur mesh multi-tris.
+// (delta) patch movePoints *deferred* sur tous les points : BEFORE a la
+// 1re tick, AFTER au commit (debounce 400 ms). Gros patch (~5 N points)
+// mais ≪ full cloneScene qui clonerait aussi les tris.
 export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
     if (!state.shapes || state.shapes.length === 0) return
     if (!state.isEachShapeRotating) {
-        // Capture BEFORE pour movePoints deferred : tous les points
-        // de toutes les formes, avant le premier tick de rotation.
+        // Capture BEFORE pour movePoints deferred (tous les points,
+        // avant le 1er tick de rotation).
         const beforeEntries = []
         state.shapes.forEach((shape, sidx) => {
             if (!Array.isArray(shape.pointList)) return
@@ -3014,15 +2606,11 @@ export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
     updateZoomDisplay()
 }
 
-// Q1c : state.selectedPoints est un array d'indices ; on
-// mute directement pointList[idx]. Une rotation d'un point partage
-// par N triangles produit N mises a jour identiques sur la meme
-// coord - l'effet visuel est identique, la complexite est O(N) en
-// selectedPoints au lieu de O(M*N) en tri*slots.
+// Q1c : selectedPoints = array d'indices ; on mute directement
+// pointList[idx] — O(N) au lieu de O(M*N) en tri*slots.
 //
-// (delta) movePoints deferred sur selectedPoints du shape actif.
-// Capture BEFORE à la première tick, commit au debounce du wheel
-// timer. Patch compact (O(N) sur N sélectionnés) ≪ full cloneScene.
+// (delta) movePoints deferred sur selectedPoints : BEFORE a la 1re tick,
+// commit au debounce du wheel timer (patch compact O(N) ≪ cloneScene).
 export const rotateSelectedPoints = (center, angle) => {
     if (state.selectedPoints.length < 2 || state.isSelectionDimmed) return
     if (!state.isWheelRotating) {
@@ -3043,10 +2631,8 @@ export const rotateSelectedPoints = (center, angle) => {
         if (state._pendingSelectedRotatePatch) {
             saveState({ patches: [state._pendingSelectedRotatePatch] })
             state._pendingSelectedRotatePatch = null
-            // Commentaire au COMMIT du geste (pas à chaque tick de
-            // molette : le timer debounce est réinitialisé par chaque
-            // tick, le message ne partirait jamais). Un seul message
-            // par geste, prospectif (pas de compte-rendu).
+            // Commentaire au COMMIT du geste (le debounce est reset par
+            // chaque tick, le message ne partirait jamais sinon).
             showActionComment(
                 `Molette pour continuer à pivoter — Ctrl+Z pour annuler`
             )
@@ -3081,15 +2667,10 @@ export const rotateSelectedPoints = (center, angle) => {
 
 // ===== Panneau flottant de coloration =====
 
-// Helper dedie au panneau de couleurs : bascule la classe
-// `.swatch-active` sur l'element N (data-index) du conteneur ; si
-// l'index est null / invalide, retire la classe partout
-// (utilise apres un clic sur Reset du panneau). Centralise la
-// sequence « retirer partout, ajouter sur un » qui etait
-// repetee en showTriangleColorPanel + buildColorSwatches +
-// wireTriangleColorPanel (input + reset). host : le
-// #triangleColorSwatches ; dataIndex : entier >= 0, ou null
-// pour desactiver tous les swatches.
+// Bascule la classe .swatch-active sur l'element data-index du
+// conteneur (dataIndex null = retire partout). Centralise la sequence
+// « retirer partout, ajouter sur un » de showTriangleColorPanel +
+// buildColorSwatches + wireTriangleColorPanel.
 const setActiveSwatch = (host, dataIndex) => {
     if (!host) return
     host.querySelectorAll('.swatch').forEach(s => s.classList.remove('swatch-active'))
@@ -3101,31 +2682,19 @@ const setActiveSwatch = (host, dataIndex) => {
 // ===== Palette persistee et editable + opacite unique (cf. DESIGN.md §7.3.1 / §7.3.2) =====
 //
 // La palette des triangles est une PREFERENCE utilisateur : initialisee
-// aux presets historiques (TRIANGLE_COLOR_PRESETS), restauree au boot
-// depuis COLOR_PALETTE_STORAGE_KEY et re-ecrite a chaque mutation.
-// Interactions :
-//   - Ajouter : le bouton #colorPaletteAdd enregistre la couleur
-//     courante du picker (#triangleColorInput) comme nouveau swatch.
-//   - Retirer : clic droit sur un swatch (garde : au moins 1 couleur).
-//   - Modifier : double-clic sur un swatch = mode edition — le picker
-//     prend sa couleur et met a jour le swatch EN DIRECT (WYSIWYG) ;
-//     Entree valide, Echap annule (retour a la couleur d'origine, le
-//     panneau reste ouvert).
-//   - Restaurer : le bouton #colorPaletteRestore revient aux 8
-//     presets d'origine.
+// aux presets historiques, restauree au boot depuis localStorage,
+// re-ecrite a chaque mutation. Ajouter (#colorPaletteAdd), retirer
+// (clic droit, garde >= 1 couleur), modifier (double-clic = edition en
+// direct, Entree valide / Echap annule), restaurer (#colorPaletteRestore).
 //
 // La palette ne stocke QUE des couleurs (bg hex). L'opacite de
-// peinture est UNIQUE et GLOBALE (state.colorAlpha, curseur
-// #colorAlpha) : le fill de chaque couleur est derive du couple
-// (bg, colorAlpha) par triangleFillFromBg et est applique a CHAQUE
-// peinture, quel que soit le swatch clique (cf. §7.3.2).
+// peinture est UNIQUE et GLOBALE (state.colorAlpha, curseur #colorAlpha) :
+// le fill de chaque couleur est derive de (bg, colorAlpha) par
+// triangleFillFromBg et applique a CHAQUE peinture (cf. §7.3.2).
 
-// Sync le curseur d'opacite du panneau (#colorAlpha) avec une valeur
-// d'alpha [0,1] : valeur du range (0..100) + libelle % a cote + etat
-// de session state.colorAlpha. N'ecrit PAS localStorage — seule la
-// manipulation MANUELLE du curseur persiste (cf. persistColorAlpha) :
-// les synchronisations d'affichage (clic swatch, edition, Echap,
-// Reset...) ne doivent pas ecraser la preference de l'utilisateur.
+// Sync le curseur #colorAlpha avec une valeur [0,1] (valeur du range +
+// libelle % + state.colorAlpha). N'ecrit PAS localStorage : seule la
+// manipulation MANUELLE du curseur persiste (cf. persistColorAlpha).
 const setColorAlphaSlider = (alpha) => {
     const a = Math.max(0, Math.min(1, alpha))
     state.colorAlpha = a
@@ -3136,20 +2705,16 @@ const setColorAlphaSlider = (alpha) => {
     if (label) label.textContent = pct + '%'
 }
 
-// Lit l'opacite de travail courante ([0,1]) : la valeur de session
-// state.colorAlpha, mise a jour par setColorAlphaSlider. Defense :
-// valeur absente / non-finite = alpha par defaut.
+// Lit l'opacite de travail courante [0,1] (valeur absente / non-finite
+// = defaut).
 const getColorAlphaSlider = () => {
     const a = state.colorAlpha
     return typeof a === 'number' && Number.isFinite(a) ? Math.max(0, Math.min(1, a)) : TRIANGLE_COLOR_DEFAULT_ALPHA
 }
 
-// Persiste l'opacite de travail (COLOR_ALPHA_STORAGE_KEY) comme
-// PREFERENCE utilisateur. Appele UNIQUEMENT sur un reglage manuel du
-// curseur (drag #colorAlpha) : c'est la garantie « l'opacite reste a
-// la derniere valeur fixee par l'utilisateur » — cliquer un swatch ou
-// annuler une edition affiche une autre opacite sans ecraser la
-// preference persistee.
+// Persiste l'opacite de travail comme PREFERENCE. Appele UNIQUEMENT sur
+// un reglage MANUEL du curseur : cliquer un swatch ou annuler une
+// edition affiche une autre opacite sans ecraser la preference.
 const persistColorAlpha = () => {
     try {
         localStorage.setItem(COLOR_ALPHA_STORAGE_KEY, JSON.stringify(getColorAlphaSlider()))
@@ -3157,40 +2722,32 @@ const persistColorAlpha = () => {
 }
 
 // Recalcule le fill de TOUTES les entrees de la palette a l'opacite
-// de travail courante (state.colorAlpha) : la palette ne stocke que
-// des couleurs (bg), le fill « pret a peindre » est derive du couple
-// (bg, colorAlpha). Appele a chaque changement d'opacite (drag du
-// curseur) et au boot — les swatches affichent ainsi l'apercu
-// WYSIWYG de la peinture.
+// de travail courante (la palette ne stocke que des bg ; le fill est
+// derive de (bg, colorAlpha)). Appele a chaque drag du curseur et au boot.
 const refreshPaletteFills = () => {
     const a = getColorAlphaSlider()
     state.colorPalette.forEach(p => { p.fill = triangleFillFromBg(p.bg, a) })
 }
 
-// Valide une entree persistee de la palette : soit un hex #rrggbb
-// (format courant et legacy), soit un objet { bg: hex } (format
-// intermediaire — les anciennes clefs { bg, alpha } sont acceptees,
-// l'alpha est simplement ignore a la conversion : l'opacite est
-// globale, pas par swatch).
+// Valide une entree persistee : hex #rrggbb (courant + legacy) ou
+// objet { bg: hex } (les anciennes clefs { bg, alpha } sont acceptees,
+// l'alpha ignore : l'opacite est globale, pas par swatch).
 const isValidPaletteEntry = (c) => {
     if (typeof c === 'string') return /^#[0-9a-f]{6}$/i.test(c)
     return !!c && typeof c === 'object' && typeof c.bg === 'string' &&
         /^#[0-9a-f]{6}$/i.test(c.bg)
 }
 
-// Convertit une entree persistee en { bg, fill } : le fill est
-// derive au chargement a l'opacite de travail courante (jamais
-// persiste — fonction pure du couple bg/colorAlpha).
+// Convertit une entree persistee en { bg, fill } : fill derive au
+// chargement a l'opacite de travail courante (jamais persiste).
 const toPaletteEntry = (c) => {
     const bg = typeof c === 'string' ? c : c.bg
     return { bg, fill: triangleFillFromBg(bg, getColorAlphaSlider()) }
 }
 
-// Restaure la palette ET l'opacite de travail depuis localStorage.
-// L'opacite est restauree EN PREMIER : les fills de la palette en
-// sont derives (la palette ne stocke que des couleurs). Cle absente,
-// JSON invalide ou liste vide / mal formee = defaults presets ; cle
-// d'opacite absente / invalide = defaut (TRIANGLE_COLOR_DEFAULT_ALPHA).
+// Restaure palette ET opacite depuis localStorage. L'opacite est
+// restauree EN PREMIER (les fills de la palette en sont derives). Cle
+// absente / JSON invalide / liste mal formee = defaults presets.
 export const restoreColorPalette = () => {
     try {
         const raw = localStorage.getItem(COLOR_ALPHA_STORAGE_KEY)
@@ -3212,20 +2769,16 @@ export const restoreColorPalette = () => {
     state.colorPalette = palette
 }
 
-// Ecrit la palette (liste des bg hex) dans localStorage. Le fill
-// n'est jamais persiste (derive au chargement et a chaque changement
-// d'opacite). N'est jamais appelee sans mutation (pas de debounce
-// necessaire : les edits sont des actions discretes, pas des drags
-// continus).
+// Ecrit la palette (liste des bg hex) dans localStorage. Le fill n'est
+// jamais persiste. Pas de debounce : les edits sont des actions discretes.
 export const persistColorPalette = () => {
     try {
         localStorage.setItem(COLOR_PALETTE_STORAGE_KEY, JSON.stringify(state.colorPalette.map(p => p.bg)))
     } catch (e) { /* ignore */ }
 }
 
-// Termine le mode edition (Entree / clic ailleurs) : nettoie l'index
-// et la surbrillance .swatch-editing, sans toucher a la couleur
-// (l'edition en cours a deja ete commitee en direct par le picker).
+// Termine le mode edition : nettoie l'index et la surbrillance
+// .swatch-editing, sans toucher a la couleur (deja commitee en direct).
 const endPaletteEdit = () => {
     if (state.colorPaletteEditingIndex == null) return
     state.colorPaletteEditingIndex = undefined
@@ -3234,15 +2787,9 @@ const endPaletteEdit = () => {
     if (host) host.querySelectorAll('.swatch').forEach(s => s.classList.remove('swatch-editing'))
 }
 
-// Annule le mode edition (Echap) : retour a la couleur d'origine du
-// swatch edite (colorPaletteEditingBefore), restauration visuelle du
-// swatch et du picker, puis fin du mode. Le panneau reste ouvert —
-// main.js intercepte Echap avant la branche hideTriangleColorPanel.
-// brushColor est resynchronise sur le fill restaure : pendant
-// l'edition, chaque input du picker l'armait avec la couleur EDITEE —
-// sans cette resync, un Echap laisserait le pinceau arme avec la
-// couleur annulee alors que le swatch affiche la couleur d'origine
-// (le prochain clic gauche peindrait la mauvaise couleur).
+// Annule le mode edition (Echap) : retour a la couleur d'origine,
+// resync du pinceau (sans elle, le pinceau garderait la couleur
+// annulee alors que le swatch affiche la couleur d'origine).
 export const cancelPaletteEdit = () => {
     const idx = state.colorPaletteEditingIndex
     const before = state.colorPaletteEditingBefore
@@ -3263,9 +2810,9 @@ export const cancelPaletteEdit = () => {
 }
 
 // Entre en mode edition sur le swatch `index` (double-clic) : le
-// picker reflete sa couleur, le pinceau est arme avec, et chaque
-// input suivant mettra a jour le swatch en direct. Le curseur
-// d'opacite n'est PAS touche : l'opacite est globale (cf. §7.3.2).
+// picker reflete sa couleur, le pinceau est arme, chaque input met a
+// jour le swatch en direct. Le curseur d'opacite n'est PAS touche
+// (opacite globale, §7.3.2).
 const startPaletteEdit = (index) => {
     const entry = state.colorPalette[index]
     if (!entry) return
@@ -3290,9 +2837,8 @@ const startPaletteEdit = (index) => {
 }
 
 // Ajoute la couleur courante du picker comme nouveau swatch (dedup
-// case-insensitive sur le bg : une couleur deja presente est un
-// no-op arme). Persiste puis rearme le pinceau sur la nouvelle
-// entree (peinte a l'opacite de travail courante).
+// case-insensitive sur le bg : deja presente = no-op arme). Persiste
+// puis rearme le pinceau sur la nouvelle entree.
 const addPaletteColorFromPicker = () => {
     const input = document.querySelector('#triangleColorInput')
     if (!input) return
@@ -3317,10 +2863,8 @@ const addPaletteColorFromPicker = () => {
     updateColorButtonState()
 }
 
-// Retire le swatch `index` (clic droit). Garde : impossible de
-// retirer la DERNIERE couleur (la palette ne doit jamais etre vide —
-// showTriangleColorPanel et les re-armements en dependent).
-// Rearme le pinceau sur la couleur qui a pris la place.
+// Retire le swatch `index` (clic droit). Garde : impossible de retirer
+// la DERNIERE couleur. Rearme le pinceau sur la couleur suivante.
 const removePaletteColor = (index) => {
     if (state.colorPalette.length <= 1) {
         log('Retrait impossible : gardez au moins une couleur dans la palette')
@@ -3343,13 +2887,11 @@ const removePaletteColor = (index) => {
 }
 
 // Revient aux 8 presets d'origine (bouton #colorPaletteRestore).
-// L'opacite de travail de l'utilisateur n'est PAS touchee : les
-// fills des presets sont derives a cette opacite — « Defauts »
-// restaure les COULEURS, pas la preference d'opacite (cf. §7.3.2).
+// L'opacite de travail n'est PAS touchee : « Defauts » restaure les
+// COULEURS, pas la preference d'opacite (cf. §7.3.2).
 const restoreDefaultPalette = () => {
     state.colorPalette = TRIANGLE_COLOR_PRESETS.map(p => ({ bg: p.bg }))
-    // Les fills sont derives a l'opacite de travail courante (meme
-    // chemin que refreshPaletteFills — la derive est centralisee).
+    // Fills derives a l'opacite de travail courante (meme chemin que refreshPaletteFills).
     refreshPaletteFills()
     endPaletteEdit()
     persistColorPalette()
@@ -3367,28 +2909,11 @@ const restoreDefaultPalette = () => {
     updateColorButtonState()
 }
 
-// (evolution peinture) le panneau est un toggle panel :
-//   - ouvert une fois : le pinceau est immédiatement armé avec une
-//     couleur par défaut (1er preset, swatch visuellement
-//     sélectionne). L'utilisateur peut peindre des le premier clic
-//     gauche sur un triangle, sans cliquer une couleur.
-//   - clic sur un swatch / input color picker : maj brushColor
-//     (le pinceau reste armé).
-//   - clic sur le bouton Reset du panneau : désarme le pinceau
-//     (brushMode = false, le panneau reste ouvert à la recherche
-//     d'une nouvelle couleur). Distinct du comportement historique
-//     « applique TRIANGLE_COLOR_CLEAR aux triangles selectionnes »
-//     car le panneau n'est plus un outil d'application sur la
-//     selection — c'est un nuancier pour le pinceau.
-//   - fermeture (re-clic bouton / Escape / clic exterieur) : panneau
-//     cache + brushMode = false + brushColor = undefined.
-//
-// Le bouton est désormais TOUJOURS interactif (cf. markup main.html,
-// pas d'attribut disabled) et hud.js updateColorButtonState ne le
-// disabled plus. L'ancienne garde
-// `selectionMode==='triangle' && selectedTriangles.length>0`
-// est retirée : c'est précisément le verrou que l'évolution fait
-// sauter.
+// (evolution peinture) le panneau est un toggle panel : a l'ouverture le
+// pinceau est arme avec le 1er preset (peinture immediate) ; clic swatch
+// / picker = maj brushColor ; Reset = desarme le pinceau (panneau ouvert) ;
+// fermeture = panneau cache + brushMode false + brushColor undefined.
+// Le bouton est TOUJOURS interactif (plus de garde disabled).
 export const toggleTriangleColorPanel = () => {
     const btn = document.querySelector('#triangleColor')
     const panel = document.querySelector('#triangleColorPanel')
@@ -3404,24 +2929,17 @@ export const showTriangleColorPanel = () => {
     const btn = document.querySelector('#triangleColor')
     const panel = document.querySelector('#triangleColorPanel')
     if (!btn || !panel) return
-    // Pré-armement du pinceau avec le 1er preset (swatch visuellement
-    // sélectionne). On évite ainsi un « deux clics » inutile à
-    // l'ouverture : des que le panneau est visible, l'utilisateur
-    // peut peindre. Le 1er swatch est mis en surbrillance via la
-    // classe .swatch-active et le color input picker est
-    // resynchronise sur sa valeur hex. Le pinceau est armé à
-    // l'opacité de travail courante (cf. §7.3.2) : l'opacité choisie
-    // par l'utilisateur s'applique dès la première peinture.
+    // Pre-armement du pinceau avec le 1er preset (swatch .swatch-active,
+    // picker resynchronise) : peinture immediate a l'ouverture, a
+    // l'opacite de travail courante (cf. §7.3.2).
     positionPanelUnderButton(btn, panel)
     state.isTriangleColorPanelOpen = true
     btn.classList.add('color-panel-open')
     const firstPreset = state.colorPalette[0]
     if (!firstPreset) return
-    // Le pinceau est arme avec la couleur du 1er preset A L'OPACITE DE
-    // TRAVAIL courante (et non l'alpha propre du preset) : l'opacite
-    // fixee par l'utilisateur survit ainsi a chaque ouverture du
-    // panneau — c'est la garantie « l'opacite reste a la derniere
-    // valeur » (cf. DESIGN.md §7.3.2).
+    // Arme le pinceau avec le 1er preset A L'OPACITE DE TRAVAIL courante
+    // (et non l'alpha du preset) : l'opacite de l'utilisateur survit a
+    // chaque ouverture — garantie « l'opacite reste a la derniere valeur ».
     state.brushColor = triangleFillFromBg(firstPreset.bg, getColorAlphaSlider())
     state.brushMode = true
     setActiveSwatch(document.querySelector('#triangleColorSwatches'), 0)
@@ -3437,13 +2955,8 @@ export const hideTriangleColorPanel = () => {
     const btn = document.querySelector('#triangleColor')
     if (panel) panel.hidden = true
     state.isTriangleColorPanelOpen = false
-    // Palette fermée → pinceau désarmé (cf. cahier des charges
-    // évolution). On purge aussi brushColor pour que le prochain
-    // show reparte proprement d'un état vierge (pas de couleur
-    // orpheline si l'utilisateur a bricolé le picker entre-temps).
-    // Une edition en cours est abandonnee (la couleur deja commitee
-    // en direct reste, c'est le comportement le moins surprenant a
-    // la fermeture du panneau).
+    // Palette fermee → pinceau desarme + brushColor purge (prochain show
+    // repart d'un etat vierge). Une edition en cours est abandonnee.
     endPaletteEdit()
     state.brushMode = false
     state.brushColor = undefined
@@ -3451,25 +2964,17 @@ export const hideTriangleColorPanel = () => {
     updateColorButtonState()
 }
 
-// Peint un seul triangle (sous le curseur en mode pinceau). Distinct
-// de applyColorToSelectedTriangles (qui itère sur selectedTriangles) :
-// ici on cible directement un index de tri, sans dépendre d'une
-// sélection. Mêmes garde-fous que applyColorToSelectedTriangles
-// (capture BEFORE/AFTER fills → patch setFills compact, persistState
-// + requestDraw pour repeindre, mutation live de t.fill). Si color
-// est undefined ou TRIANGLE_COLOR_CLEAR, on efface le fill (delete
-// t.fill) — au cas où le pinceau serait réarmé sans couleur
-// (improbable en pratique : show panneau arme toujours avec un
-// preset, et Reset désarme sans fixer de couleur).
+// Peint un seul triangle (index de tri, sans dependre d'une selection).
+// Memes garde-fous que applyColorToSelectedTriangles : capture BEFORE/
+// AFTER fills -> patch setFills compact + mutation live de t.fill. Si
+// color est undefined / TRIANGLE_COLOR_CLEAR, on efface le fill.
 const paintSingleTriangle = (triangleIndex, color) => {
     if (!state.shapes || !state.shapes[state.activeShapeIndex]) return
     const tris = state.shapes[state.activeShapeIndex].tris
     if (!Array.isArray(tris) || triangleIndex < 0 || triangleIndex >= tris.length) return
     const tri = tris[triangleIndex]
     if (!tri) return
-    // (Q2c) invariance : p1/p2/p3 doivent être des entiers (un tri
-    // partiellement construit n'est pas peignable — on ne peint que
-    // des triangles « complets »).
+    // (Q2c) on ne peint que des tris « complets » (slots entiers).
     if (!Number.isInteger(tri.p1) || !Number.isInteger(tri.p2) || !Number.isInteger(tri.p3)) return
     const shapeIdx = state.activeShapeIndex
     const beforeEntries = [{ s: shapeIdx, t: triangleIndex, fill: typeof tri.fill === 'string' ? tri.fill : undefined }]
@@ -3480,25 +2985,17 @@ const paintSingleTriangle = (triangleIndex, color) => {
     }
     const afterEntries = [{ s: shapeIdx, t: triangleIndex, fill: typeof tri.fill === 'string' ? tri.fill : undefined }]
     saveState({ patches: [setFillsPatch(beforeEntries, afterEntries)] })
-    // workIsSaved est mis a 1 dans io.js apres saveMesh/loadState/
-    // reset ; on le remet a 0 ici pour signaler au prochain
-    // recomputeSceneDirty que la scene a diverge de la baseline.
-    // workIsBackuped (champ legacy non lu) n'est plus pose.
+    // Signal de divergence de la scene vs baseline (remis a 0 par io.js).
     state.ctx.workIsSaved = 0
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     persistState()
 }
 
-// (evolution peinture) clic gauche sur le canvas en mode pinceau :
-// trouve le triangle le plus proche du curseur (mêmes critères que
-// findNearestTriangle : intérieur ou proche du centroide) et lui
-// applique brushColor. Pas de creation de point / lasso / suppression
-// — le mousedown handler global de main.js return tôt après l'appel
-// pour court-circuiter toutes les autres branches.
-// Si aucun triangle n'est atteignable (zone vide, point trop loin),
-// on noop : le pinceau n'a rien à peindre, et ne touche pas à la
-// sélection courante.
+// (evolution peinture) clic gauche en mode pinceau : applique brushColor
+// au triangle le plus proche (memes criteres que findNearestTriangle).
+// Le mousedown global de main.js return tot apres l'appel. Zone vide =
+// noop : le pinceau ne touche pas a la selection courante.
 export const paintTriangleAtCursor = (e) => {
     if (!state.brushMode) return
     if (typeof state.brushColor !== 'string') return
@@ -3512,20 +3009,12 @@ export const paintTriangleAtCursor = (e) => {
     if (!nt) return
     paintSingleTriangle(nt.triangleIndex, state.brushColor)
     log(`Peinture : triangle ${nt.triangleIndex}`)
-    // (évolution « commentaire dans le HUD ») — logique prospective :
-    // après une peinture, le toast invite au geste suivant (peindre un
-    // autre triangle) et rappelle l'annulation possible.
     showActionComment(`Ctrl+Z pour annuler — cliquez sur un autre triangle pour le peindre`)
 }
 
-// Construit les swatches depuis state.colorPalette (la palette
-// persitee, cf. §7.3.1). Trois gestes par swatch :
-//   - clic gauche : arme le pinceau avec la couleur (comportement
-//     historique) ET termine une edition en cours le cas echeant ;
-//   - clic droit : retire la couleur de la palette (contextmenu
-//     intercepte, pas de menu natif) ;
-//   - double-clic : entre en mode edition (le picker reflete la
-//     couleur, modifs en direct, Entree/Echap).
+// Construit les swatches depuis state.colorPalette. Trois gestes :
+// clic gauche = arme le pinceau (+ fin d'edition), clic droit = retire
+// la couleur, double-clic = mode edition (picker reflete la couleur).
 const buildColorSwatches = () => {
     const host = document.querySelector('#triangleColorSwatches')
     if (!host) return
@@ -3534,23 +3023,16 @@ const buildColorSwatches = () => {
         const sw = document.createElement('button')
         sw.type = 'button'
         sw.className = 'swatch'
-        // Le swatch affiche le fill (bg a l'opacite de travail
-        // courante) : apercu WYSIWYG de la peinture — ce que l'on
-        // voit sur le swatch est exactement ce qui sera peint
-        // (refreshPaletteFills recalcule ces fills a chaque drag du
-        // curseur d'opacite).
+        // Le swatch affiche le fill (bg a l'opacite de travail courante) :
+        // apercu WYSIWYG de la peinture (recalcule par refreshPaletteFills).
         sw.style.backgroundColor = preset.fill
         sw.title = 'Peindre avec ' + preset.bg + ' — clic droit : retirer de la palette, double-clic : modifier'
         sw.dataset.index = String(i)
         sw.addEventListener('click', (e) => {
             if (e.button !== 0) return
-            // (evolution peinture) armer le pinceau avec la couleur
-            // choisie, ne plus appliquer a la selection. La
-            // sélection est orthogonale au pinceau : si elle contient
-            // des triangles, on ne les peint PAS automatiquement,
-            // l'utilisateur le fera au clic gauche sur chaque tri.
-            // L'opacite n'est PAS touchee : la couleur est peinte a
-            // l'opacite de travail de l'utilisateur (cf. §7.3.2).
+            // Arme le pinceau avec la couleur choisie (la selection est
+            // orthogonale au pinceau : pas de peinture automatique).
+            // L'opacite n'est PAS touchee (cf. §7.3.2).
             state.brushColor = preset.fill
             state.brushMode = true
             setActiveSwatch(host, i)
@@ -3587,17 +3069,9 @@ export const wireTriangleColorPanel = () => {
         toggleTriangleColorPanel()
     })
     input.addEventListener('input', () => {
-        // Deux chemins selon l'etat d'edition :
-        //   - mode edition (double-clic sur un swatch) : le picker
-        //     met a jour la couleur du swatch EN DIRECT (bg, le fill
-        //     derive a l'opacite de travail courante, WYSIWYG) et
-        //     persiste a chaque tick — l'utilisateur voit le swatch
-        //     changer pendant qu'il drague le picker natif.
-        //   - hors edition : le picker arme le pinceau DIRECTEMENT
-        //     avec sa valeur hex a l'opacite de travail courante
-        //     (une couleur libre n'est pas forcement destinee a la
-        //     palette, mais l'opacite de l'utilisateur s'applique
-        //     toujours, cf. §7.3.2).
+        // Deux chemins : mode edition = maj EN DIRECT du swatch (persiste
+        // a chaque tick) ; hors edition = arme le pinceau directement.
+        // L'opacite de travail s'applique toujours (cf. §7.3.2).
         state.brushMode = true
         if (state.colorPaletteEditingIndex != null && state.colorPalette[state.colorPaletteEditingIndex]) {
             const entry = state.colorPalette[state.colorPaletteEditingIndex]
@@ -3611,11 +3085,8 @@ export const wireTriangleColorPanel = () => {
         } else {
             state.brushColor = triangleFillFromBg(input.value, getColorAlphaSlider())
         }
-        // Swatch actif : on cherche une couleur de la palette dont
-        // le .bg matche la valeur hex du picker (comparaison
-        // case-insensitive). Si la couleur custom n'est pas dans la
-        // palette, on desactive tous les swatches (couleur libre
-        // active mais aucun preset ne matche).
+        // Swatch actif = celui dont le .bg matche le picker (case-insensitive) ;
+        // couleur libre hors palette = tous les swatches desactives.
         const matchIdx = state.colorPalette.findIndex(p => p.bg.toLowerCase() === input.value.toLowerCase())
         setActiveSwatch(document.querySelector('#triangleColorSwatches'), matchIdx >= 0 ? matchIdx : null)
         updateColorButtonState()
@@ -3630,15 +3101,11 @@ export const wireTriangleColorPanel = () => {
         // Echap est gere au niveau document (main.js) : annule
         // l'edition sans fermer le panneau.
     })
-    // (evolution opacite unique, cf. DESIGN.md §7.3.2) Le curseur
-    // d'opacite regle l'opacite de travail GLOBALE : TOUTES les
-    // couleurs de la palette (et le pinceau) sont peintes a cette
-    // opacite. A chaque drag : on recalcule les fills de la palette
-    // (apercu WYSIWYG des swatches), on arme le pinceau avec la
-    // couleur courante a la nouvelle opacite, et on persiste la
-    // preference (UNIQUEMENT ici — c'est un reglage MANUEL de
-    // l'utilisateur ; les synchronisations d'affichage comme le clic
-    // swatch ne doivent pas ecraser la preference).
+    // (evolution opacite unique, §7.3.2) Le curseur regle l'opacite
+    // GLOBALE : a chaque drag, recalcule les fills de la palette (apercu
+    // WYSIWYG), arme le pinceau a la nouvelle opacite, et persiste la
+    // preference (UNIQUEMENT ici — reglage MANUEL, les syncs d'affichage
+    // ne doivent pas ecraser la preference).
     alphaSlider.addEventListener('input', () => {
         const pct = parseInt(alphaSlider.value, 10)
         const alpha = Number.isFinite(pct) ? Math.max(0, Math.min(1, pct / 100)) : TRIANGLE_COLOR_DEFAULT_ALPHA
@@ -3649,11 +3116,9 @@ export const wireTriangleColorPanel = () => {
         state.brushMode = true
         state.brushColor = triangleFillFromBg(input.value, alpha)
         const host = document.querySelector('#triangleColorSwatches')
-        // Le rebuild des swatches efface les surbrillances : on
-        // restaure le swatch ACTIF (la couleur armee — valeur du
-        // picker — matche un swatch de la palette) et la surbrillance
-        // d'edition le cas echeant (l'edition porte sur la couleur,
-        // pas l'opacite).
+        // Le rebuild des swatches efface les surbrillances : on restaure
+        // le swatch ACTIF et la surbrillance d'edition le cas echeant
+        // (l'edition porte sur la couleur, pas l'opacite).
         const matchIdx = state.colorPalette.findIndex(p => p.bg.toLowerCase() === input.value.toLowerCase())
         setActiveSwatch(host, matchIdx >= 0 ? matchIdx : null)
         if (host && state.colorPaletteEditingIndex != null) {
@@ -3664,23 +3129,15 @@ export const wireTriangleColorPanel = () => {
     })
     resetBtn.addEventListener('click', (e) => {
         if (e.button !== 0) return
-        // (evolution peinture) Reset = desarmer le pinceau, NE PAS
-        // appliquer TRIANGLE_COLOR_CLEAR aux triangles selectionnes.
-        // Le panneau reste ouvert pour permettre a l'utilisateur
-        // de choisir une nouvelle couleur. On enleve la
-        // surbrillance des swatches (aucune couleur n'est active)
-        // et on remet la valeur du picker a la 1re couleur de la
-        // palette (cohérent avec l'ancien comportement : picker
-        // "fraichement initialisé" apres un reset). Termine aussi
-        // une edition en cours. Pas de requestDraw / persistState
-        // ici : on ne mute pas la scene.
+        // (evolution peinture) Reset = desarmer le pinceau (NE PAS
+        // appliquer TRIANGLE_COLOR_CLEAR a la selection). Panneau reste
+        // ouvert, swatches desactives, picker remis a la 1re couleur.
+        // Termine aussi une edition. Pas de mutation de la scene ici.
         endPaletteEdit()
         state.brushMode = false
         state.brushColor = undefined
         setActiveSwatch(document.querySelector('#triangleColorSwatches'), null)
-        // Reset ne touche pas au curseur d'opacite : l'opacite de
-        // travail de l'utilisateur n'est pas une couleur, elle reste
-        // telle quelle (cf. §7.3.2).
+        // Reset ne touche pas au curseur d'opacite (cf. §7.3.2).
         if (state.colorPalette[0]) input.value = state.colorPalette[0].bg
         updateColorButtonState()
     })
@@ -3702,12 +3159,8 @@ export const wireTriangleColorPanel = () => {
         if (!target) return
         if (panel.contains(target)) return
         if (btn.contains(target)) return
-        // Le clic sur un triangle du canvas declenche
-        // paintTriangleAtCursor via le mousedown handler global —
-        // on NE ferme PAS le panneau sur un simple clic sur un tri
-        // (l'utilisateur peut peindre plusieurs triangles d'affilée
-        // sans rouvrir la palette). Un clic exterieur (toolbar,
-        // overlay, console) ferme, comme avant.
+        // Un clic sur un tri declenche paintTriangleAtCursor : on NE ferme
+        // PAS le panneau (peinture en chaine). Un clic exterieur ferme.
         if (target.id === 'board') return
         hideTriangleColorPanel()
     })

@@ -4,60 +4,28 @@ import { state } from './state.js'
 import { SHAPE_DEFS } from './constants.js'
 
 // ===== Commentaire d'action (HUD) =====
-//
-// (évolution « proposer un commentaire dans le HUD à chaque action
-// réalisée ») — toast contextuel. Deux sources, une priorité :
-//
-//   - `showHoverComment(text)` (SURVOL, prioritaire) : dit ce que le
-//     geste sur l'élément SOUS LE POINTEUR permet de faire (« Clic
-//     gauche pour créer un nouveau triangle à partir de ce segment »).
-//     Piloté par updateHoverComment (editor.js, appelé depuis
-//     updateMouseHover à chaque mousemove) : reste affiché TANT QUE le
-//     pointeur survole l'élément (pas de timer — le message suivant le
-//     remplace au survol suivant). Écrase tout post-action en cours.
-//
-//   - `showActionComment(text)` (POST-ACTION, ~3 s) : rappel du geste
-//     suivant après une action réalisée (undo, suppression, fusion…).
-//     S'affiche si le pointeur n'est sur aucun élément ; le survol le
-//     remplace dès qu'un élément est survolé, sinon il finit ses 3 s
-//     puis laisse place au message générique de zone vide.
-//
-// Cf. DESIGN.md §7.15. Aucun import de module métier (pas de cycle,
-// cf. §1.1) : les call sites (editor.js, merge.js, shapes.js,
-// history.js, io.js) importent ces fonctions. Les timers vivent au
-// niveau module (pas dans state) : effets de bord UI transitoires,
-// jamais persistés.
+// Toast contextuel à deux sources (cf. DESIGN.md §7.15) :
+//   - showHoverComment (SURVOL, prioritaire) : dit ce que le geste sur
+//     l'élément sous le pointeur permet de faire ; reste affiché tant
+//     que le survol dure (pas de timer).
+//   - showActionComment (POST-ACTION, ~3 s) : rappel du geste suivant,
+//     remplacé par le survol dès qu'un élément est survolé.
+// Timers au niveau module (effets de bord UI transitoires, jamais
+// persistés) ; hud.js ne lit que state (pas de cycle d'imports).
 const ACTION_COMMENT_DURATION = 3000
-// Délai après le retrait de la classe avant de vider le texte : laisse
-// la transition d'opacité (0.3 s) se terminer pour un fondu propre
-// (sinon le contenu disparaîtrait brutalement avant l'estompage).
+// Vide le texte après le fondu d'opacité (pas de contenu fantôme invisible).
 const ACTION_COMMENT_FADE = 350
 let actionCommentTimer = null
-// Token de génération : chaque appel (hover OU action) l'incrémente.
-// Le timer d'un post-action capture le token de SON appel et ne retire
-// la classe que s'il est toujours le dernier (un survol intervenu
-// entre-temps l'invalide — sans ça, le timer retirerait la classe du
-// message de survol qui l'a remplacé).
+// Token de génération : un post-action ne retire la classe que s'il est
+// toujours le dernier appel (un survol intervenu entre-temps l'invalide).
 let actionCommentToken = 0
-// Source du message courant : 'action' (post-action en cours) ou
-// 'hover' (message de survol, permanent). isActionCommentActive lit
-// cette source pour que updateHoverComment laisse finir un post-action
-// quand le pointeur est sur une zone vide.
+// Source du message courant : 'action' | 'hover' | null.
 let actionCommentSource = null
 
-// Message de survol : reste affiché tant que le pointeur est sur
-// l'élément (aucun timer). Incrémente le token pour invalider tout
-// timer de post-action en attente (un survol qui remplace un
-// post-action ne doit pas être effacé par son timer).
-//
-// Garde de dédup : le même texte déjà affiché par un survol (source
-// 'hover' + classe visible + même contenu) = le toast est déjà à
-// jour — pas de ré-écriture DOM ni de re-tokenisation inutile à
-// chaque mousemove (updateHoverComment est appelé à chaque tick). On
-// ré-affiche quand même si la classe a été retirée entre-temps (un
-// post-action vient d'expirer : le survol doit reprendre la main)
-// ou si un post-action est en cours (le survol le remplace — le
-// texte peut être identique, par ex. le guide de construction).
+// Message de survol : aucun timer, invalide tout post-action en attente.
+// Dédup : même texte + source 'hover' + classe visible = pas de
+// ré-écriture DOM à chaque mousemove (mais ré-affichage si un
+// post-action vient d'expirer entre-temps).
 export const showHoverComment = (text) => {
     const el = document.querySelector('#actionComment')
     if (!el) return
@@ -73,8 +41,8 @@ export const showHoverComment = (text) => {
     el.classList.add('action-comment-visible')
 }
 
-// Message post-action : visible ~3 s puis disparaît (fondu + vidage du
-// texte), SAUF si un survol a pris la main entre-temps (token changé).
+// Message post-action : ~3 s puis fondu, sauf si un survol a pris la
+// main entre-temps (token changé).
 export const showActionComment = (text) => {
     const el = document.querySelector('#actionComment')
     if (!el) return
@@ -84,15 +52,11 @@ export const showActionComment = (text) => {
     el.textContent = text
     el.classList.add('action-comment-visible')
     actionCommentTimer = setTimeout(() => {
-        // Un survol (ou une autre action) est passé entre-temps : ne
-        // pas effacer son message.
+        // Un survol (ou une autre action) est passé entre-temps : ne pas effacer son message.
         if (actionCommentToken !== myToken) return
         actionCommentSource = null
         el.classList.remove('action-comment-visible')
-        // Vide le texte APRÈS le fondu : l'élément ne garde pas un
-        // contenu fantôme invisible (résidu lisible par un lecteur
-        // d'écran qui forcerait la transparence, ou un zoom navigateur
-        // à 200 % qui pourrait l'exposer).
+        // Vide le texte APRÈS le fondu (pas de contenu fantôme invisible).
         setTimeout(() => {
             if (actionCommentToken === myToken) {
                 el.textContent = ''
@@ -101,24 +65,14 @@ export const showActionComment = (text) => {
     }, ACTION_COMMENT_DURATION)
 }
 
-// Vrai tant qu'un post-action est affiché (pas encore expiré) : la
-// zone vide laisse alors le post-action finir ses 3 s au lieu de
-// l'écraser avec le message générique.
+// Un post-action est affiché : la zone vide le laisse finir ses 3 s.
 export const isActionCommentActive = () => actionCommentSource === 'action'
 
 export const updateShapeHud = () => {
     const label = document.querySelector('#shapeLabel')
     if (!label) return
     label.textContent = `${state.activeShapeIndex + 1}/${state.shapes.length}`
-    // (évolution « boutons pour gérer l'ordre des formes ») — état
-    // disabled des boutons #moveShapeUp / #moveShapeDown : bornes de
-    // l'ordre. Monter la forme active n'a de sens que si elle n'est pas
-    // déjà la dernière (indice < longueur-1), descendre que si elle
-    // n'est pas déjà la première (indice > 0). Même langage que
-    // updateUndoRedoHud (opacité 0.35 + cursor not-allowed via CSS
-    // #toolbar button:disabled). Synchronisé à chaque changement de
-    // forme active (goToShape / addShape / deleteShape / undo / redo /
-    // boot) puisque updateShapeHud est appelé par tous ces chemins.
+    // Bornes de l'ordre : monter inutile si déjà dernière, descendre si déjà première.
     const upBtn = document.querySelector('#moveShapeUp')
     const downBtn = document.querySelector('#moveShapeDown')
     if (upBtn) upBtn.disabled = state.activeShapeIndex >= state.shapes.length - 1
@@ -137,38 +91,23 @@ export const updateUndoRedoHud = () => {
 export const updateSelectionHud = () => {
     const countEl = document.querySelector('#selectionCount')
     if (countEl) countEl.textContent = state.selectedPoints.length
-    // (fusion par déplacement, cf. DESIGN.md §7.11) la 2e fonction du
-    // bouton Fusionner n'est utilisable que si exactement 1 point est
-    // sélectionné ; toute autre taille de sélection la désarme
-    // immédiatement (et déverrouille, cf. évolution verrouillage : la
-    // sélection multi-points déverrouille ET désarme). Garde locale à
-    // hud.js (pas d'import de merge.js, qui importerait hud.js en
-    // retour — cycle interdit, cf. §1.1).
+    // Fusion par déplacement (cf. DESIGN.md §7.11) : désarmée dès que la
+    // sélection n'est plus exactement 1 point. Garde locale à hud.js
+    // (pas d'import de merge.js — cycle interdit).
     if (state.mergeOnDropActive && state.selectedPoints.length !== 1) {
         state.mergeOnDropActive = false
         state.mergeOnDropLocked = false
         state.mergeDropCandidate = undefined
         updateMergeButtonState()
     }
-    // (évolution « couper, copier, coller les éléments sélectionnés »)
-    // les boutons #copy / #cut / #paste dépendent de la sélection et du
-    // presse-papiers : resynchronisés à chaque mutation de sélection
-    // (et par les fonctions presse-papiers de editor.js).
+    // Boutons presse-papiers et panneau d'alignement : resynchronisés à
+    // chaque mutation de sélection.
     updateClipboardButtons()
-    // (évolution « boutons pour forcer l'alignement et la répartition
-    // des points sélectionnés ») les 4 actions du panneau #align
-    // dépendent du nombre de points sélectionnés : grisés en
-    // conséquence à chaque mutation de sélection.
     updateAlignPanelButtons()
 }
 
-// (évolution « boutons pour forcer l'alignement et la répartition des
-// points sélectionnés ») — état du bouton #align : classe
-// .align-panel-open quand le panneau est déployé (même langage que
-// #shapes.shapes-panel-open / #triangleColor.color-panel-open : ring
-// inset vert). state.alignPanelOpen est la source de vérité ; la classe
-// ne fait que la refléter. Ne lit QUE state (pas d'import de editor.js
-// — cycle interdit, cf. §1.1).
+// État du bouton #align : classe .align-panel-open = panneau déployé
+// (source de vérité : state.alignPanelOpen). Ne lit que state.
 export const updateAlignButton = () => {
     const btn = document.querySelector('#align')
     if (!btn) return
@@ -176,14 +115,8 @@ export const updateAlignButton = () => {
     btn.setAttribute('aria-pressed', state.alignPanelOpen ? 'true' : 'false')
 }
 
-// (évolution « boutons pour forcer l'alignement et la répartition des
-// points sélectionnés ») — état disabled des 4 actions du panneau
-// #align : Aligner X / Aligner Y nécessitent au moins 2 points
-// sélectionnés (le premier est l'ancre de référence), Répartir X /
-// Répartir Y au moins 3 (deux extrêmes + un point intermédiaire).
-// Ne lit QUE state (pas d'import de editor.js — cycle interdit) ;
-// appelée par updateSelectionHud (sync à chaque mutation de sélection)
-// et au boot par updateAlignButton callers.
+// Disabled des 4 actions du panneau #align : aligner >= 2 points,
+// répartir >= 3 (deux extrêmes + un point intermédiaire).
 export const updateAlignPanelButtons = () => {
     const n = state.selectedPoints.length
     const alignBtn = ['alignX', 'alignY']
@@ -198,12 +131,7 @@ export const updateAlignPanelButtons = () => {
     })
 }
 
-// (évolution « couper, copier, coller les éléments sélectionnés ») —
-// état disabled des boutons #copy / #cut / #paste : Couper/Copier
-// nécessitent une sélection non vide, Coller un presse-papiers rempli
-// (state.clipboard avec des points). Ne lit QUE state (pas d'import de
-// editor.js — cycle interdit, cf. §1.1) ; appelée par updateSelectionHud
-// et par copySelection / cutSelection / pasteClipboard (editor.js).
+// Disabled de #copy/#cut (sélection non vide) et #paste (presse-papiers rempli).
 export const updateClipboardButtons = () => {
     const copyBtn = document.querySelector('#copy')
     const cutBtn = document.querySelector('#cut')
@@ -216,16 +144,10 @@ export const updateClipboardButtons = () => {
     if (pasteBtn) pasteBtn.disabled = !hasClipboard
 }
 
-// (fusion par déplacement, cf. DESIGN.md §7.11) — état visuel du
-// bouton #mergePoints : accent vert (même langage que #fps.fps-active /
-// #preview.preview-active) quand le mode est armé + libellé du rayon
-// (#mergeDropText, « 20px » — même langage que #gridText) + title qui
-// décrit le geste à effectuer. Évolution verrouillage : quand le mode
-// est armé ET verrouillé (2e clic), le bouton porte en plus la classe
-// .merge-locked (icône cadenas #mergeLockIcon affichée + ring inset
-// vert, cf. CSS main.html). state.mergeOnDropActive /
-// state.mergeOnDropLocked / state.mergeDropRadius sont les sources de
-// vérité ; classes/attributs/textes ne font que les refléter.
+// État du bouton #mergePoints : accent vert quand armé + libellé du
+// rayon (#mergeDropText) + title du geste ; classe .merge-locked
+// quand verrouillé (icône cadenas). Sources de vérité : les champs
+// merge* de state.
 export const updateMergeButtonState = () => {
     const btn = document.querySelector('#mergePoints')
     if (!btn) return
@@ -248,10 +170,8 @@ export const updateMergeButtonState = () => {
           'Avec un seul point sélectionné : arme la fusion par déplacement ' +
           '(glisser le point puis le relâcher près d\'un autre le fusionne avec lui ; ' +
           `la molette sur ce bouton règle le rayon, actuellement ${state.mergeDropRadius} px à l'écran).`)
-    // Libellé du rayon, vide hors mode armé (même comportement que
-    // #shapesText qui n'affiche « cercle N » que quand le mode est actif).
-    // L'icône cadenas est pilotée par la classe .merge-locked via CSS
-    // (display none/block, cf. main.html) — pas de manipulation DOM ici.
+    // Libellé du rayon (vide hors mode armé) ; l'icône cadenas est
+    // pilotée par la classe .merge-locked via CSS.
     const text = btn.querySelector('#mergeDropText')
     if (text) text.textContent = armed ? `${state.mergeDropRadius}px` : ''
 }
@@ -298,16 +218,8 @@ export const updateAccessibilityLabels = () => {
     })
 }
 
-// Marqueur visuel de non-sauvegarde : caractère bullet (U+2022)
-// accolé au nom quand la scène a été mutée depuis le dernier
-// save persistant. Le choix du bullet (vs asterisk ou +) tient en
-// qu'il reste lisible même en petite taille (11px monospace)
-// tout en étant sémantiquement neutre (pas un operateur de
-// modification publique comme `*` qui pourrait évoquer un éditeur
-// de texte WISIWYG). Le leading space isole le bullet du nom pour
-// qu'il soit clairement perçu comme une annotation.
-// Cf. spec utilisateur : « si la scène est modifiée alors mettre
-// un indicateur de non sauvegarde à côté de son nom ».
+// Indicateur de non-sauvegarde : bullet lisible en petite taille et
+// sémantiquement neutre (vs `*`), isolé du nom par un leading space.
 const SCENE_DIRTY_INDICATOR = ' •'
 const SCENE_DIRTY_INDICATOR_FOR_ARIA = ' (non sauvegardée)'
 
@@ -322,10 +234,7 @@ export const updateSceneStatus = () => {
     status.dataset.dirty = state.sceneDirty ? 'true' : 'false'
     const ariaLabel = state.sceneDirty ? baseName + SCENE_DIRTY_INDICATOR_FOR_ARIA : baseName
     status.setAttribute('aria-label', ariaLabel)
-    // Title (tooltip) reflete l'etat courant en francais.
-    // Approfondit l'info aria pour les lecteurs d'ecran ET le
-    // survol souris : « nouvelleScene non sauvegardée » /
-    // « mesh-wail sauvegardée ».
+    // Tooltip miroir de l'aria-label (lecteurs d'écran + survol souris).
     status.setAttribute('title', ariaLabel)
 }
 
@@ -333,19 +242,12 @@ export const updateShapesButton = () => {
     const btn = document.querySelector('#shapes')
     const text = document.querySelector('#shapesText')
     if (btn) {
-        // Quatre etats : panneau ouvert (bordure inset, comme
-        // #triangleColor.color-panel-open), outil forme arme ou mode
-        // cercle / étoile / anneau actif (accent vert + libellé).
+        // Panneau ouvert ou outil arme (forme / cercle / etoile / anneau).
         btn.classList.toggle('shapes-panel-open', !!state.shapesPanelOpen)
         btn.classList.toggle('shapes-armed', state.shapeKind !== undefined || !!state.circleMode || !!state.starMode || !!state.annulusMode)
         btn.setAttribute('aria-pressed', state.shapesPanelOpen ? 'true' : 'false')
     }
-    // Libellé a cote de l'icone : nom de la forme armee, ou
-    // « cercle N » / « anneau N » quand le mode cercle / anneau est
-    // actif (N = nombre de cotes — meme langage que #gridText pour le
-    // pas de grille), ou « étoile » quand le mode étoile (3 clics)
-    // est actif ; vide quand rien n'est arme. textContent (pas
-    // innerHTML) : chaine statique / entier.
+    // Libellé : forme armée, « cercle N » / « anneau N » / « étoile », vide sinon.
     if (text) {
         if (state.circleMode) {
             text.textContent = 'cercle ' + state.circleSegments
@@ -361,29 +263,9 @@ export const updateShapesButton = () => {
     }
 }
 
-// (evolution peinture) l'unique action du bouton #triangleColor est
-// d'ouvrir/fermer la palette de couleurs, independamment du mode de
-// selection et du contenu de la selection. L'ancien contrat
-// (desactive hors mode triangle OU selection vide) est obsolete : le
-// pinceau peut peindre des triangles en un clic, sans qu'aucun tri
-// ne soit pre-selectionne.
-// Trois etats visuels distincts (cf. classes CSS dans main.html) :
-//   - etat neutre : bouton gris comme les autres (rien n'est ouvert, le
-//     pinceau n'est pas armé).
-//   - .color-panel-open : la palette est deployee (meme langage visuel
-//     que #triangleColor.color-panel-open historique : ring inset vert).
-//   - .color-active : la palette est deployee ET brushMode est vrai
-//     (le curseur est en mode pinceau, un clic gauche peindra). Sur
-//     cet etat, on ajoute en plus un accent vert fort (couleur,
-//     bordure) pour distinguer "palette ouverte mais pinceau
-//     desarme" (apres un clic sur Reset) de "palette ouverte avec
-//     pinceau arme".
-//
-// Pas de raccourci pour basculer (la touche du bouton reste celle
-// implicitement documentee par le title HTML). Meme API (juste
-// updater les classes CSS), pas besoin de readapter les call sites
-// (applyColorToSelectedTriangles reste exporte pour les tests et le
-// panel historique).
+// Bouton #triangleColor : toujours actif (le pinceau peint sans
+// pré-sélection). Trois états : neutre, .color-panel-open (palette
+// déployée), .color-active (déployée ET brushMode armé).
 export const updateColorButtonState = () => {
     const btn = document.querySelector('#triangleColor')
     if (!btn) return
