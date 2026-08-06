@@ -13,7 +13,7 @@
 
 import { state } from './state.js'
 import { MAX_HISTORY, ACTION_NONE } from './constants.js'
-import { updateUndoRedoHud, updateSelectionHud, updateShapeHud, updateColorButtonState, updateSceneStatus } from './hud.js'
+import { updateUndoRedoHud, updateSelectionHud, updateShapeHud, updateColorButtonState, updateSceneStatus, showActionComment } from './hud.js'
 import { drawBoard, requestDraw } from './draw.js'
 import { updateMouseHover } from './editor.js'
 import { persistState, recomputeSceneDirty, markUndoPersistDirty } from './io.js'
@@ -604,6 +604,10 @@ export const undo = () => {
     updateShapeHud()
     updateUndoRedoHud()
     updateSelectionHud()
+    // (évolution « commentaire dans le HUD ») — logique prospective :
+    // ne pas dire « Annulé », mais ce que l'utilisateur peut faire
+    // maintenant : rétablir avec le raccourci inverse.
+    showActionComment('Ctrl+Shift+Z (ou Ctrl+Y) pour rétablir')
     // Spec utilisateur : « si on fait un undo complet c'est la
     // même chose [que le chargement : pas d'indicateur de
     // sauvegarde] ». La baseline est capturee sur load/import/
@@ -633,6 +637,9 @@ export const redo = () => {
     updateShapeHud()
     updateUndoRedoHud()
     updateSelectionHud()
+    // (évolution « commentaire dans le HUD ») — logique prospective :
+    // après un rétablissement, le toast rappelle le raccourci inverse.
+    showActionComment('Ctrl+Z pour annuler à nouveau')
     // Symetrique du undo : le redo re-applique une mutation
     // preexistante. Si l'etat post-redo matche encore la baseline
     // (= l'undo avait ramene au baseline AVANT le redo, et la

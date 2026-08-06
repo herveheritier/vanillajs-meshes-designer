@@ -900,6 +900,56 @@
                 color: rgb(255, 210, 80);
                 border-color: rgba(255, 210, 80, 0.45);
             }
+
+            /* ========= HUD bas-gauche : commentaire contextuel ========= */
+            /* (évolution « message prospectif ») — toast affiché au-dessus
+               de la pile HUD bas-gauche (#coords -> #zoomDisplay ->
+               #fpsDisplay -> #actionComment). PROSPECTIF et piloté par le
+               SURVOL : quand un élément est en surbrillance sous le
+               pointeur, il dit ce que le geste permet de faire (« Clic
+               gauche pour créer un nouveau triangle à partir de ce
+               segment ») ; après une action, il rappelle le geste suivant
+               (~3 s) ; sinon message générique de zone vide. Pour aider
+               l'utilisateur AU MOMENT de l'action (cf. conseils.md : « il
+               faudrait davantage d'aide au moment de l'action »). Même
+               langage visuel que #coords (monospace, fond sombre
+               transparent, blur, border). Deux états : invisible par
+               défaut (opacity 0, pointer-events none pour ne jamais
+               intercepter de clic), classe .action-comment-visible posée
+               par showHoverComment / showActionComment (hud.js). Le
+               message de survol persiste tant que le pointeur est sur
+               l'élément ; la disparition des post-actions est automatique
+               après ACTION_COMMENT_DURATION ms (timer dans hud.js) : on
+               n'utilise PAS display:none pour garder la transition
+               d'opacité (fondu doux au lieu d'un clignotement). */
+            #actionComment {
+                position: absolute;
+                left: 12px;
+                bottom: 122px;
+                color: rgb(220, 220, 220);
+                font-family: monospace;
+                font-size: 12px;
+                line-height: 1.35;
+                pointer-events: none;
+                background-color: rgba(15, 15, 15, 0.85);
+                padding: 6px 10px;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 4px;
+                z-index: 50;
+                /* Les messages prospectifs sont plus longs qu'un simple
+                   compte-rendu (le « comment » guide le geste suivant) :
+                   on autorise le retour à la ligne au-delà de 380 px au
+                   lieu de nowrap (qui ferait déborder le toast sur les
+                   petits écrans). */
+                max-width: 380px;
+                white-space: normal;
+                backdrop-filter: blur(4px);
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            }
+            #actionComment.action-comment-visible {
+                opacity: 1;
+            }
             /* Bouton toolbar FPS : integrer dans la classe .toolbar
                button partagee (meme hauteur 30px, monospace, border
                subtil). Classe .fps-active quand le HUD est visible
@@ -1173,6 +1223,7 @@
             body.preview-mode #coords,
             body.preview-mode #zoomDisplay,
             body.preview-mode #fpsDisplay,
+            body.preview-mode #actionComment,
             body.preview-mode #sceneStatus,
             body.preview-mode #triangleColorPanel,
             body.preview-mode #shapesPanel,
@@ -1949,6 +2000,18 @@
         <div id="fpsDisplay" data-perf="good" hidden></div>
         <div id="zoomDisplay" title="Niveau de zoom, position du viewCenter en coords modèle, rotation cumulée de la scène (AltGr + molette)">1.0x</div>
         <div id="coords" title="Position du curseur (coords modèle, Y inversé) et du point le plus proche sous le curseur" aria-live="polite"></div>
+        <!-- Commentaire contextuel (évolution « message prospectif ») :
+             toast piloté par le SURVOL — quand un élément est en
+             surbrillance, il dit ce que le geste permet de faire (« Clic
+             gauche pour créer un nouveau triangle à partir de ce
+             segment ») ; après une action, rappel du geste suivant
+             (~3 s, showActionComment). Alimenté par updateHoverComment
+             (editor.js) / showHoverComment + showActionComment (hud.js).
+             Vide et invisible par défaut ; .action-comment-visible =
+             fondu d'apparition. aria-live pour annoncer le commentaire
+             aux lecteurs d'écran (même langage que #coords /
+             #sceneStatus). -->
+        <div id="actionComment" aria-live="polite"></div>
         <div id="sceneStatus" title="État de sauvegarde de la scène" aria-live="polite">sauvegardée</div>
         <div id="helpModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle" aria-hidden="true" hidden>
             <div class="modal-backdrop" data-help-close></div>
@@ -2024,6 +2087,7 @@
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">0</kbd><span>reinitialiser le zoom (100%, recentre sur l'origine)</span></div>
                     <div class="help-row"><kbd class="kbd">?</kbd><span>afficher / masquer cette aide</span></div>
                     <div class="help-row"><kbd class="kbd wide">Bouton aide</kbd><span>meme action que la touche <kbd class="kbd">?</kbd></span></div>
+                    <div class="help-row"><kbd class="kbd wide">Commentaire HUD</kbd><span>après chaque action, un court message s'affiche en bas à gauche du HUD pendant ~3 s : il dit ce que vous POUVEZ faire maintenant et comment (le geste suivant ou le raccourci utile — Ctrl+Z pour annuler, Ctrl+Shift+Z pour rétablir, Ctrl+V pour coller), sans faire le compte-rendu de l'action passée</span></div>
                 </div>
                 <div class="modal-buttons">
                     <button id="helpClose" type="button">Fermer</button>

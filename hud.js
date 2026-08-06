@@ -3,6 +3,109 @@
 import { state } from './state.js'
 import { SHAPE_DEFS } from './constants.js'
 
+// ===== Commentaire d'action (HUD) =====
+//
+// (évolution « proposer un commentaire dans le HUD à chaque action
+// réalisée ») — toast contextuel. Deux sources, une priorité :
+//
+//   - `showHoverComment(text)` (SURVOL, prioritaire) : dit ce que le
+//     geste sur l'élément SOUS LE POINTEUR permet de faire (« Clic
+//     gauche pour créer un nouveau triangle à partir de ce segment »).
+//     Piloté par updateHoverComment (editor.js, appelé depuis
+//     updateMouseHover à chaque mousemove) : reste affiché TANT QUE le
+//     pointeur survole l'élément (pas de timer — le message suivant le
+//     remplace au survol suivant). Écrase tout post-action en cours.
+//
+//   - `showActionComment(text)` (POST-ACTION, ~3 s) : rappel du geste
+//     suivant après une action réalisée (undo, suppression, fusion…).
+//     S'affiche si le pointeur n'est sur aucun élément ; le survol le
+//     remplace dès qu'un élément est survolé, sinon il finit ses 3 s
+//     puis laisse place au message générique de zone vide.
+//
+// Cf. DESIGN.md §7.15. Aucun import de module métier (pas de cycle,
+// cf. §1.1) : les call sites (editor.js, merge.js, shapes.js,
+// history.js, io.js) importent ces fonctions. Les timers vivent au
+// niveau module (pas dans state) : effets de bord UI transitoires,
+// jamais persistés.
+const ACTION_COMMENT_DURATION = 3000
+// Délai après le retrait de la classe avant de vider le texte : laisse
+// la transition d'opacité (0.3 s) se terminer pour un fondu propre
+// (sinon le contenu disparaîtrait brutalement avant l'estompage).
+const ACTION_COMMENT_FADE = 350
+let actionCommentTimer = null
+// Token de génération : chaque appel (hover OU action) l'incrémente.
+// Le timer d'un post-action capture le token de SON appel et ne retire
+// la classe que s'il est toujours le dernier (un survol intervenu
+// entre-temps l'invalide — sans ça, le timer retirerait la classe du
+// message de survol qui l'a remplacé).
+let actionCommentToken = 0
+// Source du message courant : 'action' (post-action en cours) ou
+// 'hover' (message de survol, permanent). isActionCommentActive lit
+// cette source pour que updateHoverComment laisse finir un post-action
+// quand le pointeur est sur une zone vide.
+let actionCommentSource = null
+
+// Message de survol : reste affiché tant que le pointeur est sur
+// l'élément (aucun timer). Incrémente le token pour invalider tout
+// timer de post-action en attente (un survol qui remplace un
+// post-action ne doit pas être effacé par son timer).
+//
+// Garde de dédup : le même texte déjà affiché par un survol (source
+// 'hover' + classe visible + même contenu) = le toast est déjà à
+// jour — pas de ré-écriture DOM ni de re-tokenisation inutile à
+// chaque mousemove (updateHoverComment est appelé à chaque tick). On
+// ré-affiche quand même si la classe a été retirée entre-temps (un
+// post-action vient d'expirer : le survol doit reprendre la main)
+// ou si un post-action est en cours (le survol le remplace — le
+// texte peut être identique, par ex. le guide de construction).
+export const showHoverComment = (text) => {
+    const el = document.querySelector('#actionComment')
+    if (!el) return
+    if (actionCommentSource === 'hover'
+        && el.classList.contains('action-comment-visible')
+        && el.textContent === text) {
+        return
+    }
+    actionCommentToken++
+    actionCommentSource = 'hover'
+    clearTimeout(actionCommentTimer)
+    el.textContent = text
+    el.classList.add('action-comment-visible')
+}
+
+// Message post-action : visible ~3 s puis disparaît (fondu + vidage du
+// texte), SAUF si un survol a pris la main entre-temps (token changé).
+export const showActionComment = (text) => {
+    const el = document.querySelector('#actionComment')
+    if (!el) return
+    const myToken = ++actionCommentToken
+    actionCommentSource = 'action'
+    clearTimeout(actionCommentTimer)
+    el.textContent = text
+    el.classList.add('action-comment-visible')
+    actionCommentTimer = setTimeout(() => {
+        // Un survol (ou une autre action) est passé entre-temps : ne
+        // pas effacer son message.
+        if (actionCommentToken !== myToken) return
+        actionCommentSource = null
+        el.classList.remove('action-comment-visible')
+        // Vide le texte APRÈS le fondu : l'élément ne garde pas un
+        // contenu fantôme invisible (résidu lisible par un lecteur
+        // d'écran qui forcerait la transparence, ou un zoom navigateur
+        // à 200 % qui pourrait l'exposer).
+        setTimeout(() => {
+            if (actionCommentToken === myToken) {
+                el.textContent = ''
+            }
+        }, ACTION_COMMENT_FADE)
+    }, ACTION_COMMENT_DURATION)
+}
+
+// Vrai tant qu'un post-action est affiché (pas encore expiré) : la
+// zone vide laisse alors le post-action finir ses 3 s au lieu de
+// l'écraser avec le message générique.
+export const isActionCommentActive = () => actionCommentSource === 'action'
+
 export const updateShapeHud = () => {
     const label = document.querySelector('#shapeLabel')
     if (!label) return

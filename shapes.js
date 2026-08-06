@@ -3,7 +3,7 @@
 import { state } from './state.js'
 import { ACTION_NONE } from './constants.js'
 import { drawBoard, requestDraw } from './draw.js'
-import { updateShapeHud, updateSelectionHud, updateColorButtonState } from './hud.js'
+import { updateShapeHud, updateSelectionHud, updateColorButtonState, showActionComment } from './hud.js'
 import { saveState, shapeArrayPatch, activeShapeIndexPatch, shapeMovePatch, cloneShape } from './history.js'
 import { persistState } from './io.js'
 import { log } from './log.js'
@@ -72,6 +72,13 @@ const moveShape = (from, to) => {
     const [moved] = state.shapes.splice(from, 1)
     state.shapes.splice(to, 0, moved)
     goToShape(to)
+    // (évolution « commentaire dans le HUD ») — logique prospective :
+    // après un déplacement d'ordre, le toast invite à continuer avec le
+    // même raccourci (Alt+↑/↓) et rappelle l'annulation. Le compteur
+    // (n/m) reste lisible dans le HUD forme (#shapeLabel).
+    showActionComment(
+        `Ctrl+Z pour annuler — Alt+↑ / Alt+↓ pour continuer à réordonner`
+    )
     persistState()
 }
 
@@ -109,6 +116,12 @@ export const addShape = () => {
     })
     state.shapes.push(newShape)
     goToShape(newIndex)
+    // (évolution « commentaire dans le HUD ») — logique prospective :
+    // la nouvelle forme est vide et active (goToShape) ; le toast guide
+    // le tout premier geste à faire sur elle.
+    showActionComment(
+        `Cette forme est vide : cliquez pour poser le 1er point`
+    )
     persistState()
 }
 

@@ -16,7 +16,7 @@ import { drawBoard, requestDraw } from './draw.js'
 // io <-> viewport autorise : les deux modules ne lisent les imports
 // de l'autre qu'au call-time, jamais a l'evaluation du module.
 import { updateZoomDisplay } from './viewport.js'
-import { updateGridButtonText, updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateSceneStatus } from './hud.js'
+import { updateGridButtonText, updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateSceneStatus, showActionComment } from './hud.js'
 import { log } from './log.js'
 import { isSceneEmpty, adjacentPoints } from './geometry.js'
 
@@ -737,6 +737,11 @@ export const saveMesh = (name) => {
         // appelle updateSceneStatus : le HUD affiche le nouveau nom.
         captureSceneBaseline()
         log('Export OK: ' + a.download)
+        // (évolution « commentaire dans le HUD ») — logique prospective :
+        // le HUD #sceneStatus affiche déjà le nom + l'état « sauvegardée »
+        // (captureSceneBaseline) ; le toast indique la suite possible
+        // (ré-enregistrer avec le même raccourci).
+        showActionComment(`Ctrl+S pour ré-enregistrer sous « ${baseName} »`)
     } catch (e) {
         log('Export fail: ' + e.message)
     }
@@ -969,6 +974,9 @@ export const applyImport = (parsed, loaded, mode, sourceName) => {
         requestDraw()
         const totalTris = state.shapes.reduce((acc, s) => acc + (s && s.tris ? s.tris.length : 0), 0)
         log('Import merge OK: +' + loaded.length + ' forme' + (loaded.length > 1 ? 's' : '') + ', ' + state.shapes.length + ' au total, ' + totalTris + ' triangles')
+        showActionComment(
+            `Ctrl+Z pour annuler l'import — les formes importées sont actives`
+        )
         return true
     }
 
@@ -1004,6 +1012,9 @@ export const applyImport = (parsed, loaded, mode, sourceName) => {
     requestDraw()
     const totalTris = state.shapes.reduce((acc, s) => acc + (s && s.tris ? s.tris.length : 0), 0)
     log('Import OK: ' + state.shapes.length + ' forme' + (state.shapes.length > 1 ? 's' : '') + ', ' + totalTris + ' triangle' + (totalTris > 1 ? 's' : ''))
+    showActionComment(
+        `La scène importée est active — cliquez sur un point pour le sélectionner`
+    )
     return true
 }
 
@@ -1073,4 +1084,5 @@ export const resetAll = () => {
     updateUndoRedoHud()
     updateSelectionHud()
     log('Reset OK')
+    showActionComment('Cliquez pour poser le 1er point de votre nouvelle scène')
 }

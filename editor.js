@@ -15,7 +15,7 @@ import {
     ANNULUS_INNER_RATIO_MIN, ANNULUS_INNER_RATIO_MAX, ANNULUS_INNER_RATIO_DEFAULT,
 } from './constants.js'
 import { drawBoard, drawPoint, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
-import { updateSelectionHud, updateColorButtonState, updateShapesButton, updateClipboardButtons, updateAlignButton, updateAlignPanelButtons } from './hud.js'
+import { updateSelectionHud, updateColorButtonState, updateShapesButton, updateClipboardButtons, updateAlignButton, updateAlignPanelButtons, showActionComment, showHoverComment, isActionCommentActive } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import { modelToScreen } from './geometry.js'
 import {
@@ -187,7 +187,16 @@ const computeHoverSignature = (cursorScreen) => {
     const boxKey = state.isSelectingBox && state.selectionBoxStart && state.selectionBoxCurrent
         ? '1|' + Math.round(state.selectionBoxCurrent.x) + ',' + Math.round(state.selectionBoxCurrent.y)
         : '0'
-    return cKey + '|' + npKey + '|' + nlKey + '|' + ntKey + '|' + (state.isSelectionDimmed ? 'd' : 'n') + '|' + boxKey
+    // (évolution « message prospectif ») — selectionMode / brushMode
+    // changent le MESSAGE de survol sans changer les nearest* ni le
+    // curseur (ex. bascule vertex→segment pendant qu'on survole le
+    // même segment : le message « créer un nouveau triangle » doit
+    // devenir « sélectionner ce segment »). Ils sont dans la signature
+    // pour que la bascule de mode (toggleSelectionMode / ouverture de
+    // la palette, qui appellent updateMouseHover) force le recalcul du
+    // toast — sans ça, la garde ci-dessous early-returnerait sur une
+    // signature pourtant inchangée.
+    return cKey + '|' + npKey + '|' + nlKey + '|' + ntKey + '|' + (state.isSelectionDimmed ? 'd' : 'n') + '|' + boxKey + '|' + state.selectionMode + '|' + (state.brushMode ? 'b' : 'n') + '|' + (state.activeConstructionTriangle ? 'c' : 'n')
 }
 
 export const updateMouseHover = (cursorScreen) => {
@@ -211,7 +220,12 @@ export const updateMouseHover = (cursorScreen) => {
     // traitement — les overlays de survol (point le plus proche,
     // labels, highlights) sont du bruit pendant la construction ;
     // seule la preview (renderTransient) + le curseur sont dessines.
+    // (évolution « message prospectif ») le toast guide la PHASE
+    // courante du geste de construction (cf. computeHoverComment) —
+    // pas de survol d'élément ici : le clic est entièrement consommé
+    // par le geste.
     if (state.circleMode || state.starMode || state.annulusMode || state.shapeKind !== undefined) {
+        updateHoverComment()
         drawBoard()
         return
     }
@@ -241,6 +255,13 @@ export const updateMouseHover = (cursorScreen) => {
     const signature = computeHoverSignature(cursorScreen)
     if (signature === lastHoverSignature && !isSceneDirty()) return
     lastHoverSignature = signature
+
+    // (évolution « message prospectif ») le toast de survol suit le
+    // changement de signature : il ne se met à jour que quand le
+    // pointeur change d'élément (point / segment / triangle / zone
+    // vide) — le message reste affiché tant que le survol est stable
+    // (garde de dédup côté showHoverComment).
+    updateHoverComment()
 
     // Le curseur est repeint par renderTransient pendant drawBoard
     // (cf. plus haut) ; les overlays de survol ci-dessous (nearest
@@ -317,6 +338,135 @@ export const updateCoordsDisplay = (cursorScreen) => {
     const cursorTxt = `(${Math.round(m.x)}, ${Math.round(m.y)})`
     const nearestTxt = np ? `(${Math.round(np.x)}, ${Math.round(np.y)})` : '\u2014'
     div.textContent = `curseur ${cursorTxt}  plus proche ${nearestTxt}`
+}
+
+// ===== Commentaire contextuel de survol (toast prospectif) =====
+//
+// (évolution « message prospectif ») — le toast #actionComment dit à
+// l'utilisateur ce qu'il PEUT faire, au moment où il peut le faire :
+// quand un élément est en surbrillance sous le pointeur (point,
+// segment, triangle), le message décrit le geste que cet élément
+// permet — l'exemple fondateur : survoler un côté de triangle affiché
+// en surbrillance → « Clic gauche pour créer un nouveau triangle à
+// partir de ce segment ». Hiérarchie (cf. DESIGN.md §7.15) :
+//   1. modes de construction (cercle / étoile / anneau / forme) — le
+//      clic est entièrement consommé par le geste, le message guide la
+//      phase courante ;
+//   2. construction en cours (triangle partiel) — le geste SUIVANT du
+//      triangle en cours prime sur tout le reste (un clic posera un
+//      sommet) ;
+//   3. pinceau armé (brushMode) — le clic gauche peindra le triangle
+//      sous le curseur ;
+//   4. survol d'élément, dans le MÊME ordre de résolution que le clic
+//      (processMouseUpSelection) pour que le message annonce
+//      EXACTEMENT l'effet du clic gauche : triangle (mode triangle) >
+//      segment (mode segment) > point > segment (mode vertex, où le
+//      clic gauche branche un nouveau triangle) ;
+//   5. zone vide — si un post-action est en cours, on le laisse finir
+//      ses 3 s (isActionCommentActive) ; sinon message générique selon
+//      l'état de la forme (scène vide vs forme fermée).
+// Appelée depuis updateMouseHover (mousemove) ; les messages de survol
+// persistent tant que le pointeur est sur l'élément — aucun timer, le
+// survol suivant les remplace (showHoverComment, hud.js).
+const computeHoverComment = () => {
+    const shape = activeShape()
+    const tris = shape && Array.isArray(shape.tris) ? shape.tris : []
+    const lastTri = tris.at(-1)
+
+    // 1. Modes de construction : le message guide la phase courante du
+    //    geste (cf. les commentaires des handlers mousedown, main.js).
+    //    Prioritaire sur la construction d'un triangle : l'utilisateur
+    //    a explicitement armé l'outil, le geste en cours prime sur un
+    //    triangle partiel laissé en attente.
+    if (state.circleMode) {
+        return state.circleCenterModel
+            ? '2e clic gauche : valide le cercle — molette pour les côtés, clic droit pour annuler'
+            : '1er clic gauche : pose le centre du cercle — la molette règle le nombre de côtés'
+    }
+    if (state.starMode) {
+        if (state.starPhase === 0) {
+            return state.starCenterModel
+                ? '2e clic gauche : verrouille rayon et angle — la souris règle la profondeur'
+                : '1er clic gauche : pose le centre de l\'étoile'
+        }
+        return '3e clic gauche : valide l\'étoile — clic droit pour annuler'
+    }
+    if (state.annulusMode) {
+        if (state.annulusPhase === 0) {
+            return state.annulusCenterModel
+                ? '2e clic gauche : verrouille le rayon externe — la souris règle le trou'
+                : '1er clic gauche : pose le centre de l\'anneau'
+        }
+        return '3e clic gauche : valide l\'anneau — clic droit pour annuler'
+    }
+    if (state.shapeKind !== undefined) {
+        return state.shapeAnchorModel
+            ? '2e clic gauche : valide la forme — clic droit pour annuler'
+            : '1er clic gauche : pose l\'ancre de la forme — clic droit pour annuler'
+    }
+
+    // 2. Construction en cours : le geste suivant du triangle partiel.
+    //    Un tri avec p2 undefined est TOUJOURS resumable (addPoint le
+    //    modifie même s'il n'est plus actif) ; un tri avec p3
+    //    undefined ne l'est que s'il est le activeConstructionTriangle
+    //    (sinon le clic serait ignoré — on ne le suggère pas).
+    if (lastTri && lastTri.p2 === undefined) {
+        return 'Cliquez pour poser le 2e sommet — le 3e clic ferme le triangle'
+    }
+    if (lastTri && lastTri.p3 === undefined && lastTri === state.activeConstructionTriangle) {
+        return 'Cliquez pour poser le 3e sommet — il fermera le triangle'
+    }
+
+    // 3. Pinceau armé : le clic gauche peint le triangle sous le
+    //    curseur (paintTriangleAtCursor, mousedown main.js) — le survol
+    //    n'a pas d'autre effet que de viser.
+    if (state.brushMode) {
+        return state.nearestTriangle
+            ? 'Clic gauche pour peindre ce triangle avec la couleur choisie'
+            : 'Survolez un triangle puis cliquez pour le peindre'
+    }
+
+    // 4. Survol d'élément — même ordre de résolution que le clic
+    //    (processMouseUpSelection) pour que le message annonce
+    //    EXACTEMENT l'effet du clic gauche.
+    if (state.selectionMode === 'triangle' && (state.nearestTriangle || state.nearestLine)) {
+        return 'Clic gauche pour sélectionner ce triangle — clic droit pour le déplacer'
+    }
+    if (state.selectionMode === 'segment' && state.nearestLine) {
+        return 'Clic gauche pour sélectionner ce segment — clic droit pour le déplacer'
+    }
+    if (state.nearestPoint) {
+        return 'Clic gauche pour sélectionner ce sommet — clic droit pour le déplacer'
+    }
+    if (state.nearestLine) {
+        // Mode vertex : le clic gauche sur un segment (hors sélection)
+        // n'est pas une sélection mais la création d'un point qui
+        // BRANCHE un nouveau triangle sur ce segment (addPoint →
+        // push-new-tri, cf. DESIGN.md §3.3).
+        return 'Clic gauche pour créer un nouveau triangle à partir de ce segment'
+    }
+
+    // 5. Zone vide : un post-action en cours finit ses 3 s (le toast
+    //    le laisse parler, c'est le rappel du geste suivant après une
+    //    action) ; sinon message générique selon l'état de la forme.
+    if (isActionCommentActive()) return null
+    if (tris.length === 0) {
+        return 'Cliquez pour poser le 1er point de votre forme'
+    }
+    return 'Survolez un segment pour y brancher un nouveau triangle — ou cliquez sur un sommet pour le sélectionner'
+}
+
+// Diffuse le commentaire de survol courant dans le toast. Appelée à
+// chaque mousemove (après le calcul des nearest*) et pendant les
+// gestes de construction ; retourne sans rien faire si la zone vide
+// laisse un post-action finir ses 3 s (text === null). La garde de
+// dédup vit dans showHoverComment (hud.js) : même texte + survol
+// déjà affiché = pas de ré-écriture DOM à chaque mousemove.
+// (non exportée : interne à editor.js, seul updateMouseHover l'appelle)
+const updateHoverComment = () => {
+    const text = computeHoverComment()
+    if (text === null) return
+    showHoverComment(text)
 }
 
 // ===== Selection / click sur board =====
@@ -461,6 +611,19 @@ export const addPoint = (point) => {
     }
     state.ctx.workIsSaved = 0
     state.ctx.workIsBackuped = 0
+    // (évolution « commentaire dans le HUD ») — logique PROSPECTIVE :
+    // le toast ne fait PAS le compte-rendu de l'action passée, il dit à
+    // l'utilisateur ce qu'il PEUT faire maintenant et comment. Après un
+    // clic de construction, le message guide le geste suivant du
+    // triangle en cours (ou la seule suite possible : brancher sur un
+    // segment — un clic loin d'un segment est ignoré).
+    const stepComment = {
+        push: 'Cliquez pour poser le 2e sommet — le 3e clic ferme le triangle',
+        'modify-p2': 'Cliquez pour poser le 3e sommet — il fermera le triangle',
+        'modify-p3': 'Cliquez sur un segment pour y brancher un nouveau triangle — Ctrl+Z pour défaire',
+        'push-new-tri': 'Cliquez pour poser le 2e sommet de ce nouveau triangle',
+    }[action]
+    if (stepComment) showActionComment(stepComment)
     persistState()
 }
 
@@ -555,6 +718,9 @@ export const copySelection = () => {
     if (!captured) return false
     state.clipboard = { points: captured.points, tris: captured.tris, offset: 0 }
     log(`Copie : ${captured.points.length} point${captured.points.length > 1 ? 's' : ''}, ${captured.tris.length} triangle${captured.tris.length > 1 ? 's' : ''}`)
+    showActionComment(
+        `Ctrl+V pour coller dans la forme active — la sélection est dans le presse-papiers`
+    )
     updateClipboardButtons()
     return true
 }
@@ -572,6 +738,9 @@ export const cutSelection = () => {
     deleteSelectedPoint()
     updateClipboardButtons()
     log(`Coupe : ${captured.points.length} point${captured.points.length > 1 ? 's' : ''}, ${captured.tris.length} triangle${captured.tris.length > 1 ? 's' : ''}`)
+    showActionComment(
+        `Ctrl+V pour coller — le contenu est dans le presse-papiers`
+    )
     return true
 }
 
@@ -626,6 +795,9 @@ export const pasteClipboard = () => {
     updateSelectionHud()
     updateColorButtonState()
     log(`Collage : ${clip.points.length} point${clip.points.length > 1 ? 's' : ''}, ${clipTris.length} triangle${clipTris.length > 1 ? 's' : ''}`)
+    showActionComment(
+        `Ctrl+Z pour annuler — la copie collée est sélectionnée, glissez-la pour la déplacer`
+    )
     persistState()
     return true
 }
@@ -748,6 +920,10 @@ const alignOrDistribute = (mode, axis) => {
     const verb = mode === 'align' ? 'Aligne' : 'Repartit'
     const coordLabel = axis === 'x' ? 'X' : 'Y'
     log(`${verb} ${target.size} point${target.size > 1 ? 's' : ''} selon ${coordLabel}`)
+    showActionComment(
+        `Ctrl+Z pour annuler — Alt+${coordLabel === 'X' ? '→' : '←'}` +
+        `${mode === 'distribute' ? ' (avec Maj)' : ''} pour ${mode === 'align' ? 'aligner' : 'répartir'} aussi selon ${coordLabel === 'X' ? 'Y' : 'X'}`
+    )
     state.nearestPoint = undefined
     state.nearestLine = undefined
     requestDraw()
@@ -1020,6 +1196,9 @@ export const createCircle = (center, radius, segments, offsetAngle = 0) => {
     state.nearestPoint = undefined
     state.nearestLine = undefined
     log(`Cercle cree : ${Math.round(segments)} cotes, rayon ${radius.toFixed(1)}${offsetAngle !== 0 ? ', angle de depart ' + (offsetAngle * 180 / Math.PI).toFixed(2) + ' deg' : ''}`)
+    showActionComment(
+        `C pour tracer un autre cercle (molette = côtés) — Ctrl+Z pour annuler`
+    )
     // Spec utilisateur : le mode cercle se desactive apres la creation
     // (le bouton est desélectionne) — un cercle = un geste, pas un
     // mode persistant. Le prochain cercle necessite un nouveau clic
@@ -1219,6 +1398,9 @@ export const createStar = (center, radius, offsetAngle = 0, innerRatio = SHAPE_S
     state.nearestPoint = undefined
     state.nearestLine = undefined
     log(`Etoile creee : 5 branches, profondeur ${Math.round(innerRatio * 100)}%`)
+    showActionComment(
+        `Panneau Formes pour une autre étoile (3 clics) — Ctrl+Z pour annuler`
+    )
     // Spec utilisateur : le mode étoile se desactive apres la creation
     // (comme le cercle) — une etoile = un geste. exitStarMode re-log,
     // met a jour le bouton et repaint (requestDraw + updateMouseHover).
@@ -1415,6 +1597,9 @@ export const createAnnulus = (center, outerRadius, offsetAngle = 0, innerRatio =
     state.nearestPoint = undefined
     state.nearestLine = undefined
     log(`Anneau cree : ${n} cotes, trou ${Math.round(innerRatio * 100)}% du rayon externe`)
+    showActionComment(
+        `Panneau Formes pour un autre anneau (3 clics) — Ctrl+Z pour annuler`
+    )
     // Spec utilisateur : le mode anneau se desactive apres la creation
     // (comme le cercle / l'etoile) — un anneau = un geste. exitAnnulusMode
     // re-log, met a jour le bouton et repaint.
@@ -1673,6 +1858,9 @@ export const createShape = (kind, anchor, current, radius, offsetAngle = 0) => {
     state.nearestPoint = undefined
     state.nearestLine = undefined
     log(`${SHAPE_DEFS[kind].label} cree : ${geometry.pointList.length} points, ${geometry.tris.length} triangle${geometry.tris.length > 1 ? 's' : ''}`)
+    showActionComment(
+        `Panneau Formes pour une autre forme (2 clics) — Ctrl+Z pour annuler`
+    )
     disarmShapeTool()
     persistState()
 }
@@ -2037,6 +2225,9 @@ export const deleteSelectedPoint = () => {
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     updateColorButtonState()
+    showActionComment(
+        `Ctrl+Z pour annuler — sélectionnez un point pour le modifier`
+    )
     persistState()
 }
 
@@ -2095,6 +2286,9 @@ export const deleteSelectedSegment = () => {
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     updateColorButtonState()
+    showActionComment(
+        `Ctrl+Z pour annuler — cliquez sur un autre segment pour le supprimer`
+    )
     persistState()
 }
 
@@ -2153,6 +2347,9 @@ export const deleteSelectedTriangle = () => {
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateSelectionHud()
     updateColorButtonState()
+    showActionComment(
+        `Ctrl+Z pour annuler — cliquez sur un autre triangle pour le supprimer ou le peindre`
+    )
     persistState()
 }
 
@@ -2846,6 +3043,13 @@ export const rotateSelectedPoints = (center, angle) => {
         if (state._pendingSelectedRotatePatch) {
             saveState({ patches: [state._pendingSelectedRotatePatch] })
             state._pendingSelectedRotatePatch = null
+            // Commentaire au COMMIT du geste (pas à chaque tick de
+            // molette : le timer debounce est réinitialisé par chaque
+            // tick, le message ne partirait jamais). Un seul message
+            // par geste, prospectif (pas de compte-rendu).
+            showActionComment(
+                `Molette pour continuer à pivoter — Ctrl+Z pour annuler`
+            )
         }
         persistState()
     }, 400)
@@ -3308,6 +3512,10 @@ export const paintTriangleAtCursor = (e) => {
     if (!nt) return
     paintSingleTriangle(nt.triangleIndex, state.brushColor)
     log(`Peinture : triangle ${nt.triangleIndex}`)
+    // (évolution « commentaire dans le HUD ») — logique prospective :
+    // après une peinture, le toast invite au geste suivant (peindre un
+    // autre triangle) et rappelle l'annulation possible.
+    showActionComment(`Ctrl+Z pour annuler — cliquez sur un autre triangle pour le peindre`)
 }
 
 // Construit les swatches depuis state.colorPalette (la palette

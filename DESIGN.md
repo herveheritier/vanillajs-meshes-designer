@@ -1713,6 +1713,128 @@ le panneau du bouton `#align` (groupe sélection, après `#paste` avant
 
 **Raccourcis** : mêmes gardes que l'ordre des formes (§7.13) — `typing`, `preview` (aucune édition), `!e.ctrlKey` (AltGr = Alt+Ctrl exclu), `!e.repeat` ; `e.shiftKey` distingue répartir (Shift+) d'aligner. Les raccourcis passent par les MÊMES fonctions que les boutons (`alignSelectedPointsX/Y` / `distributeSelectedPointsX/Y`) — un seul chemin de vérité. Couvert par `scripts/smoke-align.mjs`.
 
+### §7.15 Commentaire contextuel dans le HUD (`#actionComment`)
+
+**Motivation** (conseils.md, priorité 1) : la modale d'aide `?` intervient
+*après* que l'utilisateur a rencontré une difficulté ; il manque une aide
+**au moment de l'action**. L'évolution ajoute un toast contextuel dans le
+HUD bas-gauche, **prospectif et piloté par le survol** : il dit à
+l'utilisateur **ce qu'il PEUT faire maintenant et comment** — le geste
+que l'élément sous le pointeur permet, ou le geste suivant après une
+action — au lieu de faire le compte-rendu de l'action passée. Le
+feedback pédagogique arrive pendant que le geste est encore frais.
+
+**Définition du message prospectif (contrainte produit)** : le toast ne
+dit JAMAIS ce qui vient d'être fait (« Point posé », « Triangle fermé »,
+« Annulé », « N points supprimés »… sont interdits). Il exprime
+uniquement le prochain geste possible et sa méthode. L'exemple fondateur
+: approcher le pointeur d'un côté de triangle mis en surbrillance affiche
+« **Clic gauche pour créer un nouveau triangle à partir de ce segment** ».
+La correction « clic gauche » (vs clic droit dans la demande initiale)
+est volontaire : le message reflète la sémantique RÉELLE de l'app (le
+clic gauche branche un triangle sur le segment en mode vertex ; le clic
+droit déplace) — un message qui annoncerait un geste inexistant serait de
+l'aide mensongère.
+
+**Hiérarchie des sources** (dans `editor.js:updateHoverComment`, appelée
+à chaque mousemove après le calcul des `nearest*`, ET depuis la branche
+cercle/étoile/anneau/forme de `updateMouseHover` où les overlays de
+survol sont coupés) :
+
+| # | Source | Exemple de message |
+|---|---|---|
+| 1 | Modes de construction (cercle / étoile / anneau / forme) — le clic est entièrement consommé par le geste | « 1er clic gauche : pose le centre du cercle — la molette règle le nombre de côtés » / « 2e clic gauche : valide… » selon la phase (`circleCenterModel`, `starPhase`, `annulusPhase`, `shapeAnchorModel`) |
+| 2 | Construction en cours (triangle partiel) — le geste SUIVANT du triangle prime sur tout le reste | « Cliquez pour poser le 2e sommet… » / « …le 3e sommet — il fermera le triangle ». Un tri `p2 = undefined` est TOUJOURS resumable (addPoint le modifie même s'il n'est plus actif) ; `p3 = undefined` ne l'est que s'il est le `activeConstructionTriangle` (sinon le clic serait ignoré — on ne le suggère pas) |
+| 3 | Pinceau armé (`brushMode`) — le clic gauche peindra | « Clic gauche pour peindre ce triangle avec la couleur choisie » |
+| 4 | Survol d'élément — MÊME ordre de résolution que le clic (processMouseUpSelection) | triangle (mode triangle) > segment (mode segment) > point (« sélectionner ce sommet — clic droit pour le déplacer ») > segment en mode vertex (« **créer un nouveau triangle à partir de ce segment** ») |
+| 5 | Zone vide — un post-action en cours finit ses 3 s ; sinon message générique | « Cliquez pour poser le 1er point de votre forme » (scène vide) / « Survolez un segment pour y brancher un nouveau triangle… » (forme fermée) |
+
+Le message de survol **persiste tant que le pointeur est sur l'élément**
+(« tant que survolé ») : aucun timer, le survol suivant le remplace. Le
+post-action (après une action : undo, suppression, fusion, copier,
+création…) reste ~3 s puis laisse place au message de survol ou au
+générique — la zone vide le laisse finir (`isActionCommentActive`) au
+lieu de l'écraser.
+
+**Placement & style** : `#actionComment` (main.html) est un div absolu en
+bas-gauche, au-dessus de la pile HUD `#coords` → `#zoomDisplay` →
+`#fpsDisplay` (bottom 122 px), même charte visuelle (monospace, fond
+sombre transparent, blur, border). Deux états CSS : invisible par défaut
+(`opacity: 0`, `pointer-events: none` — le toast n'intercepte JAMAIS un
+clic) ; `.action-comment-visible` = `opacity: 1` avec transition 0.3 s
+(fondu). `max-width: 380px` + `white-space: normal` : les messages
+prospectifs sont plus longs qu'un simple compte-rendu, le retour à la
+ligne évite tout débordement sur les petits écrans. Masqué en preview
+(`body.preview-mode #actionComment`), comme tout le HUD.
+`aria-live="polite"` pour les lecteurs d'écran.
+
+**API** (hud.js — module sans import de module métier, pas de cycle,
+cf. §1.1) :
+- `showHoverComment(text)` : message de survol PERSISTANT (aucun timer).
+  Incrémente le token de génération pour invalider tout timer de
+  post-action en attente (un survol qui remplace un post-action ne doit
+  pas être effacé par son timer). Garde de dédup : même texte + classe
+  visible + source 'hover' = le toast est déjà à jour (pas de ré-écriture
+  DOM à chaque mousemove) ; on ré-affiche quand même si un post-action a
+  expiré entre-temps (le survol reprend la main) ou est en cours (le
+  survol le remplace — le texte peut être identique, ex. guide de
+  construction).
+- `showActionComment(text)` : post-action ~3 s. L'élément est rempli, la
+  classe posée, puis un timer module-level programme le retrait de la
+  classe après `ACTION_COMMENT_DURATION = 3000` ms. `clearTimeout` AVANT
+  chaque re-arm : une action rapide remplace le commentaire précédent sans
+  jamais le faire clignoter (le nouveau toast reste visible 3 s à partir
+  de la dernière action). Un second timer (`ACTION_COMMENT_FADE = 350` ms)
+  vide le texte APRÈS le fondu : pas de contenu fantôme invisible (résidu
+  lisible par un lecteur d'écran ou un zoom navigateur forçant la
+  transparence).
+- `isActionCommentActive()` : vrai tant qu'un post-action est affiché —
+  `updateHoverComment` lit cette source pour laisser un post-action finir
+  ses 3 s quand le pointeur est sur une zone vide.
+- `updateHoverComment()` (editor.js) : calcule le message courant via
+  `computeHoverComment` (hiérarchie ci-dessus) et le diffuse via
+  `showHoverComment` ; `null` (zone vide + post-action en cours) = ne
+  rien faire. Appelé depuis `updateMouseHover` après le calcul des
+  `nearest*` (derrière la garde de signature : il ne se met à jour que
+  quand le survol change) et depuis la branche des modes de construction.
+
+**Token de génération** : chaque appel (hover OU action) incrémente
+`actionCommentToken`. Le timer d'un post-action capture le token de SON
+appel et ne retire la classe que s'il est toujours le dernier (un survol
+intervenu entre-temps l'invalide — sans ça, le timer retirerait la classe
+du message de survol qui l'a remplacé). `actionCommentSource`
+('hover' | 'action') pilote la garde de dédup et `isActionCommentActive`.
+Les timers vivent au niveau module (pas dans `state`) : effets de bord UI
+transitoires, jamais persistés — exactement comme la preview ou l'état
+armé de la fusion.
+
+**Call sites du post-action** (tous importent `showActionComment` depuis
+hud.js — pas de cycle : hud.js ne lit que `state` et les constantes) :
+
+| Module | Actions couvertes | Guidance prospective (extrait) |
+|---|---|---|
+| `editor.js` | `addPoint` (le message SUIT le geste de construction : push → « Cliquez pour poser le 2e sommet… », modify-p2 → « …le 3e sommet », modify-p3 → « Cliquez sur un segment pour y brancher… », push-new-tri → « …de ce nouveau triangle ») | geste suivant du triangle |
+| `editor.js` | `deleteSelectedPoint` / `deleteSelectedSegment` / `deleteSelectedTriangle` | « Ctrl+Z pour annuler — sélectionnez / cliquez sur… » |
+| `editor.js` | `copySelection` / `cutSelection` / `pasteClipboard` | « Ctrl+V pour coller… » / « Ctrl+Z pour annuler — la copie collée est sélectionnée, glissez-la… » |
+| `editor.js` | `alignOrDistribute` (§7.14) | « Ctrl+Z pour annuler — Alt+→ pour aligner aussi selon Y… » |
+| `editor.js` | `rotateSelectedPoints` — au COMMIT du debounce (pas à chaque tick de molette : le timer est réinitialisé par chaque tick, le message ne partirait jamais) | « Molette pour continuer à pivoter — Ctrl+Z » |
+| `editor.js` | créations cercle / étoile / anneau / forme prédéfinie | « C pour tracer un autre cercle… » / « Panneau Formes pour une autre étoile… » |
+| `editor.js` | `paintTriangleAtCursor` | « Ctrl+Z pour annuler — cliquez sur un autre triangle pour le peindre » |
+| `merge.js` | `applyMergeToSelection` (cœur commun fusion classique ET par déplacement) | « Ctrl+Z pour annuler — sélectionnez ≥ 2 points pour une autre fusion » |
+| `shapes.js` | `moveShapeUp/Down` (via `moveShape`) + `addShape` | « Ctrl+Z pour annuler — Alt+↑/↓ pour continuer à réordonner » / « Cette forme est vide : cliquez pour poser le 1er point » |
+| `history.js` | `undo` / `redo` | « Ctrl+Shift+Z (ou Ctrl+Y) pour rétablir » / « Ctrl+Z pour annuler à nouveau » |
+| `io.js` | `saveMesh` / `applyImport` (merge + replace) / `resetAll` | « Ctrl+S pour ré-enregistrer… » / « Ctrl+Z pour annuler l'import… » / « Cliquez pour poser le 1er point de votre nouvelle scène » |
+
+**Non couvert volontairement** : le post-action de sélection simple
+(changement de forme active, clic de sélection) — ce n'est pas une
+action qui produit un résultat à commenter, et le bruit noierait le
+signal (le survol #4 annonce déjà le clic de sélection avant le geste).
+La rotation AltGr globale (`rotateEachShapeAroundPivot`) reste
+silencieuse : le HUD `#zoomDisplay` affiche déjà l'angle cumulé, un toast
+en plus serait du bruit. Couvert par `scripts/smoke-comment.mjs` (16e
+suite — y compris l'exemple fondateur : survol du milieu d'un segment →
+« créer un nouveau triangle à partir de ce segment »).
+
 ---
 
 ## §8. Pile d'historique avec stockage delta

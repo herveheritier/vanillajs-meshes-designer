@@ -4,7 +4,7 @@ import { state } from './state.js'
 import { activeTriangles, adjacentPoints } from './geometry.js'
 import { ACTION_NONE } from './constants.js'
 import { drawBoard, requestDraw } from './draw.js'
-import { updateSelectionHud, updateMergeButtonState } from './hud.js'
+import { updateSelectionHud, updateMergeButtonState, showActionComment } from './hud.js'
 import { saveState, replaceShapePatch, cloneShape } from './history.js'
 import { persistState } from './io.js'
 import { updateMouseHover } from './editor.js'
@@ -308,6 +308,13 @@ const applyMergeToSelection = (mergePos, label) => {
     log(
         `${label} : ${selected.length} ref(s) -> 1 point cible en ` +
         `(${mergePos.x.toFixed(2)}, ${mergePos.y.toFixed(2)})`
+    )
+    // (évolution « commentaire dans le HUD ») — logique prospective :
+    // après une fusion, le toast propose le geste suivant (fusionner
+    // d'autres points) et rappelle l'annulation possible. Le détail
+    // chiffré (N refs -> 1) reste dans la console (log ci-dessus).
+    showActionComment(
+        `Ctrl+Z pour annuler — sélectionnez ≥ 2 points pour une autre fusion`
     )
     return true
 }
