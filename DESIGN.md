@@ -1887,7 +1887,7 @@ distingue que par son nom vert « Plan n » (texte simple GROS
 sa pleine opacité (les autres sont dimmés). Le passage d'un plan à un
 autre est un FONDU PROGRESSIF : l'opacité d'une carte suit une courbe
 exponentielle de son écart au focus (`KIOSK_DIM_MIN_ALPHA = 0.3` +
-`(1-min)·exp(-|dx|/KIOSK_DIM_FALLOFF = 2)`), rehaussée par la
+`(1-min)·exp(-|dx|/KIOSK_DIM_FALLOFF = 3)`), rehaussée par la
 « prominence » `prom = max(0, 1-|dx|)` (1 au focus, 0 dès |dx| ≥ 1) —
 `alpha = prom + (1-prom)·dim` — et le nom s'affiche en FONDU CROISÉ
 (alpha = prom) sur les deux cartes voisines du focus : l'ancien nom
