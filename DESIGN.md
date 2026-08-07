@@ -1880,18 +1880,24 @@ demandé. Cette règle (`kioskFocusAt`) est PARTAGÉE avec la sélection au
 clic (`kioskSelectedIndex`) : l'affichage et le clic ne peuvent
 diverger (cf. « Sélection au clic » ci-dessous). `drawKiosk` rend les cartes par ordre de `|dx|` croissant
 (le plan en avant passe PAR-DESSUS ses voisins — chevauchement simulé),
-avec un faux-3D (tranche `KIOSK_EDGE_RATIO` plus sombre du côté de
-l'inclinaison). AUCUN cadre ni anneau : le plan mis en évidence ne se
+sans tranche d'épaisseur (la bande sombre du faux-3D a été retirée :
+plans plats, la perspective trapèze suffit — cf. EVOLUTIONS). AUCUN
+cadre ni anneau : le plan mis en évidence ne se
 distingue que par son nom vert « Plan n » (texte simple GROS
 `KIOSK_LABEL_FONT = bold 18px`, sans pastille) affiché sous sa carte et
 sa pleine opacité (les autres sont dimmés). Le passage d'un plan à un
-autre est un FONDU PROGRESSIF : l'opacité d'une carte suit une courbe
-exponentielle de son écart au focus (`KIOSK_DIM_MIN_ALPHA = 0.3` +
-`(1-min)·exp(-|dx|/KIOSK_DIM_FALLOFF = 3)`), rehaussée par la
-« prominence » `prom = max(0, 1-|dx|)` (1 au focus, 0 dès |dx| ≥ 1) —
-`alpha = prom + (1-prom)·dim` — et le nom s'affiche en FONDU CROISÉ
-(alpha = prom) sur les deux cartes voisines du focus : l'ancien nom
-s'efface pendant que le nouveau apparaît. Une ligne-guide verte
+autre est un FONDU ENCHAÎNÉ (dissolution) : dans la fenêtre |dx| ≤ 1,
+l'opacité interpole LINÉAIREMENT entre le focus (1) et le niveau de
+repos d'un voisin `KIOSK_NEIGHBOR_ALPHA = 0.45` — le plan qui sort
+s'éteint pendant que le suivant s'allume (avant, le voisin restait à
+~0.8 d'opacité et le basculement n'était porté que par le nom/trait :
+sensation directe) ; au-delà, la courbe exponentielle
+(`KIOSK_DIM_MIN_ALPHA = 0.3` + `(KIOSK_NEIGHBOR_ALPHA - min) ·
+exp(-(|dx|-1)/KIOSK_DIM_FALLOFF = 3)`) poursuit, continue en |dx| = 1
+— `prom = max(0, 1-|dx|)`, `alpha = prom + (1-prom)·rest` — et le nom
+s'affiche en FONDU CROISÉ (alpha = prom) sur les deux cartes voisines
+du focus : l'ancien nom s'efface pendant que le nouveau apparaît. Une
+ligne-guide verte
 souligne le focus. **La face de chaque carte est
 dessinée en vraie PROJECTION PERSPECTIVE** (`projectKioskPoint`, un
 point local `(u, v) ∈ [-1, 1]²` pivoté de `tilt` autour de l'axe
@@ -1905,10 +1911,9 @@ relief. Les triangles du plan sont projetés sommet par sommet (la
 perspective n'est pas affine : un scale global ne suffit pas), le nom
 « Plan n » (uniquement pour le plan mis en évidence, texte vert simple
 sans pastille, centré sur le milieu de l'empreinte projetée) passe sous
-le bas du bord proche agrandi. `cardFootprint`/`cardBand` restent le
-contrat partagé rendu/layout (les bords u = ±1 projetés + bande
-`KIOSK_EDGE_RATIO`) : le recentrage anti-clipping du layout et la
-tranche dessinée partagent la même géométrie.
+le bas du bord proche agrandi. `cardFootprint` reste le contrat partagé
+rendu/layout (les bords u = ±1 projetés) : le recentrage anti-clipping
+du layout et la face dessinée partagent la même géométrie.
 Les cartes sont dimensionnées pour tenir dans l'écran dans LES DEUX
 dimensions : `cardDims` borne la largeur à `cssBoardW ×
 KIOSK_CARD_W_RATIO = 0.55 × scale` (un plan très allongé — aspect
@@ -2033,7 +2038,7 @@ Conséquence :
 - `undo` applique `before` (inverse), `redo` applique `after` (forward).
 - Pas de calcul d'inverse runtime — les deux extrémités sont déjà
   matérialisées dans le patch. Coût mémoire : 2× celui d'un
-  single-side, mais c'est borné (la tranche modifiée n'est pas
+  single-side, mais c'est borné (la carte modifiée n'est pas
   toute la scène) — voir tableau §8.4.
 
 ### §8.3 Patch kinds et leur domaine

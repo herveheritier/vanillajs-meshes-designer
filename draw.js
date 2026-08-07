@@ -774,14 +774,13 @@ const KIOSK_CARD_H_RATIO = 0.6        // hauteur de carte / hauteur canvas
 const KIOSK_CARD_W_RATIO = 0.55       // largeur max de carte / largeur canvas (plans très allongés)
 const KIOSK_CARD_SPACING_RATIO = 0.35 // espacement max entre cartes / largeur (réduit : la perspective élargit l'empreinte)
 const KIOSK_CARD_SPAN_RATIO = 0.88    // envergure totale max / largeur
-const KIOSK_EDGE_RATIO = 0.3          // épaisseur du faux-3D / hauteur carte
 const KIOSK_MAX_PARALLAX_Y = 18       // surélévation des cartes lointaines (px)
 const KIOSK_ASPECT_MIN = 0.35
 const KIOSK_ASPECT_MAX = 2.8
 const KIOSK_PANEL_BG = 'rgba(30, 30, 30, 0.9)'
-const KIOSK_PANEL_BG_EDGE = 'rgba(16, 16, 16, 0.95)'
-const KIOSK_DIM_MIN_ALPHA = 0.3
-const KIOSK_DIM_FALLOFF = 3.0        // décroissance exponentielle de l'atténuation (fondu progressif, réglage utilisateur : plus lent que 2)
+const KIOSK_DIM_MIN_ALPHA = 0.1
+const KIOSK_NEIGHBOR_ALPHA = 0.45    // opacité de repos d'un plan quand le focus est sur son voisin : plancher du fondu enchaîné
+const KIOSK_DIM_FALLOFF = 3.0        // décroissance exponentielle de l'atténuation au-delà du voisin (réglage utilisateur : plus lent que 2)
 const KIOSK_LABEL_FONT = 'bold 18px monospace' // numéro de plan en gros (facilite le choix)
 const KIOSK_LABEL_OFFSET = 16
 const KIOSK_GUIDE_COLOR = 'rgba(0, 255, 0, 0.25)'
@@ -911,11 +910,11 @@ export const computeKioskLayout = () => {
         // extrêmes (fortement inclinées) débordent de l'écran côté bord
         // proche. Puis CLAMP anti-débordement écran : un slot peut sortir du
         // canvas quand le focus est près d'un bord — la carte entière
-        // (empreinte + bande) reste alors visible dans l'écran. Clamp X
-        // uniquement : verticalement les cartes tiennent par construction
-        // (cardH ≤ 0.6·H et sMax ≤ ~1.57 → projection ≤ ~0.94·H). Layout et
-        // hit-test partagent cette même position. Le milieu d'empreinte est
-        // mémorisé (après clamp) pour centrer l'étiquette dessus.
+        // (empreinte) reste alors visible dans l'écran. Clamp X uniquement :
+        // verticalement les cartes tiennent par construction (cardH ≤ 0.6·H
+        // et sMax ≤ ~1.57 → projection ≤ ~0.94·H). Layout et hit-test
+        // partagent cette même position. Le milieu d'empreinte est mémorisé
+        // (après clamp) pour centrer l'étiquette dessus.
         const d = cardDims(planBounds(state.shapes[i]), scale)
         const fp = cardFootprint(card, d)
         card.x += slotX - (fp.left + fp.right) / 2
@@ -930,62 +929,41 @@ export const computeKioskLayout = () => {
 }
 
 
-
-// Bande d'épaisseur du faux-3D : côté opposé à l'inclinaison (le bord
-// qui « recule »). CONTRAT partagé entre le rendu (drawKioskCard) et
-// l'empreinte de layout (cardFootprint, recentrage) — side/uFar/edgeW/
-// sFar doivent rester identiques des deux côtés (une divergence =
-// bande dessinée qui ne colle pas à l'empreinte du layout).
-const cardBand = (c, d) => {
-    const sinT = Math.sin(c.tilt)
-    const side = c.dx < 0 ? 1 : -1
-    const uFar = side === -1 ? -1 : 1
-    return {
-        side,
-        uFar,
-        edgeW: Math.abs(sinT) * d.cardH * KIOSK_EDGE_RATIO,
-        sFar: KIOSK_PERSPECTIVE_D / (KIOSK_PERSPECTIVE_D - uFar * sinT),
-    }
-}
-
 // Empreinte écran d'une carte : span X de la face PROJETÉE (bords
-// u = ±1 dans la perspective) + bande d'épaisseur du faux-3D du côté
-// opposé à l'inclinaison. Sert au RECENTRAGE anti-clipping du layout
-// (computeKioskLayout) et reste le pendant exact de la bande dessinée
-// par drawKioskCard via cardBand (mêmes side/uFar/edgeW/sFar).
+// u = ±1 dans la perspective). Sert au RECENTRAGE anti-clipping du
+// layout (computeKioskLayout) et reste le pendant exact de la face
+// dessinée par drawKioskCard — toute divergence rendrait le recentrage
+// incohérent avec le rendu.
 const cardFootprint = (c, d) => {
-    const { side, edgeW } = cardBand(c, d)
-    const left = projectKioskPoint(c, d, -1, 0).x - (side === -1 ? edgeW : 0)
-    const right = projectKioskPoint(c, d, 1, 0).x + (side === 1 ? edgeW : 0)
+    const left = projectKioskPoint(c, d, -1, 0).x
+    const right = projectKioskPoint(c, d, 1, 0).x
     return { left, right }
 }
 
-// Rendu d'une carte : bande d'épaisseur (faux-3D) du côté opposé à
-// l'inclinaison, puis face en TRAPÈZE (perspective : le bord proche est
-// agrandi, le lointain rétréci — vraie impression d'un plan incliné).
+// Rendu d'une carte : face en TRAPÈZE (perspective : le bord proche est
+// agrandi, le lointain rétréci — vraie impression d'un plan incliné),
+// sans tranche d'épaisseur ni cadre.
 const drawKioskCard = (c) => {
     const shape = state.shapes[c.index]
     const bounds = planBounds(shape)
     const d = cardDims(bounds, c.scale)
     const ctx = state._ctx
-    // Fondu progressif : l'opacité suit une courbe exponentielle de
-    // l'écart au focus (KIOSK_DIM_FALLOFF), rehaussée par la prominence
-    // du plan (1 au focus, 0 dès |dx| ≥ 1) — le passage d'un plan à un
-    // autre est un glissement continu, pas un basculement d'opacité.
-    const prom = Math.max(0, 1 - Math.abs(c.dx))
-    const dim = KIOSK_DIM_MIN_ALPHA + (1 - KIOSK_DIM_MIN_ALPHA) * Math.exp(-Math.abs(c.dx) / KIOSK_DIM_FALLOFF)
-    const alpha = prom + (1 - prom) * dim
+    // FONDU ENCHAÎNÉ (dissolution) : le plan qui sort s'éteint jusqu'au
+    // niveau de repos d'un voisin (KIOSK_NEIGHBOR_ALPHA) pendant que le
+    // suivant s'allume — avant, le voisin restait à ~0.8 d'opacité et le
+    // basculement n'était porté que par le nom/trait (sensation directe).
+    // |dx| ≤ 1 : interpolation linéaire focus (1) → voisin (KIOSK_NEIGHBOR_ALPHA) ;
+    // au-delà : courbe exponentielle (KIOSK_DIM_FALLOFF) jusqu'à KIOSK_DIM_MIN_ALPHA.
+    const dist = Math.abs(c.dx)
+    const prom = Math.max(0, 1 - dist)
+    const rest = dist <= 1
+        ? KIOSK_NEIGHBOR_ALPHA
+        : KIOSK_DIM_MIN_ALPHA + (KIOSK_NEIGHBOR_ALPHA - KIOSK_DIM_MIN_ALPHA) * Math.exp(-(dist - 1) / KIOSK_DIM_FALLOFF)
+    const alpha = prom + (1 - prom) * rest
 
-    // Bande d'épaisseur : collée au bord lointain (côté qui « recule »).
-    const { side, uFar, edgeW, sFar } = cardBand(c, d)
-    const farX = projectKioskPoint(c, d, uFar, 0).x
-    if (edgeW > 0.5) {
-        ctx.globalAlpha = alpha
-        ctx.fillStyle = KIOSK_PANEL_BG_EDGE
-        ctx.fillRect(Math.min(farX, farX + side * edgeW), c.y - d.halfH * sFar, edgeW, d.cardH * sFar)
-    }
-
-    // Face : quadrilatère aux 4 coins projetés (trapèze en perspective).
+    // Face : quadrilatère aux 4 coins projetés (trapèze en perspective),
+    // rempli sans contour (pas de cadre) ni tranche d'épaisseur (la bande
+    // sombre du faux-3D a été retirée — plans plats, cf. DESIGN.md §7.16).
     const tl = projectKioskPoint(c, d, -1, -1)
     const tr = projectKioskPoint(c, d, 1, -1)
     const br = projectKioskPoint(c, d, 1, 1)
