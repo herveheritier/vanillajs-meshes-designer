@@ -89,7 +89,7 @@ const openSeededPage = async (sceneJson) => {
 // Déroule les erreurs de toutes les pages en une liste plate.
 const allErrors = () => pageErrors.flat()
 
-// Coordonnées de la forme active depuis le localStorage persisté.
+// Coordonnées du plan actif depuis le localStorage persisté.
 const coords = (page) => page.evaluate((key) => {
     try {
         const s = JSON.parse(localStorage.getItem(key) || '{}')

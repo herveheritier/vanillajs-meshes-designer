@@ -473,7 +473,7 @@ export const drawBoard = () => {
     renderTransient()
 }
 
-// selectedPoints = indices pointList de la forme active : resolution
+// selectedPoints = indices pointList du plan actif : resolution
 // en coords (indices non-integer / hors range ignores) puis batch.
 export const drawSelectedPoints = () => {
     if (typeof state.selectedPoints === 'undefined' || !state.selectedPoints || state.selectedPoints.length === 0) return
@@ -490,7 +490,7 @@ export const drawSelectedPoints = () => {
     drawPointsBatch(resolved, 6, color)
 }
 
-// Anneaux orange autour des positions multi-points de la FORME ACTIVE
+// Anneaux orange autour des positions multi-points du PLAN ACTIF
 // (candidats a la fusion #mergePoints, cf. DESIGN.md §7.10). Rendu
 // apres drawSelectedPoints pour rester visible sur un sommet selectionne.
 export const drawMultiPointMarkers = () => {
@@ -606,9 +606,9 @@ export const drawShapes = () => {
         !Array.isArray(state.shapes) ||
         state.shapes.length === 0
     ) return
-    // Preview « plans » (cf. DESIGN.md §2.6) : TOUTES les formes comme
-    // plans remplis dans l'ordre du tableau (forme n = plan n, la plus
-    // haute recouvre les precedentes).
+    // Preview « plans » (cf. DESIGN.md §2.6) : TOUS les plans rendus
+    // remplis dans l'ordre du tableau (le plus haut recouvre les
+    // precedents).
     if (state.previewPlans) {
         for (let i = 0; i < state.shapes.length; i++) {
             drawShape(state.shapes[i], true)

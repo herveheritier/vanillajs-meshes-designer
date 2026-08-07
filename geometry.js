@@ -35,7 +35,7 @@ export const screenToModel = (screen) => {
 
 // ===== Topologie / selection =====
 
-// Triangles (par indices) de la forme active.
+// Triangles (par indices) du plan actif.
 export const activeTriangles = () => state.shapes[state.activeShapeIndex].tris
 
 export const isSceneEmpty = () => {

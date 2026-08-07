@@ -505,7 +505,7 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault()
         toggleCircleMode()
     }
-    // Alt+↑/↓ : deplace la forme active d'un plan (memes fonctions que
+    // Alt+↑/↓ : deplace le plan actif d'un rang (memes fonctions que
     // les boutons #moveShapeUp/Down). Gardes : typing, preview, AltGr
     // (!e.ctrlKey), !e.repeat ; bornes gerees par moveShapeUp/Down.
     if (!typing && !state.previewMode && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && e.code === 'ArrowUp') {
@@ -517,7 +517,7 @@ document.addEventListener('keydown', (e) => {
     }
     // Alt+←/→ alignent sur l'ancre, Alt+Shift+←/→ répartissent entre
     // les extremes (cf. DESIGN.md §7.14). Memes gardes que l'ordre des
-    // formes ; no-op si selection trop petite (align < 2, repartir < 3).
+    // plans ; no-op si selection trop petite (align < 2, repartir < 3).
     if (!typing && !state.previewMode && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && e.shiftKey && e.code === 'ArrowLeft') {
         e.preventDefault()
         distributeSelectedPointsX()

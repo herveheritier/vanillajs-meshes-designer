@@ -23,7 +23,7 @@ export const shapeToMesh = (shape) => {
     const pointList = []
     const tris = []
     if (!shape || typeof shape !== 'object') {
-        log('shapeToMesh FALLBACK: shape absent ou invalide (' + (shape === undefined ? 'undefined' : typeof shape) + '). Serialisation videe pour cette forme, le reste de la scene est persiste normalement. Capture ce message pour identifier la mutation fautive.')
+        log('shapeToMesh FALLBACK: shape absent ou invalide (' + (shape === undefined ? 'undefined' : typeof shape) + '). Serialisation videe pour ce plan, le reste de la scene est persiste normalement. Capture ce message pour identifier la mutation fautive.')
         return { pointList, tris }
     }
     // Runtime indexe ({ pointList, tris }) : validation des bornes puis passage tel quel.
@@ -49,7 +49,7 @@ export const shapeToMesh = (shape) => {
     }
     // Legacy : shape.triangles = refs point inline -> collapse indexe (Q3b back-compat).
     if (!Array.isArray(shape.triangles)) {
-        log('shapeToMesh FALLBACK: shape=' + JSON.stringify(shape) + ' (.triangles absent ou non-Array) => serialisation videe pour cette forme, le reste de la scene est persiste normalement. Capture ce message pour identifier la mutation fautive.')
+        log('shapeToMesh FALLBACK: shape=' + JSON.stringify(shape) + ' (.triangles absent ou non-Array) => serialisation videe pour ce plan, le reste de la scene est persiste normalement. Capture ce message pour identifier la mutation fautive.')
         return { pointList, tris }
     }
     // Detecteur legacy : log une seule fois par session, incite au
@@ -221,23 +221,23 @@ export const validateScenePayload = (data) => {
     if (Array.isArray(data.shapes)) {
         for (let i = 0; i < data.shapes.length; i++) {
             const shape = data.shapes[i]
-            if (!shape || typeof shape !== 'object') return `forme ${i + 1} invalide`
-            if (shape.pointList !== undefined && !Array.isArray(shape.pointList)) return `forme ${i + 1}: pointList invalide`
-            if (shape.tris !== undefined && !Array.isArray(shape.tris)) return `forme ${i + 1}: tris invalide`
-            if (shape.triangles !== undefined && !Array.isArray(shape.triangles)) return `forme ${i + 1}: triangles invalide`
+            if (!shape || typeof shape !== 'object') return `plan ${i + 1} invalide`
+            if (shape.pointList !== undefined && !Array.isArray(shape.pointList)) return `plan ${i + 1}: pointList invalide`
+            if (shape.tris !== undefined && !Array.isArray(shape.tris)) return `plan ${i + 1}: tris invalide`
+            if (shape.triangles !== undefined && !Array.isArray(shape.triangles)) return `plan ${i + 1}: triangles invalide`
             if (Array.isArray(shape.triangles)) {
                 for (let j = 0; j < shape.triangles.length; j++) {
-                    const legacyError = validateLegacyTriangle(shape.triangles[j], `forme ${i + 1}, triangle ${j + 1}`)
+                    const legacyError = validateLegacyTriangle(shape.triangles[j], `plan ${i + 1}, triangle ${j + 1}`)
                     if (legacyError) return legacyError
                 }
             }
             if (Array.isArray(shape.pointList)) {
                 for (const p of shape.pointList) {
-                    if (!p || !Number.isFinite(Number(p.x)) || !Number.isFinite(Number(p.y))) return `forme ${i + 1}: sommet invalide`
+                    if (!p || !Number.isFinite(Number(p.x)) || !Number.isFinite(Number(p.y))) return `plan ${i + 1}: sommet invalide`
                 }
                 if (Array.isArray(shape.tris)) {
                     for (const t of shape.tris) {
-                        if (!t || ['p1', 'p2', 'p3'].some(pid => t[pid] !== undefined && (!Number.isInteger(t[pid]) || t[pid] < 0 || t[pid] >= shape.pointList.length))) return `forme ${i + 1}: indice de triangle invalide`
+                        if (!t || ['p1', 'p2', 'p3'].some(pid => t[pid] !== undefined && (!Number.isInteger(t[pid]) || t[pid] < 0 || t[pid] >= shape.pointList.length))) return `plan ${i + 1}: indice de triangle invalide`
                     }
                 }
             }
@@ -720,8 +720,8 @@ export const importMeshFromText = (text, sourceName) => {
 
     const currentTriCount = state.shapes.reduce((a, s) => a + (s && s.tris ? s.tris.length : 0), 0)
     const importedTriCount = loaded.reduce((a, s) => a + (s && s.tris ? s.tris.length : 0), 0)
-    const currentInfo = state.shapes.length + ' forme' + (state.shapes.length > 1 ? 's' : '') + ', ' + currentTriCount + ' triangle' + (currentTriCount > 1 ? 's' : '')
-    const importedInfo = loaded.length + ' forme' + (loaded.length > 1 ? 's' : '') + ', ' + importedTriCount + ' triangle' + (importedTriCount > 1 ? 's' : '')
+    const currentInfo = state.shapes.length + ' plan' + (state.shapes.length > 1 ? 's' : '') + ', ' + currentTriCount + ' triangle' + (currentTriCount > 1 ? 's' : '')
+    const importedInfo = loaded.length + ' plan' + (loaded.length > 1 ? 's' : '') + ', ' + importedTriCount + ' triangle' + (importedTriCount > 1 ? 's' : '')
     showImportModal({ currentInfo, importedInfo }, (result) => {
         if (!result) {
             log('Import cancelled')
@@ -777,7 +777,7 @@ export const applyImport = (parsed, loaded, mode, sourceName) => {
             state.activeShapeIndex = Math.max(0, state.shapes.length - 1)
         }
         // MERGE conserve l'historique ; le flag force la re-ecriture de
-        // la cle undo avec le NOUVEAU fingerprint (append de formes).
+        // la cle undo avec le NOUVEAU fingerprint (append de plans).
         resetEphemeralState(false)
         markUndoPersistDirty()
         persistState()
@@ -786,9 +786,9 @@ export const applyImport = (parsed, loaded, mode, sourceName) => {
         updateShapeHud()
         requestDraw()
         const totalTris = state.shapes.reduce((acc, s) => acc + (s && s.tris ? s.tris.length : 0), 0)
-        log('Import merge OK: +' + loaded.length + ' forme' + (loaded.length > 1 ? 's' : '') + ', ' + state.shapes.length + ' au total, ' + totalTris + ' triangles')
+        log('Import merge OK: +' + loaded.length + ' plan' + (loaded.length > 1 ? 's' : '') + ', ' + state.shapes.length + ' au total, ' + totalTris + ' triangles')
         showActionComment(
-            `Ctrl+Z pour annuler l'import — les formes importées sont actives`
+            `Ctrl+Z pour annuler l'import — les plans importés sont actifs`
         )
         return true
     }
@@ -817,7 +817,7 @@ export const applyImport = (parsed, loaded, mode, sourceName) => {
     updateShapeHud()
     requestDraw()
     const totalTris = state.shapes.reduce((acc, s) => acc + (s && s.tris ? s.tris.length : 0), 0)
-    log('Import OK: ' + state.shapes.length + ' forme' + (state.shapes.length > 1 ? 's' : '') + ', ' + totalTris + ' triangle' + (totalTris > 1 ? 's' : ''))
+    log('Import OK: ' + state.shapes.length + ' plan' + (state.shapes.length > 1 ? 's' : '') + ', ' + totalTris + ' triangle' + (totalTris > 1 ? 's' : ''))
     showActionComment(
         `La scène importée est active — cliquez sur un point pour le sélectionner`
     )

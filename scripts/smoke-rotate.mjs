@@ -7,7 +7,7 @@
 //     rotateSelectedPoints), pivot lu depuis l'état réel de l'app via
 //     import('./state.js') (même instance de module que la page).
 //   • C. AltGr (Ctrl+Alt) + molette → rotation GLOBALE de toutes les
-//     formes autour du curseur (rotateEachShapeAroundPivot), la
+//     plans autour du curseur (rotateEachShapeAroundPivot), la
 //     sélection est vidée.
 //   • B. < 2 points sélectionnés → la molette ZOOME (snapZoom 1.1)
 //     sans toucher à la géométrie.
@@ -53,7 +53,7 @@ const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 const errors = attachErrorCollector(page)
 
-// Positions [x, y] de la forme active depuis le localStorage.
+// Positions [x, y] du plan actif depuis le localStorage.
 const shapePoints = () => page.evaluate((key) => {
     const raw = localStorage.getItem(key) || ''
     try {

@@ -44,9 +44,9 @@ export const nextShape = () => {
     goToShape((state.activeShapeIndex + 1) % state.shapes.length)
 }
 
-// Déplacement de la forme active dans l'ordre du tableau (l'ordre EST
+// Déplacement du plan actif dans l'ordre du tableau (l'ordre EST
 // la sémantique des plans, cf. DESIGN.md §2.6 : monter = indice +1,
-// descendre = indice -1 ; la forme active suit). Une entry undo de
+// descendre = indice -1 ; le plan actif suit). Une entry undo de
 // 2 patches (shapeMove + activeShapeIndex) ; le splice est le miroir
 // de l'applicateur history.js applyShapeMove.
 const moveShape = (from, to) => {
@@ -94,7 +94,7 @@ export const addShape = () => {
     state.shapes.push(newShape)
     goToShape(newIndex)
     showActionComment(
-        `Cette forme est vide : cliquez pour poser le 1er point`
+        `Ce plan est vide : cliquez pour poser le 1er point`
     )
     persistState()
 }
@@ -117,7 +117,7 @@ export const performDeleteShape = () => {
             : removedIndex)
 
     if (state.shapes.length === 1) {
-        // Cas special : une seule forme -> remplacement par une forme
+        // Cas special : un seul plan -> remplacement par un plan
         // vide (pas de remove-then-insert a gerer).
         const clonedBefore = cloneShape(removedShape)
         saveState({
@@ -166,9 +166,9 @@ export const showDeleteShapeModal = () => {
     if (!modal || !info) return
     state.lastFocusedElement = document.activeElement
     if (state.shapes.length === 1) {
-        info.textContent = 'Supprimer la dernière forme et créer une scène vide ?'
+        info.textContent = 'Supprimer le dernier plan et créer une scène vide ?'
     } else {
-        info.textContent = 'Supprimer la forme active ?'
+        info.textContent = 'Supprimer le plan actif ?'
     }
     modal.hidden = false
     modal.setAttribute('aria-hidden', 'false')

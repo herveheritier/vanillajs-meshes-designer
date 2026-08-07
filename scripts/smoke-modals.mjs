@@ -10,8 +10,8 @@
 //     fusion valide ne l'ouvre PAS.
 //   • #helpModal         — bouton #helpBtn ou touche '?' (toggle) ;
 //     fermeture par Escape ou clic backdrop ; focus sur #helpClose.
-//   • #deleteShapeModal  — bouton #deleteShape ; Annuler garde la forme,
-//     Supprimer remplace la dernière forme par une scène vide.
+//   • #deleteShapeModal  — bouton #deleteShape ; Annuler garde le plan,
+//     Supprimer remplace le dernier plan par une scène vide.
 //
 // Usage :
 //   1. Lancer le serveur dev :  python3 test_server.py   (port 8000)
@@ -36,7 +36,7 @@ const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 const errors = attachErrorCollector(page)
 
-// Info sommaire de la forme active depuis le localStorage.
+// Info sommaire du plan actif depuis le localStorage.
 const sceneInfo = () => page.evaluate((key) => {
     const raw = localStorage.getItem(key) || ''
     try {
@@ -194,7 +194,7 @@ try {
     await clickBackdrop('#helpModal')
     check('C : clic backdrop ferme', await modalHidden('#helpModal'))
 
-    // ===================== D. Modale de suppression de forme =====================
+    // ===================== D. Modale de suppression de plan ======================
     // Reset propre via la modale (déjà validée en A) avant de redessiner.
     await page.click('#reset')
     await page.click('#resetModalValidate')
@@ -208,7 +208,7 @@ try {
     await page.click('#deleteShape')
     check('D : modale suppression visible', await modalVisible('#deleteShapeModal'))
     infoText = await page.locator('#deleteShapeModalInfo').textContent()
-    check('D : message « dernière forme »', infoText.includes('dernière forme'))
+    check('D : message « dernier plan »', infoText.includes('dernier plan'))
     await page.click('#deleteShapeModalCancel')
     check('D : Annuler ferme + scène intacte', (await modalHidden('#deleteShapeModal'))
         && (await sceneInfo()).points === 3)

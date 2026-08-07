@@ -23,7 +23,7 @@
 //      - clic gauche -> création de point, scène persistée (localStorage) ;
 //      - molette -> zoom (zoomDisplay change) ;
 //      - rechargement -> scène restaurée (persistance) ;
-//      - autoimport ?autoimport=<base64> -> 2 formes parsées (exerce
+//      - autoimport ?autoimport=<base64> -> 2 plans parsés (exerce
 //        en direct le regex à guillemets de convert.js) ;
 //      - zéro erreur JS sur tout le parcours.
 //

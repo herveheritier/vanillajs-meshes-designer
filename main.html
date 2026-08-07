@@ -551,7 +551,7 @@
                 margin: 0 6px;
             }
 
-            /* Compteur de forme : pilule verte accent coherent avec le
+            /* Compteur de plan : pilule verte accent coherent avec le
                theme (meme couleur que la selection edition et le hover
                des boutons de la toolbar). */
             #toolbar #shapeLabel {
@@ -572,7 +572,7 @@
 
             /* Compteur d'annulations : meme traitement pilule verte
                que #shapeLabel — meme langage visuel pour les read-
-               only pills (forme active, profondeur d'historique).
+               only pills (plan actif, profondeur d'historique).
                Read-only (pas de cursor:pointer) — la valeur n'est
                pas cliquable, juste un indicateur du nombre
                d'annulations restantes. PAS de pointer-events:none
@@ -971,8 +971,8 @@
                (meme groupe Canvas ops). Evolution bouton prévisualiser
                (cf. DESIGN.md §2.6) : le bouton cycle en 3 etats off ->
                preview simple -> plans -> off. Le sous-etat « plans »
-               (2e clic, toutes les formes rendues dans leur ordre —
-               forme n = plan n) porte la classe .preview-plans : accent
+               (2e clic, tous les plans rendus dans leur ordre —
+               le plan le plus haut recouvre les precedents) porte la classe .preview-plans : accent
                AMBRE (meme famille que #sceneStatus[data-dirty=true]) +
                ring inset + libellé « plans » (#previewText, meme
                structure que #gridText / #shapesText). L'ambre distingue
@@ -1234,7 +1234,7 @@
             /* En preview, la toolbar est réduite a un simple bouton
                flottant #preview (l'oeil) pour permettre le CYCLE en 3
                etats au clic : off -> preview -> plans -> off (spec
-               evolution : « le 2eme clic affiche toutes les formes...
+               evolution : « le 2eme clic affiche tous les plans...
                on quitte au 3eme clic »). Tout le reste de la chrome
                est masque. Le fond/cadre de la toolbar disparait ; le
                groupe contenant #preview (canvas ops) est le seul
@@ -1662,16 +1662,16 @@
                      le bouton (oeil) cycle en 3 etats (clic ou P) :
                      1er clic = preview simple (masque points de
                      controle, axes, grille, HUD et boutons pour ne
-                     laisser que la geometrie), 2e clic = plans (toutes
-                     les formes rendues dans leur ordre — forme n = plan
-                     n — accent ambre + libellé « plans »), 3e clic =
+                     laisser que la geometrie), 2e clic = plans (tous
+                     les plans rendus dans leur ordre — accent ambre +
+                     libellé « plans »), 3e clic =
                      sortie. En preview, la toolbar est reduite a ce
                      seul bouton flottant (cf. CSS body.preview-mode) :
                      le cycle au clic reste possible. Navigation
                      conservee (molette = zoom, clic milieu = pan),
                      aucune edition possible. Sortie directe via Echap
                      ou clic gauche sur le canvas. Icone oeil. -->
-                <button id="preview" title="Prévisualiser la scène (P / Échap / clic gauche pour quitter) : masque points de contrôle, axes, grille, HUD et boutons ; un 2e clic affiche toutes les formes dans leur ordre (forme n = plan n)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2.2"/></svg><span id="previewText"></span></button>
+                <button id="preview" title="Prévisualiser la scène (P / Échap / clic gauche pour quitter) : masque points de contrôle, axes, grille, HUD et boutons ; un 2e clic affiche tous les plans dans leur ordre"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2.2"/></svg><span id="previewText"></span></button>
                 <!-- Mode de selection : cycle vertex / segment / triangle.
                      Mode "vertex" = comportement actuel (clic sur un
                      sommet). Mode "segment" = clic sur un edge
@@ -1701,15 +1701,15 @@
                      detail complet reste dans la modale d'aide). -->
                 <button id="selectionMode" title="Mode de sélection (cycle) : sommet / segment / triangle" aria-label="Mode de sélection : sommet, segment ou triangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="8" y1="2.5" x2="8" y2="4.5"/><line x1="8" y1="11.5" x2="8" y2="13.5"/><line x1="2.5" y1="8" x2="4.5" y2="8"/><line x1="11.5" y1="8" x2="13.5" y2="8"/></svg><span id="selectionModeText">sommet</span></button>
                 <button id="reset" title="Reinitialiser completement la scene (Shift+Backspace)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9"/><path d="M13.5 3v3h-3"/></svg></button>
-                <button id="selectAll" title="Selectionner tous les points de la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
+                <button id="selectAll" title="Selectionner tous les points du plan actif"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="12" height="12" stroke-dasharray="2 2"/><path d="M2 5V2h3"/><path d="M14 5V2h-3"/><path d="M2 11v3h3"/><path d="M14 11v3h-3"/></svg></button>
                 <!-- Bouton fusion : deux fonctions (cf. DESIGN.md §7.11).
                      1) >= 2 points selectionnes : les faire converger
                      vers une cible (selected[0]) amenee au centroid des
                      POSITIONS UNIQUES (dedup tol 0.01). Redirige dans
-                     chaque triangle de la forme active les slots
+                     chaque triangle du plan actif les slots
                      selectionnes vers la cible. La fusion est refusee
-                     (modale informative) si un triangle de la forme
-                     active contient plusieurs refs de point distinctes
+                     (modale informative) si un triangle du plan
+                     actif contient plusieurs refs de point distinctes
                      dans la selection.
                      2) exactement 1 point selectionne : arme la « fusion
                      par déplacement » (bouton en accent vert, avec le
@@ -1739,11 +1739,11 @@
                 <span id="selectionCount" title="Nombre de points sélectionnés">0</span>
                 <!-- Presse-papiers interne (évolution « couper, copier,
                      coller les éléments sélectionnés ») : 3 boutons
-                     opérant sur la sélection de la forme active.
+                     opérant sur la sélection du plan actif.
                      Copier / Couper sont désactivés sans sélection,
                      Coller sans contenu dans le presse-papiers (état
                      sync par updateClipboardButtons, hud.js). Le
-                     collage cible TOUJOURS la forme active, décalé d'un
+                     collage cible TOUJOURS le plan actif, décalé d'un
                      demi-pas de grille à chaque collage. Même langage
                      visuel que les autres boutons toolbar ; raccourcis
                      Ctrl+C / Ctrl+X / Ctrl+V en miroir (main.js). Place
@@ -1753,7 +1753,7 @@
                      selection. -->
                 <button id="copy" title="Copier la sélection (Ctrl+C) : points sélectionnés + triangles entièrement contenus (avec leur couleur)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3.5 10.5V3.5h7"/></svg></button>
                 <button id="cut" title="Couper la sélection (Ctrl+X) : copie dans le presse-papiers puis supprime les points sélectionnés" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="4.5" r="1.7"/><circle cx="5" cy="11.5" r="1.7"/><path d="M6.3 6.3l7.2 7.2"/><path d="M6.3 9.7l7.2-7.2"/></svg></button>
-                <button id="paste" title="Coller le presse-papiers dans la forme active (Ctrl+V)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2.5h5"/><rect x="3" y="3.5" width="10" height="10.5" rx="1"/><path d="M5.5 7.2h5"/><path d="M5.5 9.7h3.5"/></svg></button>
+                <button id="paste" title="Coller le presse-papiers dans le plan actif (Ctrl+V)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2.5h5"/><rect x="3" y="3.5" width="10" height="10.5" rx="1"/><path d="M5.5 7.2h5"/><path d="M5.5 9.7h3.5"/></svg></button>
                 <!-- Alignement / répartition des points sélectionnés
                      (évolution « boutons pour forcer l'alignement et la
                      répartition des points sélectionnés ») : le bouton
@@ -1839,30 +1839,30 @@
                  vis-a-vis de export (couleur/marqueur distinct) et
                  rester cohere thematiquement. -->
             <div class="toolbar-group">
-                <button id="importMeshes" class="file-op file-op-read" title="Charger et afficher un fichier meshes (1 ligne = 1 forme)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v12h10V5l-3-3H3z"/><path d="M10 2v3h3"/><path d="M4 12L8 5l4 7z"/></svg></button>
+                <button id="importMeshes" class="file-op file-op-read" title="Charger et afficher un fichier meshes (1 ligne = 1 plan)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v12h10V5l-3-3H3z"/><path d="M10 2v3h3"/><path d="M4 12L8 5l4 7z"/></svg></button>
                 <button id="importJson" class="file-op file-op-read" title="Charger et afficher une scene JSON (fichier ou drop sur le canvas)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4l1.5-2h3.5l2 2h5.5v8h-12V4z"/></svg></button>
             </div>
             <span class="toolbar-sep"></span>
-            <!-- Groupe "Shape nav" : navigation entre formes (prev,
-                 label, next) + ordre des formes (monter / descendre,
+            <!-- Groupe "Shape nav" : navigation entre plans (prev,
+                 label, next) + ordre des plans (monter / descendre,
                  evolution « boutons pour gerer l'ordre des formes » :
-                 dans la vue plans, forme n = plan n — monter augmente
-                 l'indice, la forme passe AU-DESSUS, descendre le
-                 diminue, elle passe en dessous) + creation (new) +
-                 suppression (delete). Le compteur #shapeLabel deplace
-                 avec prev/next ; new/delete sont des outils de gestion
-                 lies. Les boutons d'ordre sont grises aux bornes
-                 (1re forme : descendre impossible, derniere : monter
-                 impossible) par updateShapeHud (hud.js), meme langage
+                 dans la vue plans — monter augmente l'indice, le plan
+                 passe AU-DESSUS, descendre le diminue, il passe en
+                 dessous) + creation (new) + suppression (delete). Le
+                 compteur #shapeLabel deplace avec prev/next ; new/delete
+                 sont des outils de gestion lies. Les boutons d'ordre
+                 sont grises aux bornes (1er plan : descendre
+                 impossible, dernier : monter impossible) par
+                 updateShapeHud (hud.js), meme langage
                  que undo/redo. -->
             <div class="toolbar-group">
-                <button id="prevShape" title="Forme precedente"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l-5 5 5 5"/></svg></button>
-                <span id="shapeLabel" title="Forme active / nombre total">1/1</span>
-                <button id="nextShape" title="Forme suivante"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
-                <button id="moveShapeUp" title="Monter la forme active d'un plan (Alt+Flèche Haut) : dans la vue plans (forme n = plan n), elle passe au-dessus de la forme suivante" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="13" x2="8" y2="3"/><polyline points="4,7 8,3 12,7"/></svg></button>
-                <button id="moveShapeDown" title="Descendre la forme active d'un plan (Alt+Flèche Bas) : dans la vue plans (forme n = plan n), elle passe en dessous de la forme précédente" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="4,9 8,13 12,9"/></svg></button>
-                <button id="newShape" title="Ajouter une nouvelle forme vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>
-                <button id="deleteShape" title="Supprimer la forme active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
+                <button id="prevShape" title="Plan précédent"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l-5 5 5 5"/></svg></button>
+                <span id="shapeLabel" title="Plan actif / nombre total">1/1</span>
+                <button id="nextShape" title="Plan suivant"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+                <button id="moveShapeUp" title="Monter le plan actif d'un rang (Alt+Flèche Haut) : dans la vue plans, il passe au-dessus du plan suivant" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="13" x2="8" y2="3"/><polyline points="4,7 8,3 12,7"/></svg></button>
+                <button id="moveShapeDown" title="Descendre le plan actif d'un rang (Alt+Flèche Bas) : dans la vue plans, il passe en dessous du plan précédent" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="4,9 8,13 12,9"/></svg></button>
+                <button id="newShape" title="Ajouter un nouveau plan vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>
+                <button id="deleteShape" title="Supprimer le plan actif"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
             </div>
             <span class="toolbar-sep"></span>
             <!-- Groupe "Console toggle" (1 bouton) : la togglisation
@@ -1935,8 +1935,8 @@
              l'alignement et la répartition des points sélectionnés »,
              cf. DESIGN.md §7.14) : structure calquee sur #shapesPanel
              (position absolue sous le bouton #align, fermeture au clic
-             exterieur / Echap). 4 actions sur la sélection de la forme
-             active :
+             exterieur / Echap). 4 actions sur la sélection du plan
+             actif :
                - Aligner X : tous les points prennent la coordonnée X du
                  PREMIER point sélectionné (l'ancre) ;
                - Aligner Y : idem sur Y ;
@@ -2027,14 +2027,14 @@
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">S</kbd><span>sauvegarder la scene en JSON</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">C</kbd><span>copier la sélection : points sélectionnés + triangles entièrement contenus (avec leur couleur)</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">X</kbd><span>couper la sélection (copie dans le presse-papiers puis suppression, annulable par Ctrl+Z)</span></div>
-                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">V</kbd><span>coller dans la forme active — chaque collage décale d'un demi-pas de grille pour se distinguer de la source ; le presse-papiers est interne à l'application (non partagé avec le système)</span></div>
+                    <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">V</kbd><span>coller dans le plan actif — chaque collage décale d'un demi-pas de grille pour se distinguer de la source ; le presse-papiers est interne à l'application (non partagé avec le système)</span></div>
                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">←</kbd><span>aligner X les points sélectionnés — tous prennent la coordonnée X du 1er point sélectionné (l'ancre, bouton Aligner X du panneau du bouton Aligner)</span></div>
                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">→</kbd><span>aligner Y les points sélectionnés — tous prennent la coordonnée Y du 1er point sélectionné (l'ancre, bouton Aligner Y)</span></div>
                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">←</kbd><span>répartir X les points sélectionnés — espacement uniforme selon X entre les deux points extrêmes (qui restent en place, bouton Répartir X)</span></div>
                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">→</kbd><span>répartir Y les points sélectionnés — espacement uniforme selon Y entre les deux points extrêmes (qui restent en place, bouton Répartir Y)</span></div>
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd">R</kbd><span>réticule : off / simple / projection symétrique (cycle)</span></div>
-                    <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; un 2e clic (ou P) affiche toutes les formes dans leur ordre (forme n = plan n) ; Échap ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd><span>monter / descendre la forme active d'un plan dans l'ordre des formes (forme n = plan n dans la vue plans : monter la fait passer au-dessus, descendre en dessous) ; boutons de la barre d'outils (grisés aux bornes de l'ordre)</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
+                    <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; un 2e clic (ou P) affiche tous les plans dans leur ordre ; Échap ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd><span>monter / descendre le plan actif d'un rang dans l'ordre des plans (dans la vue plans : monter le fait passer au-dessus, descendre en dessous) ; boutons de la barre d'outils (grisés aux bornes de l'ordre)</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Formes (bouton)</kbd><span>ouvre la liste des formes prédéfinies (cercle, rectangle, carré, triangle, pentagone, hexagone, étoile, anneau) : choisir une forme puis la tracer en 2 clics (1er clic = ancre, mouvement = taille et orientation pour les polygones, 2e clic = valider) ; l'étoile et l'anneau se tracent en 3 clics (1er = centre, mouvement = rayon + angle de départ, 2e = verrouille, mouvement = profondeur des branches / taille du trou, 3e = valider ; molette = côtés pour l'anneau) ; Échap = fermer le panneau ou annuler l'outil, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd wide">Molette</kbd><span>zoomer (centre sur le curseur) ; pivoter si 2+ points sont selectionnes</span></div>
@@ -2050,7 +2050,7 @@
                     <div class="help-row"><kbd class="kbd wide">Fusion par déplacement</kbd><span>2e fonction du bouton Fusionner, utilisable si et seulement si un seul point est sélectionné : le clic arme le mode (bouton en vert, avec le rayon en px). Glisser le point sélectionné puis le relâcher près d'un autre point le fusionne avec lui ; la molette sur le bouton règle le rayon de fusion quand le mode est armé (20 px par défaut, 8 à 64 px, indépendant du zoom). Re-cliquer pour désarmer.</span></div>
                     <div class="help-row"><kbd class="kbd wide">Palette de couleurs</kbd><span>le bouton Peinture ouvre la palette : clic sur un swatch = peindre ; le curseur Opacité règle l'opacité appliquée à chaque peinture (elle reste à votre dernière valeur, d'une session à l'autre) ; Ajouter enregistre la couleur du picker ; clic droit sur un swatch = le retirer ; double-clic = le modifier (Entrée valide, Échap annule) ; Défauts restaure les 8 couleurs d'origine. La palette est conservée d'une session à l'autre.</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu + drag</kbd><span>deplacer le viewCenter dans le sens du drag (pan)</span></div>
-                    <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Clic-droit + drag</kbd><span>deplacer toutes les formes ensemble (meme delta, quasi-mode). AltGr (Right Alt) declenche Ctrl+Alt sur la plupart des claviers.</span></div>
+                    <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Clic-droit + drag</kbd><span>deplacer tous les plans ensemble (meme delta, quasi-mode). AltGr (Right Alt) declenche Ctrl+Alt sur la plupart des claviers.</span></div>
                     <!-- Raccourci ergonomique en mode triangle / segment :
                          clic droit sur l'entite geometrique survolee
                          (triangle en mode triangle, edge en mode segment)
@@ -2083,7 +2083,7 @@
                     <div class="help-row"><kbd class="kbd wide">Clic droit simple</kbd><span>en mode édition, sélectionne uniquement l'entité la plus proche et désélectionne les autres ; dans le vide, efface la sélection</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic droit + drag</kbd><span>déplace la sélection depuis n'importe quel point du canvas ; sans sélection, le mode triangle/segment peut sélectionner puis déplacer l'entité sous le pointeur</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl/Cmd</kbd><kbd class="kbd wide">Clic droit</kbd><span>ajoute l'entité sous le pointeur à la sélection sans la déplacer</span></div>
-                    <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Molette</kbd><span>rotation de chaque forme autour du curseur (5 deg/cran, cumulatif). Le pivot est la position de la souris dans la scene (= coords modele sous le curseur, suivi a chaque tick si elle bouge). Sans AltGr : molette pivote si 2+ points sont selectionnes, sinon zoom centre sur le curseur.</span></div>
+                    <div class="help-row"><kbd class="kbd wide">AltGr</kbd><kbd class="kbd wide">Molette</kbd><span>rotation de chaque plan autour du curseur (5 deg/cran, cumulatif). Le pivot est la position de la souris dans la scene (= coords modele sous le curseur, suivi a chaque tick si elle bouge). Sans AltGr : molette pivote si 2+ points sont selectionnes, sinon zoom centre sur le curseur.</span></div>
                     <div class="help-row"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">0</kbd><span>reinitialiser le zoom (100%, recentre sur l'origine)</span></div>
                     <div class="help-row"><kbd class="kbd">?</kbd><span>afficher / masquer cette aide</span></div>
                     <div class="help-row"><kbd class="kbd wide">Bouton aide</kbd><span>meme action que la touche <kbd class="kbd">?</kbd></span></div>
@@ -2101,7 +2101,7 @@
                 <div id="importModalInfo" class="modal-info">—</div>
                 <div class="modal-options">
                     <label><input type="radio" name="importMode" value="replace" checked> Remplacer la scène courante</label>
-                    <label><input type="radio" name="importMode" value="merge"> Fusionner (ajouter aux formes existantes)</label>
+                    <label><input type="radio" name="importMode" value="merge"> Fusionner (ajouter aux plans existants)</label>
                 </div>
                 <div class="modal-buttons">
                     <button id="importModalCancel" type="button">Annuler</button>
@@ -2113,26 +2113,26 @@
             <div class="modal-backdrop" data-reset-close></div>
             <div class="modal-box">
                 <div id="resetTitle" class="modal-title">Réinitialiser la scène</div>
-                <div class="modal-info">Cette action efface toutes les formes et vide l'historique d'annulation. Elle est irréversible.</div>
+                <div class="modal-info">Cette action efface tous les plans et vide l'historique d'annulation. Elle est irréversible.</div>
                 <div class="modal-buttons">
                     <button id="resetModalCancel" type="button">Annuler</button>
                     <button id="resetModalValidate" class="modal-primary" type="button">Réinitialiser</button>
                 </div>
             </div>
         </div>
-        <!-- Modale de suppression d'une forme (remplace l'ancien
+        <!-- Modale de suppression d'un plan (remplace l'ancien
              confirm() natif). Meme structure et charte que
              #resetModal / #importModal (memes classes .modal,
              .modal-box, .modal-title, .modal-info, .modal-buttons,
              .modal-primary). Le message #deleteShapeModalInfo est
              renseigne dynamiquement par showDeleteShapeModal selon
-             qu'on supprime la derniere forme (=> creation d'une
-             scene vide) ou une forme parmi plusieurs. Le bouton
+             qu'on supprime le dernier plan (=> creation d'une
+             scene vide) ou un plan parmi plusieurs. Le bouton
              primary reprend l'accent vert de la charte. -->
         <div id="deleteShapeModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="deleteShapeTitle" aria-hidden="true" hidden>
             <div class="modal-backdrop" data-delete-shape-close></div>
             <div class="modal-box">
-                <div id="deleteShapeTitle" class="modal-title">Supprimer la forme active</div>
+                <div id="deleteShapeTitle" class="modal-title">Supprimer le plan actif</div>
                 <div id="deleteShapeModalInfo" class="modal-info">—</div>
                 <div class="modal-buttons">
                     <button id="deleteShapeModalCancel" type="button">Annuler</button>
@@ -2202,7 +2202,7 @@
              5) hud (DOM read-only)
              6) draw (rendu)
              7) convert (format meshes text -> JSON)
-             8) shapes (CRUD formes + modale dediee)
+             8) shapes (CRUD plans + modale dediee)
              9) history (undo/redo)
              10) modals (help + reset)
              11) console_overlay (frame drag/resize + clear)

@@ -21,7 +21,7 @@ const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 const errors = attachErrorCollector(page)
 
-// Snapshot lisible de la forme active (compteurs + coordonnees des
+// Snapshot lisible du plan actif (compteurs + coordonnees des
 // points pour le test du carre).
 const sceneInfo = () => page.evaluate((key) => {
     const raw = localStorage.getItem(key) || ''

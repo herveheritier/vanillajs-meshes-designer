@@ -2,13 +2,13 @@
 //
 // Parcours :
 //   A. Import « meshes » (texte) sur scène VIDE → REPLACE direct SANS
-//      modale (isSceneEmpty, io.js) : 2 formes, nom adopté du fichier.
+//      modale (isSceneEmpty, io.js) : 2 plans, nom adopté du fichier.
 //   B. Import JSON sur scène NON vide → modale Remplacer/Fusionner,
-//      radio par défaut = replace, validation → REPLACE (1 forme,
+//      radio par défaut = replace, validation → REPLACE (1 plan,
 //      nom du fichier, undo réinitialisé).
 //   C. Mutation (selectAll + Backspace) puis import JSON en mode
-//      MERGE → formes additionnées, nom conservé, undo CONSERVÉ,
-//      forme active = la forme importée.
+//      MERGE → plans additionnés, nom conservé, undo CONSERVÉ,
+//      plan actif = le plan importé.
 //
 // Usage :
 //   1. Lancer le serveur dev :  python3 test_server.py   (port 8000)
@@ -18,7 +18,7 @@ import { launchBrowser, createHarness, attachErrorCollector, hudHelpers, SCENE_S
 
 const BASE_URL = (process.argv[2] || 'http://localhost:8000/main.html').replace(/\/$/, '')
 
-// Fichier « meshes » : 1 ligne = 1 forme, chaque triplet = 1 triangle.
+// Fichier « meshes » : 1 ligne = 1 plan, chaque triplet = 1 triangle.
 const MESHES_TEXT = '0,0;10,0;5,8.66\n20,0;30,0;25,8.66\n'
 
 const jsonScene = (name, x0) => JSON.stringify({
@@ -95,7 +95,7 @@ try {
     await waitShapes(2)
     check('A : scène vide → import direct SANS modale', !(await page.locator('#importModal').isVisible()))
     let s = await sceneSummary()
-    check('A : 2 formes importées (3 pts / 1 tri chacune)',
+    check('A : 2 plans importés (3 pts / 1 tri chacun)',
         s.shapes === 2 && JSON.stringify(s.points) === '[3,3]' && JSON.stringify(s.tris) === '[1,1]')
     check('A : nom adopté du fichier (monmesh)', s.name === 'monmesh')
     check('A : undo vide après REPLACE', (await undoCount()) === '(0)')
@@ -117,7 +117,7 @@ try {
     await page.waitForSelector('#importModal', { state: 'hidden' })
     await waitShapes(1)
     s = await sceneSummary()
-    check('B : REPLACE → 1 forme (3 pts / 1 tri)',
+    check('B : REPLACE → 1 plan (3 pts / 1 tri)',
         s.shapes === 1 && JSON.stringify(s.points) === '[3]' && JSON.stringify(s.tris) === '[1]')
     check('B : nom du fichier prioritaire (mesh-b)', s.name === 'mesh-b')
     check('B : undo réinitialisé après REPLACE', (await undoCount()) === '(0)')
@@ -148,9 +148,9 @@ try {
     await page.waitForSelector('#importModal', { state: 'hidden' })
     await waitShapes(2)
     s = await sceneSummary()
-    check('C : MERGE → 2 formes (3 pts + 3 pts)',
+    check('C : MERGE → 2 plans (3 pts + 3 pts)',
         s.shapes === 2 && JSON.stringify(s.points) === '[3,3]' && JSON.stringify(s.tris) === '[1,1]')
-    check('C : forme active = forme importée (index 1)', s.activeShapeIndex === 1)
+    check('C : plan actif = plan importé (index 1)', s.activeShapeIndex === 1)
     check('C : compteur 2/2', (await page.locator('#shapeLabel').textContent()) === '2/2')
     check('C : nom préservé par MERGE (mesh-b)', s.name === 'mesh-b')
     check('C : undo CONSERVÉ par MERGE', (await undoCount()) === '(1)')

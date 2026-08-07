@@ -98,8 +98,8 @@ export const setFillsPatch = (before, after) => ({
     after,   // [{ s, t, fill }, ...]
 })
 
-// 5) shapeArray : forme inseree ou retiree a un index (addShape,
-//    performDeleteShape). before/after = forme ou null.
+// 5) shapeArray : plan insere ou retire a un index (addShape,
+//    performDeleteShape). before/after = plan ou null.
 export const shapeArrayPatch = (shapeIndex, before, after) => ({
     kind: 'shapeArray',
     shapeIndex,
@@ -107,14 +107,14 @@ export const shapeArrayPatch = (shapeIndex, before, after) => ({
     after,
 })
 
-// 6) activeShapeIndex : changement de la forme active.
+// 6) activeShapeIndex : changement du plan actif.
 export const activeShapeIndexPatch = (from, to) => ({
     kind: 'activeShapeIndex',
     from,
     to,
 })
 
-// 7) shapeMove : forme deplacee de `from` a `to` (ordre des formes) ;
+// 7) shapeMove : plan deplace de `from` a `to` (ordre des plans) ;
 //    seuls les indices bougent (≈ 16 B), splice dans les deux sens.
 //    Le call site accole un activeShapeIndexPatch pour l'undo.
 export const shapeMovePatch = (from, to) => ({
@@ -251,7 +251,7 @@ const applyShapeArray = (patch, direction) => {
                 tris: deepCloneTris(patch.after.tris),
             })
         } else {
-            // replace (deleteShape sur dernière forme)
+            // replace (deleteShape sur le dernier plan)
             state.shapes[patch.shapeIndex] = {
                 pointList: deepClonePointList(patch.after.pointList),
                 tris: deepCloneTris(patch.after.tris),

@@ -29,7 +29,7 @@ const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 const errors = attachErrorCollector(page)
 
-// Snapshot lisible de la forme active depuis le localStorage de la page.
+// Snapshot lisible du plan actif depuis le localStorage de la page.
 const sceneInfo = () => page.evaluate((key) => {
     const raw = localStorage.getItem(key) || ''
     try {

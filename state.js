@@ -184,9 +184,9 @@ export const state = {
     // Transitoire, jamais persiste : masque points de controle, axes, grille,
     // HUD et boutons pour ne laisser que la geometrie.
     previewMode: false,
-    // Sous-etat « plans » (cycle off -> preview -> plans -> off) : TOUTES les
-    // formes rendues comme plans remplis dans l'ordre du tableau (forme n =
-    // plan n, la plus haute recouvre les precedentes).
+    // Sous-etat « plans » (cycle off -> preview -> plans -> off) : TOUS les
+    // plans rendus remplis dans l'ordre du tableau (le plus haut recouvre
+    // les precedents).
     previewPlans: false,
 
     // ===== Render time instrumentation (gate) =====

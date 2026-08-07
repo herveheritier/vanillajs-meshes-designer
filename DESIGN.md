@@ -30,8 +30,8 @@ toucher §4.1 → le doc dérive. À détecter en revue de PR par grep croisé
 - **MODÈLE** : coordonnées logiques, X→droite, Y→haut (maths).
 - **SCREEN** : pixels du canvas, X→droite, Y→bas (inversion canvas).
 - **GRAB** : session de drag en cours (`ACTION_GRABBING`).
-- **FORME COURANTE / active** : la forme sélectionnée (état `state.activeShapeIndex`).
-- **FORME inactive** : toute autre forme du `state.shapes`.
+- **PLAN COURANT / actif** : le plan sélectionné (état `state.activeShapeIndex`).
+- **PLAN inactif** : tout autre plan du `state.shapes`.
 
 ---
 
@@ -45,9 +45,9 @@ toucher §4.1 → le doc dérive. À détecter en revue de PR par grep croisé
 | `constants.js`           | Constantes pures, sans dépendance                                 | —                                                                   |
 | `state.js`               | Source unique de vérité mutable                                   | N'importe aucun autre module (pas de cycle)                         |
 | `draw.js`                | Primitives de rendu canvas en SCREEN                              | Pas de calcul en MODÈLE                                             |
-| `editor.js`              | Manipulation scène/points : sélection, hover, find, grab, addPoint | Pas de CRUD formes (→`shapes.js`), pas d'historique (sauf `saveState`), pas de zoom/pan (→`viewport.js`) |
+| `editor.js`              | Manipulation scène/points : sélection, hover, find, grab, addPoint | Pas de CRUD plans (→`shapes.js`), pas d'historique (sauf `saveState`), pas de zoom/pan (→`viewport.js`) |
 | `viewport.js`            | Zoom, pan, wheel, projection, reticule                            | Pas de manipulation de points                                       |
-| `shapes.js`              | CRUD de formes (`addShape`, `deleteShape`, `goToShape`) + ordre (`moveShapeUp`/`moveShapeDown`, §7.13) | — |
+| `shapes.js`              | CRUD de plans (`addShape`, `deleteShape`, `goToShape`) + ordre (`moveShapeUp`/`moveShapeDown`, §7.13) | — |
 | `geometry.js`            | Calculs géométriques purs (`snapToGrid`, `screenToModel`, …)      | —                                                                   |
 | `io.js`                  | Sérialisation, persistance, import/export                         | —                                                                   |
 | `history.js`             | Pile undo/redo                                                    | —                                                                   |
@@ -68,11 +68,11 @@ management + grab + pan selon le bouton ; `keydown` ⇒ shortcuts clavier). Les
 listeners locaux à un module vivent DANS leur module (`wireGridControl`,
 `wireHelpModal`, …) et sont appelés depuis `main.js`.
 
-**Schéma canonique des formes (post-refactor `modifyShapeModel-spec` §0–§5)** :
+**Schéma canonique des plans (post-refactor `modifyShapeModel-spec` §0–§5)** :
 `state.shapes[i]` = `{ pointList: [{x,y}, …], tris: [{p1,p2,p3 (indices)}, …] }`.
-Le `pointList` est la **liste canonique des sommets** d'une forme ; tous
+Le `pointList` est la **liste canonique des sommets** d'un plan ; tous
 les `tris[k].pX` sont des indices dans ce tableau. Aucun partage
-cross-shape — chaque forme a son propre `pointList` (Q1a §modify-shape-
+cross-shape — chaque plan a son propre `pointList` (Q1a §modify-shape-
 model-spec.md §1). Plus de JS-refs dans les slots : tout est adressable
 par indice (Q1c), ce qui simplifie le drag d'un sommet partagé
 (`pointList[idx].x = targetX` en O(1) au lieu de N mutations de slots),
@@ -115,7 +115,7 @@ a été réduite à un seul contrat de clic pour simplifier le modèle mental et
 - **Ctrl/Cmd + clic droit** : ajoute l'entité sous le pointeur à la
   sélection sans la déplacer (`selectAtRightClick` additif, court-circuit
   avant `beginGrabbing`).
-- **AltGr + clic droit + drag** : déplace **toutes** les formes ensemble
+- **AltGr + clic droit + drag** : déplace **tous** les plans ensemble
   avec le même delta (mode AltGr quasi-global).
 - **Backspace** : supprime selon `state.selectionMode` (sommet / segment /
   triangle). `⇧+Backspace` : reset complet (modale de confirmation).
@@ -162,7 +162,7 @@ verrait la grille mais son snap irait ailleurs (cf. commit `982b694 Anchor
 drawGrid on model origin`).
 
 Avec AltGr + molette (§6), la "rotation de scène" mute les **vertices** de
-chaque forme. Les axes restent fixes (repère MODÈLE de référence), le contenu
+chaque plan. Les axes restent fixes (repère MODÈLE de référence), le contenu
 tourne autour — d'où la formule de projection directe dans `drawAxis` plutôt
 que `modelToScreen` (protège contre tout couplage futur type filtres/snapping).
 
@@ -274,7 +274,7 @@ Trois optimiseurs s'empilent sur le hot path de `renderSceneToOffscreen`,
 complétés d'un safe-belt. Tous gardent la parité visuelle avec l'ancien
 `drawTriangle` per-tri par défaut : aucun mesh réel ne regresse sur le
 résultat, mais les meshes typiques (windings uniformes en canvas space,
-grille à step raisonnable, formes avec peu de tris custom-color)
+grille à step raisonnable, plans avec peu de tris custom-color)
 profitent du batching sans changement de comportement.
 
 #### §2.5.1 Opt #1 — `drawPointsBatch` (groupement des vertex en un seul path-stroke)
@@ -405,9 +405,8 @@ Le safe-belt implémente une détection O(N) par groupe de couleur :
   N fill cycles. Parité pixel-perfect avec l'ancien `drawTriangle`.
 
 **Validation empirique** : test manuel sur `assets/mesh-overlap-test.json`
-avec 4 formes (control + reverse-winding duplicate + fan avec 1 CW +
-fan avec 3 CW). Le safe-belt pass→per-tri sur les 2 fans rend toutes
-les formes pleines. Sans le safe-belt, fan 3 (CCW en math, 1 CW en
+avec 4 plans (control + reverse-winding duplicate + fan avec 1 CW +
+fan avec 3 CW). Le safe-belt pass→per-tri sur les 2 fansrend tous les plans pleins. Sans le safe-belt, fan 3 (CCW en math, 1 CW en
 canvas) montrait un trou au centre — confirmé par observation dans
 Chrome interactif.
 
@@ -457,7 +456,7 @@ attendu et correct.
 
 - [ ] mesh-wail rendu pixel-perfect (aucun trou, aucun décalage).
 - [ ] alphabet2 / complexe-shape (assets fournis) ne regressent pas.
-- [ ] `assets/mesh-overlap-test.json` : 4 formes toutes pleines après
+- [ ] `assets/mesh-overlap-test.json` : 4 plans tous pleins après
       safe-belt (mixte windings en canvas → fallback per-tri).
 - [ ] Rotation AltGr + drag continu (`§6.1`) : pas de stutter visible
       au path batched.
@@ -482,12 +481,11 @@ ni les boutons ».
 et la touche `P` font tourner un cycle `off → preview simple → plans → off` :
 
 1. **preview simple** (1er clic) — comportement historique : la scène est
-   visualisée « telle quelle » (forme active remplie, autres en contours
+   visualisée « telle quelle » (plan actif rempli, autres en contours
    atténués), chrome masquée.
-2. **plans** (2e clic) — TOUTES les formes sont rendues comme des plans
-   remplis dans l'ORDRE du tableau : **forme n = plan n**, la forme
-   d'indice le plus haut recouvre les précédentes là où elles se
-   chevauchent. Cette vue fait apparaître la composition en plans
+2. **plans** (2e clic) — TOUS les plans sont rendus remplis
+   dans l'ORDRE du tableau : le plan d'indice le plus haut recouvre
+   les précédents là où ils se chevauchent. Cette vue fait apparaître la composition en plans
    (stacking) de la scène. `state.previewPlans` (state.js) est le
    sous-état qui distingue les deux vues — même chrome masquée, même
    non-persistance.
@@ -524,12 +522,12 @@ Le mode agit sur DEUX plans complémentaires :
    - `renderSceneToOffscreen` : saute `drawGrid`, `drawAxis` et
      `drawSelectedPoints` — la scène stable (§2.4) se réduit à
      `drawShapes`.
-   - `drawShapes` : en plans (`state.previewPlans`), TOUTES les formes
-     sont dessinées en `isActive=true` dans l'ordre du tableau (forme n =
-     plan n) — chaque forme devient un plan rempli (fills conservés), la
-     dernière recouvre les précédentes là où elles se chevauchent. En
-     preview simple, comportement historique (forme active remplie,
-     autres en contours atténués).
+   - `drawShapes` : en plans (`state.previewPlans`), TOUS les plans
+     sont dessinés en `isActive=true` dans l'ordre du tableau — chaque
+     plan est rendu rempli (fills conservés), le dernier recouvre les
+     précédents là où ils se chevauchent. En preview simple,
+     comportement historique (plan actif rempli, autres en contours
+     atténués).
    - `drawShape` (pass vertex) : saute `drawPointsBatch` — les points de
      contrôle (disques des sommets) disparaissent.
    - `renderTransient` : early-return — réticule et selectionBox (lasso)
@@ -788,7 +786,7 @@ Le clic droit sans Ctrl/Cmd conserve son contrat de déplacement : avec une
 sélection existante, il la déplace depuis la position de départ ; sans
 sélection, il peut sélectionner l'entité sous le pointeur et armer son grab.
 AltGr est exclu du Ctrl/Cmd de sélection : le chemin AltGr + clic droit reste
-le déplacement de toutes les formes.
+le déplacement de tous les plans.
 
 **Cohérence `selectedTriangles` ↔ `selectedPoints`** : la branche shift de
 `applyGrabTriangleSync` ne pousse un index `i` dans
@@ -883,7 +881,7 @@ point sélectionné selon le cas, est dans la pile).
 ### §4.1 Règle par mode
 
 - **vertex** (`deleteSelectedPoint`) : supprime l'**indice** `idx` du
-  pointList de la forme active des slots `tris.pX` des triangles qui le
+  pointList du plan actif des slots `tris.pX` des triangles qui le
   référencent (les slots deviennent `undefined`). Les triangles dont il
   reste < 2 slots définis sont filtrés. Les **segments incidents** à P
   disparaissent (l'un de leurs endpoints n'existe plus) ; le **segment
@@ -970,7 +968,7 @@ une version future, des coordonnées non numériques et des indices hors limites
 Le modal d'import affiche la scène avant de donner le focus à son bouton primaire ;
 Échap et le clic sur le backdrop annulent en restaurant le focus précédent.
 La scène n’est pas modifiée lorsque la validation échoue. Le statut HUD
-`#sceneStatus` indique `modifiée` après une mutation de géométrie, de forme ou de
+`#sceneStatus` indique `modifiée` après une mutation de géométrie, de plan ou de
 couleur et `sauvegardée` après export ou restauration. Les changements de vue
 (zoom, pan, grille) sont persistés mais ne marquent pas la scène comme modifiée.
 
@@ -992,7 +990,7 @@ scene.
 ### §5.3 Invariants runtime du modèle {pointList, tris}
 
 Le runtime `state.shapes[i] = { pointList, tris }` (Phase 1) doit
-vérifier en permanence les invariants suivants sur chaque forme.
+vérifier en permanence les invariants suivants sur chaque plan.
 Voir `modifyShapeModel-spec.md` §A pour la définition complète des
 catégories d'erreur (`out_of_bounds`, `orphan`, `duplication`,
 `partial_inverted`, `fill_not_string`). Les invariants ci-dessous
@@ -1108,7 +1106,7 @@ Le réinit de l'undo se fait à DEUX moments, en mémoire ET sur disque :
 | **Import MERGE** (`applyImport` mode `merge`) | CONSERVÉ (`resetEphemeralState(false)`) | CONSERVÉ ; `markUndoPersistDirty()` rafraîchit juste le fingerprint |
 
 Pourquoi MERGE conserve : les entries existantes référencent des indices
-de forme `< beforeCount` — un append ne les invalide pas. Conséquence
+de plan `< beforeCount` — un append ne les invalide pas. Conséquence
 assumée : après un MERGE, `Ctrl+Z` annule la dernière action d'avant le
 merge (le merge lui-même n'est pas annulable — il n'est pas représenté
 dans la pile).
@@ -1133,7 +1131,7 @@ dans la pile).
 
 AltGr + molette n'est PAS une transformation du viewport — c'est une mutation
 **per-shape** : `rotateEachShapeAroundPivot` translate TOUS les vertices de
-TOUTES les formes autour d'un pivot en coords MODÈLE. Les axes restent fixes
+TOUS les plans autour d'un pivot en coords MODÈLE. Les axes restent fixes
 (§2.2) car ils représentent le repère MODÈLE de référence.
 
 ### §6.2 Pivot qui suit le curseur en MODÈLE
@@ -1156,14 +1154,14 @@ première rotation effective.
 
 ## §7. Couleurs et feedback visuel
 
-### §7.1 Inactif (formes non-courantes)
+### §7.1 Inactif (plans non-courants)
 
 Gris atténué (`#5A5A5A` lignes, `#7A7800` points) pour signaler
 "non-éditable" tout en restant visible. **PAS de fill sur triangles inactifs**
 — simples contours gris pour conserver le signal de non-éditabilité (un wash
 transparent masquerait ce signal).
 
-### §7.2 Actif (forme courante)
+### §7.2 Actif (plan courant)
 
 - Contours blancs 1 px en tirets `PATTERN_LINES = [2, 2]`.
 - Points jaunes `#FFFF00`.
@@ -1294,7 +1292,7 @@ tel quel dans le wire format des scènes).
   `rgba(0, 255, 0, 0.6)`.
 
 `lineWidth` est **reset à 1** après chaque stroke (ne pas polluer les rendus
-subséquents : axes via `drawAxis`, drawShape / drawTriangle d'autres formes,
+subséquents : axes via `drawAxis`, drawShape / drawTriangle d'autres plans,
 reticule, …).
 
 ### §7.6 Feedback post-clic (sélection effective)
@@ -1342,15 +1340,15 @@ d'action en cours". `ACTION_GRABBING = 1` (drag d'un point en cours).
 Quand le curseur passe au-dessus d'un sommet dans n'importe quel mode de
 sélection, `drawVertexLabel(p, idx)` rend une **pill sombre 10 px
 monospace** sous le sommet affichant l'**index 0-based** du vertex dans
-le `pointList` de la forme active (`state.shapes[activeShapeIndex].pointList[idx]`).
+le `pointList` du plan actif (`state.shapes[activeShapeIndex].pointList[idx]`).
 Le helper `getVertexIndex(p)` de `geometry.js` implémente la résolution
 via `activeShapePointList().findIndex(v => adjacentPoints(v, p, 0.01))` —
 corollairement, l'invariant I3 (pas de doublons au sens §3.2 tolérance
 0.01) garantit un index unique par coord : un `findIndex` est ici
 suffisant pour mapper un point écran vers son slot canonique.
 
-La convention est dev-friendly : `pointList[0]` est le 1er sommet de
-la forme active — alignement JS array natif qui rend la lecture debug
+La convention est dev-friendly : `pointList[0]` est le 1er sommet du
+plan actif — alignement JS array natif qui rend la lecture debug
 immédiate (`state.shapes[i].tris[k].p1 = vertex 7` → label "7"
 cohérent). Toute la topologie est désormais en indices (cf. §3.4
 runtime indexe), donc un label "7" référence directement
@@ -1366,7 +1364,7 @@ runtime indexe), donc un label "7" référence directement
 
 **Implémentation** :
 - Le helper `getVertexIndex(p)` itère `state.shapes[activeShapeIndex].pointList`
-  directement (le `pointList` de la forme active, pas de raccourci
+  directement (le `pointList` du plan actif, pas de raccourci
   helper — le code accède à la slice via `state.shapes[…].pointList` à
   chaque call site) et retourne
   `findIndex(v => adjacentPoints(v, p, 0.01))` → -1 si absent
@@ -1375,7 +1373,7 @@ runtime indexe), donc un label "7" référence directement
 - Fallback `'?'` côté caller (`editor.js:updateMouseHover`) si la
   défense retourne -1. Ce cas ne devrait jamais survenir dans le call
   site normal puisque `findNearestPoint` garantit que le point rendu
-  existe dans le `pointList` de la forme active (invariants I1+I2 de §5.3).
+  existe dans le `pointList` du plan actif (invariants I1+I2 de §5.3).
 
 **Relation aux autres features** :
 - §7.4 montre "où" (cercle vert 5 px sur le sommet le + proche), §7.8
@@ -1417,7 +1415,7 @@ Evolution « ajouter une distinction visuelle pour les sommets qui
 correspondent à plusieurs points afin de faciliter leur regroupement ».
 
 **Sémantique** : un **sommet multi-points** est une position physique
-portant **plusieurs entrées `pointList`** dans la forme active (cluster
+portant **plusieurs entrées `pointList`** dans le plan actif (cluster
 §3.2, tolérance 0.01) — autrement dit des **doublons** : des points
 distincts superposés au même endroit, chacun référencé par ses propres
 slots triangles. C'est le cas des scènes legacy / importées (le wire
@@ -1450,11 +1448,11 @@ Batching via `drawPointsBatch` (1 beginPath/stroke) ; l'over-stroke de
 N anneaux identiques sur la même position est inoffensif (un seul
 anneau visible). Masqué en preview, comme tous les points de contrôle.
 
-**Forme active uniquement** : `mergeSelectedPoints` n'agit que sur la
-forme active (et §7.8/§7.9 sont déjà actives-shape-only) — les
+**Plan actif uniquement** : `mergeSelectedPoints` n'agit que sur le
+plan actif (et §7.8/§7.9 sont déjà actives-shape-only) — les
 marqueurs guident la fusion là où elle s'applique, sans bruit sur les
-formes inactives grisées. À la navigation de forme, les marqueurs
-suivent la forme active.
+plans inactifs grisés. À la navigation de plan, les marqueurs
+suivent le plan actif.
 
 **Complexité** : `getMultiPointIndices(shape)` (geometry.js) trie les
 indices par x puis balaye une fenêtre glissante — break dès que
@@ -1578,9 +1576,9 @@ chaque mutation de sélection non-singleton. Couvert par
 
 (évolution « couper, copier, coller les éléments sélectionnés »)
 
-**Périmètre** : les opérations portent sur la sélection de la FORME
-ACTIVE — les points de `state.selectedPoints` + les triangles de la
-forme active ENTIÈREMENT contenus (les 3 slots `pX` sont des indices
+**Périmètre** : les opérations portent sur la sélection du PLAN
+ACTIF — les points de `state.selectedPoints` + les triangles du
+plan actif ENTIÈREMENT contenus (les 3 slots `pX` sont des indices
 sélectionnés). Les triangles partiels (`pX` undefined, construction en
 cours) ne sont jamais copiés. Le `fill` des triangles est conservé
 (propriété du triangle, même convention que `compactPointList`).
@@ -1597,7 +1595,7 @@ coller). Non persisté en localStorage (session seule, comme la preview).
 **Copier** (`copySelection`, editor.js) : `captureClipboard` lit les
 coords des points sélectionnés + les triangles contenus, ré-indexés en
 indices RELATIFS à la liste copiée (le collage re-base sur
-`pointList.length` de la forme active au moment du collé). La sélection
+`pointList.length` du plan actif au moment du collé). La sélection
 est conservée.
 
 **Couper** (`cutSelection`) : copie puis supprime la sélection via
@@ -1607,7 +1605,7 @@ un seul chemin de vérité pour la suppression). Le presse-papiers reste
 rempli pour coller.
 
 **Coller** (`pasteClipboard`) : append les points à la fin du
-`pointList` de la FORME ACTIVE (coords absolues), re-indexe les
+`pointList` du PLAN ACTIF (coords absolues), re-indexe les
 triangles dessus (base = longueur pré-mutation), sélectionne la copie
 collée. **Décalage de collage** : chaque collage décale d'un demi-pas
 de grille (`GRID_STEP / 2`) supplémentaire depuis la source (cumulé via
@@ -1634,22 +1632,22 @@ les points supprimés. Couvert par `scripts/smoke-clipboard.mjs`.
 
 ---
 
-### §7.13 Ordre des formes : monter / descendre (`#moveShapeUp` / `#moveShapeDown`, Alt+↑ / Alt+↓)
+### §7.13 Ordre des plans : monter / descendre (`#moveShapeUp` / `#moveShapeDown`, Alt+↑ / Alt+↓)
 
 (évolution « boutons pour gérer l'ordre des formes »)
 
 **L'ordre EST la sémantique des plans.** Dans la vue plans (§2.6),
-`drawShapes` rend les formes dans l'ordre du tableau `state.shapes` —
-forme n = plan n, la forme d'indice le plus haut est dessinée en
-dernier donc **recouvre** les précédentes là où elles se chevauchent.
-Réordonner le tableau = réordonner les plans, sans toucher ni aux
-`pointList` ni aux `tris` d'aucune forme.
+`drawShapes` rend les plans dans l'ordre du tableau `state.shapes` —
+le plan d'indice le plus haut est dessiné en dernier donc **recouvre**
+les précédents là où ils se chevauchent. Réordonner le tableau =
+réordonner les plans, sans toucher ni aux `pointList` ni aux `tris`
+d'aucun plan.
 
-**Sens choisi avec l'utilisateur :** MONTER la forme active =
-indice +1 (`1/3 → 2/3 → 3/3`), elle passe AU-DESSUS dans la vue plans
-(recouvre celles d'indice inférieur). DESCENDRE = indice -1, elle passe
-en dessous. Le compteur `#shapeLabel` (forme active / total) monte et
-descend avec elle — un monter de la forme 1/3 l'amène en 2/3.
+**Sens choisi avec l'utilisateur :** MONTER le plan actif =
+indice +1 (`1/3 → 2/3 → 3/3`), il passe AU-DESSUS dans la vue plans
+(recouvre ceux d'indice inférieur). DESCENDRE = indice -1, il passe
+en dessous. Le compteur `#shapeLabel` (plan actif / total) monte et
+descend avec lui — un monter du plan 1/3 l'amène en 2/3.
 
 **Entrées** : boutons `#moveShapeUp` / `#moveShapeDown` dans le groupe
 « Shape nav » (après `#nextShape`, avant `#newShape`) + raccourcis
@@ -1662,7 +1660,7 @@ par frappe). Les boutons passent par les MÊMES fonctions
 vérité.
 
 **Bornes** : `updateShapeHud` (hud.js) grise `#moveShapeUp` sur la
-dernière forme (`activeShapeIndex >= length - 1`) et
+dernier plan (`activeShapeIndex >= length - 1`) et
 `#moveShapeDown` sur la première (`<= 0`) — même langage disabled que
 undo/redo (opacité 0.35 + `not-allowed`). Les fonctions sont
 elles-mêmes des no-op hors bornes (défense en profondeur : un clic
@@ -1673,8 +1671,8 @@ dans history.js — le plus économe possible (~16 B) car un déplacement
 ne change NI `pointList` NI `tris` : seules les positions du tableau
 bougent, l'applicateur fait le splice dans les deux directions
 (forward = `from→to`, inverse = `to→from`). Le call site (shapes.js
-`moveShape`) accole un `activeShapeIndexPatch(from, to)` : la forme
-active SUIT son déplacement, et l'undo/redo restaure donc l'ordre ET
+`moveShape`) accole un `activeShapeIndexPatch(from, to)` : le plan
+actif SUIT son déplacement, et l'undo/redo restaure donc l'ordre ET
 l'index actif. L'entry est couverte par `shouldUseSnapshot`
 (estimation 16 B — jamais promue en snapshot). Le splice en mémoire
 est le miroir exact de l'applicateur history.js (remove at `from`,
@@ -1692,7 +1690,7 @@ format et survit au reload). Couvert par `scripts/smoke-shapeorder.mjs`.
 (évolution « boutons pour forcer l'alignement et la répartition des
 points sélectionnés »)
 
-**4 actions sur la sélection de la FORME ACTIVE**, accessibles depuis
+**4 actions sur la sélection du PLAN ACTIF**, accessibles depuis
 le panneau du bouton `#align` (groupe sélection, après `#paste` avant
 `#triangleColor`) et les raccourcis clavier :
 
@@ -1711,7 +1709,7 @@ le panneau du bouton `#align` (groupe sélection, après `#paste` avant
 
 **Historique** : chaque action est une entry undo UNIQUE via `replaceShapePatch` before/after (même pattern que `pasteClipboard` / `deleteSelectedPoint`) — seules les coordonnées de `pointList` changent, les `tris` restent intacts (indices valides, fills survivent), donc le patch est compact. L'undo restaure les coordonnées exactes ; la sélection est vidée par l'undo (comportement standard `clearEditingTransientState`).
 
-**Raccourcis** : mêmes gardes que l'ordre des formes (§7.13) — `typing`, `preview` (aucune édition), `!e.ctrlKey` (AltGr = Alt+Ctrl exclu), `!e.repeat` ; `e.shiftKey` distingue répartir (Shift+) d'aligner. Les raccourcis passent par les MÊMES fonctions que les boutons (`alignSelectedPointsX/Y` / `distributeSelectedPointsX/Y`) — un seul chemin de vérité. Couvert par `scripts/smoke-align.mjs`.
+**Raccourcis** : mêmes gardes que l'ordre des plans (§7.13) — `typing`, `preview` (aucune édition), `!e.ctrlKey` (AltGr = Alt+Ctrl exclu), `!e.repeat` ; `e.shiftKey` distingue répartir (Shift+) d'aligner. Les raccourcis passent par les MÊMES fonctions que les boutons (`alignSelectedPointsX/Y` / `distributeSelectedPointsX/Y`) — un seul chemin de vérité. Couvert par `scripts/smoke-align.mjs`.
 
 ### §7.15 Commentaire contextuel dans le HUD (`#actionComment`)
 
@@ -1747,7 +1745,7 @@ survol sont coupés) :
 | 2 | Construction en cours (triangle partiel) — le geste SUIVANT du triangle prime sur tout le reste | « Cliquez pour poser le 2e sommet… » / « …le 3e sommet — il fermera le triangle ». Un tri `p2 = undefined` est TOUJOURS resumable (addPoint le modifie même s'il n'est plus actif) ; `p3 = undefined` ne l'est que s'il est le `activeConstructionTriangle` (sinon le clic serait ignoré — on ne le suggère pas) |
 | 3 | Pinceau armé (`brushMode`) — le clic gauche peindra | « Clic gauche pour peindre ce triangle avec la couleur choisie » |
 | 4 | Survol d'élément — MÊME ordre de résolution que le clic (processMouseUpSelection) | triangle (mode triangle) > segment (mode segment) > point (« sélectionner ce sommet — clic droit pour le déplacer ») > segment en mode vertex (« **créer un nouveau triangle à partir de ce segment** ») |
-| 5 | Zone vide — un post-action en cours finit ses 3 s ; sinon message générique | « Cliquez pour poser le 1er point de votre forme » (scène vide) / « Survolez un segment pour y brancher un nouveau triangle… » (forme fermée) |
+| 5 | Zone vide — un post-action en cours finit ses 3 s ; sinon message générique | « Cliquez pour poser le 1er point de votre plan » (scène vide) / « Survolez un segment pour y brancher un nouveau triangle… » (forme fermée) |
 
 Le message de survol **persiste tant que le pointeur est sur l'élément**
 (« tant que survolé ») : aucun timer, le survol suivant le remplace. Le
@@ -1821,12 +1819,12 @@ hud.js — pas de cycle : hud.js ne lit que `state` et les constantes) :
 | `editor.js` | créations cercle / étoile / anneau / forme prédéfinie | « C pour tracer un autre cercle… » / « Panneau Formes pour une autre étoile… » |
 | `editor.js` | `paintTriangleAtCursor` | « Ctrl+Z pour annuler — cliquez sur un autre triangle pour le peindre » |
 | `merge.js` | `applyMergeToSelection` (cœur commun fusion classique ET par déplacement) | « Ctrl+Z pour annuler — sélectionnez ≥ 2 points pour une autre fusion » |
-| `shapes.js` | `moveShapeUp/Down` (via `moveShape`) + `addShape` | « Ctrl+Z pour annuler — Alt+↑/↓ pour continuer à réordonner » / « Cette forme est vide : cliquez pour poser le 1er point » |
+| `shapes.js` | `moveShapeUp/Down` (via `moveShape`) + `addShape` | « Ctrl+Z pour annuler — Alt+↑/↓ pour continuer à réordonner » / « Ce plan est vide : cliquez pour poser le 1er point » |
 | `history.js` | `undo` / `redo` | « Ctrl+Shift+Z (ou Ctrl+Y) pour rétablir » / « Ctrl+Z pour annuler à nouveau » |
 | `io.js` | `saveMesh` / `applyImport` (merge + replace) / `resetAll` | « Ctrl+S pour ré-enregistrer… » / « Ctrl+Z pour annuler l'import… » / « Cliquez pour poser le 1er point de votre nouvelle scène » |
 
 **Non couvert volontairement** : le post-action de sélection simple
-(changement de forme active, clic de sélection) — ce n'est pas une
+(changement de plan actif, clic de sélection) — ce n'est pas une
 action qui produit un résultat à commenter, et le bruit noierait le
 signal (le survol #4 annonce déjà le clic de sélection avant le geste).
 La rotation AltGr globale (`rotateEachShapeAroundPivot`) reste
@@ -1843,7 +1841,7 @@ suite — y compris l'exemple fondateur : survol du milieu d'un segment →
 
 L'implémentation historique de `history.js` utilisait un **deep clone
 complet** de `state.shapes` à chaque `saveState()` : pour N points et
-M triangles sur K formes, chaque entry de la pile pèse ≈
+M triangles sur K plans, chaque entry de la pile pèse ≈
 `K × (N + M) × ~80 B` (overhead JS object + 2-4 floats typiques)
 plafonnée à `MAX_HISTORY = 50` (cf. `constants.js`). Sur une session
 de peinture typique (« on dessine, on drag, on dessine encore »),
@@ -1859,7 +1857,7 @@ précédente par le déplacement de 1 sommet.
 - Rotation AltGr d'une sélection : N points tournés autour d'un pivot.
 - AddPoint : 1 point + 1 tri modifié.
 - applyColorToSelectedTriangles : N fills modifiés.
-- addShape / performDeleteShape : 1 forme insérée/retirée.
+- addShape / performDeleteShape : 1 plan inséré/retiré.
 
 Cloisonner la mémoire à cette sous-partie via un **delta** plutôt
 qu'à la scène entière est le gain mémoire escompté. Pour 50 drags
@@ -1922,8 +1920,8 @@ Conséquence :
 | `insertPoint`   | push 1 entrée pointList + update/append last tri    | `lastTriIndexBefore/After`, `lastTriBefore/After`, `insertedPoint` |
 | `replaceShape`  | remplace pointList + tris d'1 seul shape             | `pointListBefore/After`, `trisBefore/After`                 |
 | `setFills`      | fill de N tris (set / clear)                        | `before`/`after` = `[{s, t, fill}, ...]`                   |
-| `shapeArray`    | insert / remove / replace une forme                 | `before` (forme à l'index avant) ou `null` (insert), `after` idem |
-| `activeShapeIndex` | index de la forme active                         | `from`, `to`                                              |
+| `shapeArray`    | insert / remove / replace un plan                  | `before` (plan à l'index avant) ou `null` (insert), `after` idem |
+| `activeShapeIndex` | index du plan actif                         | `from`, `to`                                              |
 
 Convention de direction :
 - `movePoints` / `setFills` / `activeShapeIndex` : `forward` =
@@ -1958,7 +1956,7 @@ Heuristique de coût mémoire estimée (par entry) :
   3.2 KB vs 5-6 KB → **gain ~2×**.
 - Pour un `replaceShape` sur une scène mono-shape : ~10 KB vs 5 KB
   full → **régression 2×** (covered par snapshot fallback §8.5).
-- Pour un `replaceShape` sur scelle multi-shape (5 formes,
+- Pour un `replaceShape` sur scelle multi-shape (5 plans,
   suppression sur 1) : 10 KB vs 25 KB → **gain ~2.5×**.
 - Pour un `insertPoint` : 80 B vs 5-6 KB → **gain ~70×**.
 

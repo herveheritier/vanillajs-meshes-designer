@@ -46,7 +46,7 @@ const errors = attachErrorCollector(page)
 // 2e preset du panneau de couleurs (TRIANGLE_COLOR_PRESETS[1], orange).
 const COLORED_FILL = 'rgba(251, 140, 0, 0.45)'
 
-// Snapshot lisible de la forme active (points + tris avec fill) depuis
+// Snapshot lisible du plan actif (points + tris avec fill) depuis
 // le localStorage de la page. Scene absente (= raw vide) => scene
 // vide, pas un parseError (points -1).
 const sceneInfo = () => page.evaluate((key) => {

@@ -140,7 +140,7 @@ const createRect = async () => {
     await page.waitForTimeout(150)
 }
 
-// Snapshot lisible de la forme active (points + fills des tris) depuis
+// Snapshot lisible du plan actif (points + fills des tris) depuis
 // le localStorage de la page.
 const sceneInfo = () => page.evaluate((key) => {
     const raw = localStorage.getItem(key) || ''

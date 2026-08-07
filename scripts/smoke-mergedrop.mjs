@@ -102,7 +102,7 @@ const countOrangePixelsNear = (page, cssX, cssY) => page.evaluate(({ x, y }) => 
     return orange
 }, { x: cssX, y: cssY })
 
-// Info sommaire de la forme active depuis le localStorage : compte de
+// Info sommaire du plan actif depuis le localStorage : compte de
 // points / triangles + position du point 0 (le survivant attendu).
 const sceneInfo = (page) => page.evaluate((key) => {
     const raw = localStorage.getItem(key) || ''

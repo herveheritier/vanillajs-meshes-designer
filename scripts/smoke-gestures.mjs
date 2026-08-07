@@ -6,7 +6,7 @@
 //   • clic droit + drag = grab du groupe sélectionné (delta modèle =
 //     delta écran / zoom, Y inversé — zoom 1 par défaut ici) ;
 //   • AltGr (Ctrl+Alt) + clic droit + drag = déplacement GLOBAL de
-//     tous les points de toutes les formes (moveAllActive).
+//     tous les points de tous les plans (moveAllActive).
 //
 // Usage :
 //   1. Lancer le serveur dev :  python3 test_server.py   (port 8000)
@@ -38,7 +38,7 @@ const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 const errors = attachErrorCollector(page)
 
-// Positions [x, y] de la forme active depuis le localStorage de la page.
+// Positions [x, y] du plan actif depuis le localStorage de la page.
 const shapePoints = () => page.evaluate((key) => {
     const raw = localStorage.getItem(key) || ''
     try {
@@ -139,7 +139,7 @@ try {
 
     // --- E. AltGr (Ctrl+Alt) + clic droit + drag : déplacement global ---
     // Delta écran (20,10) → delta modèle (20,-10). moveAllActive vide
-    // la sélection et déplace TOUS les points de TOUTES les formes.
+    // la sélection et déplace TOUS les points de TOUS les plans.
     const beforeAlt = await shapePoints()
     await page.keyboard.down('Control')
     await page.keyboard.down('Alt')

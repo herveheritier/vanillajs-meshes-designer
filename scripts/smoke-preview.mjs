@@ -3,8 +3,8 @@
 // Couvre le cycle en 3 états du bouton prévisualiser (évolution bouton
 // prévisualiser, cf. DESIGN.md §2.6) :
 //   off -> preview simple (chrome masquée, géométrie seule)
-//       -> plans (toutes les formes rendues dans leur ordre, forme n =
-//          plan n, bouton en accent ambre + libellé « plans »)
+//       -> plans (tous les plans rendus dans leur ordre, bouton en
+//          accent ambre + libellé « plans »)
 //       -> off
 // Le bouton #preview flotte pendant la preview (seule chrome
 // conservée) pour que le cycle au clic soit possible. Sortie directe

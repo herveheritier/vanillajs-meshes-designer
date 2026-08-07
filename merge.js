@@ -47,7 +47,7 @@ export const wireMergeErrorModal = () => {
 
 // ===== Helpers =====
 
-// selectedPoints = tableau d'indices dans le pointList de la forme active.
+// selectedPoints = tableau d'indices dans le pointList du plan actif.
 const activeShape = () => state.shapes[state.activeShapeIndex]
 
 // Clusterise les indices selectionnes par position physique adjacente (tol 0.01).
@@ -158,7 +158,7 @@ const applyMergeToSelection = (mergePos, label) => {
     }
 
     // Capture pre-mutation pour le replaceShapePatch (gain net des
-    // que la scene contient plusieurs formes ; sinon bascule snapshot).
+    // que la scene contient plusieurs plans ; sinon bascule snapshot).
     const shapeIdx = state.activeShapeIndex
     const shape = activeShape()
     const clonedShapeBefore = cloneShape(shape)

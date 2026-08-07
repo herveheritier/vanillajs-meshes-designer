@@ -32,7 +32,7 @@ import { log } from './log.js'
 // ===== find : point/line/triangle les plus proches =====
 
 // (modifyShapeModel-spec §3.6) : scanne directement le pointList
-// canonique de la forme active (Q1a per-shape). Renvoie un point avec son
+// canonique du plan actif (Q1a per-shape). Renvoie un point avec son
 // indice 0-based dans activeShape().pointList. Le prefixe pointIndex
 // aligne sur la convention dev-friendly des arrays JS (cf. §7.8).
 const activeShape = () => state.shapes[state.activeShapeIndex]
@@ -360,7 +360,7 @@ const computeHoverComment = () => {
     // 5. Zone vide : le post-action finit ses 3 s, sinon message generique.
     if (isActionCommentActive()) return null
     if (tris.length === 0) {
-        return 'Cliquez pour poser le 1er point de votre forme'
+        return 'Cliquez pour poser le 1er point de votre plan'
     }
     return 'Survolez un segment pour y brancher un nouveau triangle — ou cliquez sur un sommet pour le sélectionner'
 }
@@ -528,9 +528,9 @@ export const selectAllPoints = () => {
 
 // ===== Presse-papiers interne : couper / copier / coller =====
 // INTERNE a l'app (pas navigator.clipboard : format modele + fragile
-// sous file://). Capture les points selectionnes de la FORME ACTIVE +
+// sous file://). Capture les points selectionnes du PLAN ACTIF +
 // les tris ENTIEREMENT contenus (partiels jamais copies), fill
-// conserve. Le coller cible la forme active (coords absolues) avec un
+// conserve. Le coller cible le plan actif (coords absolues) avec un
 // decalage d'un demi-pas de grille par collage (clipboard.offset) pour
 // cascader les copies.
 
@@ -573,7 +573,7 @@ export const copySelection = () => {
     state.clipboard = { points: captured.points, tris: captured.tris, offset: 0 }
     log(`Copie : ${captured.points.length} point${captured.points.length > 1 ? 's' : ''}, ${captured.tris.length} triangle${captured.tris.length > 1 ? 's' : ''}`)
     showActionComment(
-        `Ctrl+V pour coller dans la forme active — la sélection est dans le presse-papiers`
+        `Ctrl+V pour coller dans le plan actif — la sélection est dans le presse-papiers`
     )
     updateClipboardButtons()
     return true
@@ -594,7 +594,7 @@ export const cutSelection = () => {
     return true
 }
 
-// Colle dans la FORME ACTIVE : points appends (decalage GRID_STEP/2 par
+// Colle dans le PLAN ACTIF : points appends (decalage GRID_STEP/2 par
 // collage), tris re-indexes, copie collée = selection courante. Ctrl+V.
 export const pasteClipboard = () => {
     const clip = state.clipboard
@@ -1115,7 +1115,7 @@ export const cancelStarGesture = () => {
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
 }
 
-// Commite une étoile dans la forme active : append du pointList et des
+// Commite une étoile dans le plan actif : append du pointList et des
 // tris de starGeometry (indices decales du nombre de points deja
 // presents) + entry d'historique replaceShape (meme pattern que
 // createCircle / deleteSelectedPoint). `offsetAngle` (compense du
@@ -1310,7 +1310,7 @@ export const cancelAnnulusGesture = () => {
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
 }
 
-// Commite un anneau dans la forme active : append du pointList et des
+// Commite un anneau dans le plan actif : append du pointList et des
 // tris de annulusGeometry (indices decales du nombre de points deja
 // presents) + entry d'historique replaceShape (meme pattern que
 // createCircle / createStar / deleteSelectedPoint). `offsetAngle`
@@ -2191,7 +2191,7 @@ export const beginGrabbing = (e) => {
             state.grabHistorySaved = false
             return false
         }
-        log(`AltGr detecte - deplacement de ${state.shapes.length} forme(s) : ${state.grabbedGroup.length} points`)
+        log(`AltGr detecte - deplacement de ${state.shapes.length} plan(s) : ${state.grabbedGroup.length} points`)
         state.board.style.cursor = 'move'
         return true
     }
@@ -2573,7 +2573,7 @@ export const rotateEachShapeAroundPivot = (pivotModel, angle) => {
         state.isEachShapeRotating = true
         state.selectedPoints = []
         updateSelectionHud()
-        log('AltGr + molette detecte - rotation de chaque forme autour du curseur (5 deg/tick)')
+        log('AltGr + molette detecte - rotation de chaque plan autour du curseur (5 deg/tick)')
     }
     clearTimeout(state.eachShapeRotateTimer)
     state.eachShapeRotateTimer = setTimeout(() => {

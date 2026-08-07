@@ -323,8 +323,8 @@ export const updatePreviewButton = () => {
     if (text) text.textContent = plans ? 'plans' : ''
     // Tooltip : décrit le cycle en 3 états.
     btn.setAttribute('title', plans
-        ? 'Prévisualisation plans : toutes les formes affichées dans leur ordre (forme n = plan n). P ou clic pour revenir à la preview simple, Échap ou clic gauche pour quitter.'
-        : 'Prévisualiser la scène (P / Échap / clic gauche pour quitter) : masque points de contrôle, axes, grille, HUD et boutons ; un 2e clic affiche toutes les formes dans leur ordre (forme n = plan n)')
+        ? 'Prévisualisation plans : tous les plans affichés dans leur ordre. P ou clic pour revenir à la preview simple, Échap ou clic gauche pour quitter.'
+        : 'Prévisualiser la scène (P / Échap / clic gauche pour quitter) : masque points de contrôle, axes, grille, HUD et boutons ; un 2e clic affiche tous les plans dans leur ordre')
 }
 
 export const togglePreview = () => {
@@ -345,8 +345,8 @@ export const togglePreview = () => {
     applyPreviewMode()
     log(state.previewMode
         ? (state.previewPlans
-            ? 'Plans actifs : toutes les formes dans leur ordre (forme n = plan n) - P ou clic pour revenir a la preview simple, Echap ou clic gauche pour quitter'
-            : 'Preview active - P ou clic pour afficher toutes les formes dans leur ordre (forme n = plan n), Echap ou clic gauche pour sortir (molette = zoom, clic milieu = pan)')
+            ? 'Plans actifs : tous les plans dans leur ordre - P ou clic pour revenir a la preview simple, Echap ou clic gauche pour quitter'
+            : 'Preview active - P ou clic pour afficher tous les plans dans leur ordre, Echap ou clic gauche pour sortir (molette = zoom, clic milieu = pan)')
         : 'Preview desactivee')
 }
 

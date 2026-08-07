@@ -4,7 +4,7 @@
 // Evolution « ajouter une distinction visuelle pour les sommets qui
 // correspondent à plusieurs points afin de faciliter leur
 // regroupement » (cf. DESIGN.md §7.10) : un anneau orange
-// (COLOR_MULTI_POINT = #FFA500) entoure les sommets de la forme active
+// (COLOR_MULTI_POINT = #FFA500) entoure les sommets du plan actif
 // dont la position porte PLUSIEURS entrées pointList (doublons de
 // scènes legacy/importées) — candidats à la fusion #mergePoints.
 //
@@ -108,7 +108,7 @@ const countOrangePixelsNear = (page, cssX, cssY) => page.evaluate(({ x, y }) => 
     return orange
 }, { x: cssX, y: cssY })
 
-// Info sommaire de la forme active depuis le localStorage.
+// Info sommaire du plan actif depuis le localStorage.
 const sceneInfo = (page) => page.evaluate((key) => {
     const raw = localStorage.getItem(key) || ''
     try {

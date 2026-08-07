@@ -12,7 +12,7 @@
 //   2. clic gauche -> création de point, scène persistée (localStorage) ;
 //   3. molette -> zoom (zoomDisplay change, polling) ;
 //   4. rechargement -> scène restaurée (persistance) ;
-//   5. autoimport ?autoimport=<base64> -> 2 formes parsées (exerce en
+//   5. autoimport ?autoimport=<base64> -> 2 plans parsés (exerce en
 //      direct le regex à guillemets de convert.js) ;
 //   6. favicon.svg résolu depuis assets/ (dossier à côté du fichier) ;
 //   - zéro erreur JS sur tout le parcours.
@@ -24,7 +24,7 @@ import { pathToFileURL } from 'node:url'
 
 import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY } from './smoke_lib.mjs'
 
-// Texte meshes pour l'autoimport : 2 formes de 3 points, encodé comme le
+// Texte meshes pour l'autoimport : 2 plans de 3 points, encodé comme le
 // fait convert.js (`atob(decodeURIComponent(encoded))`).
 const MESHES_TEXT = '0,0;10,0;5,8.66\n20,0;30,0;25,8.66\n'
 const AUTOIMPORT_PARAM = encodeURIComponent(Buffer.from(MESHES_TEXT, 'utf8').toString('base64'))
@@ -101,7 +101,7 @@ export const runPortableBrowserTest = async (htmlPath) => {
         }, SCENE_STORAGE_KEY, { timeout: 8000 })
             .then(() => true)
             .catch(() => false)
-        check('5. autoimport file:// -> 2 formes de 3 points (regex convert.js exercés)', imported)
+        check('5. autoimport file:// -> 2 plans de 3 points (regex convert.js exercés)', imported)
         check('5. aucune erreur JS sur la page autoimport', errors2.length === 0)
         if (errors2.length) console.error('ERREURS JS:\n' + errors2.join('\n'))
         await page2.close()

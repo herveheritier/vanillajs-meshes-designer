@@ -91,7 +91,7 @@ export const importMeshesFromFile = (file) => {
             importMeshFromText(json, sourceName)
             let totalTris = meshes.reduce((acc, m) => acc + m.tris.length, 0)
             let totalPts = meshes.reduce((acc, m) => acc + m.pointList.length, 0)
-            log('Import meshes OK: ' + meshes.length + ' forme(s), ' + totalTris + ' triangles, ' + totalPts + ' sommets')
+            log('Import meshes OK: ' + meshes.length + ' plan(s), ' + totalTris + ' triangles, ' + totalPts + ' sommets')
         } catch (err) {
             log('Import meshes fail: ' + err.message)
         }
@@ -116,7 +116,7 @@ export const autoImportMeshesFromUrl = () => {
         let json = JSON.stringify({ shapes: shapePayload, activeShapeIndex: 0 })
         importMeshFromText(json)
         let totalTris = meshes.reduce((acc, m) => acc + m.tris.length, 0)
-        log('Autoimport: ' + meshes.length + ' forme(s), ' + totalTris + ' triangles')
+        log('Autoimport: ' + meshes.length + ' plan(s), ' + totalTris + ' triangles')
     } catch (e) {
         log('Autoimport fail: ' + e.message)
     }
