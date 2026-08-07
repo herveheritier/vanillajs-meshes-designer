@@ -1909,12 +1909,19 @@ le bas du bord proche agrandi. `cardFootprint`/`cardBand` restent le
 contrat partagé rendu/layout (les bords u = ±1 projetés + bande
 `KIOSK_EDGE_RATIO`) : le recentrage anti-clipping du layout et la
 tranche dessinée partagent la même géométrie.
+Les cartes sont dimensionnées pour tenir dans l'écran dans LES DEUX
+dimensions : `cardDims` borne la largeur à `cssBoardW ×
+KIOSK_CARD_W_RATIO = 0.55 × scale` (un plan très allongé — aspect
+plafonné 2.8 — ferait sinon une carte plus large que le canvas : le
+fit ne protège que la géométrie DANS la carte, pas la carte elle-même) ;
+la hauteur est réduite en conséquence pour préserver l'aspect.
 `computeKioskLayout` RECENTRE chaque carte sur son slot : le MILIEU de
 son empreinte projetée (et non son centre géométrique, décalé par
-l'asymétrie perspective) occupe `w/2 + dx·spacing` — sans cela les
-cartes extrêmes (fortement inclinées) débordent de l'écran côté bord
-proche ; l'espacement max a été resserré en conséquence
-(`KIOSK_CARD_SPACING_RATIO = 0.35`).
+l'asymétrie perspective) occupe `w/2 + dx·spacing`, puis CLAMPE la
+carte dans l'écran (un slot peut sortir du canvas quand le focus est
+près d'un bord) — sans cela les cartes extrêmes (fortement inclinées)
+débordent de l'écran côté bord proche ; l'espacement max a été resserré
+en conséquence (`KIOSK_CARD_SPACING_RATIO = 0.35`).
 
 **Entrées** (main.js) : le clic gauche sélectionne le plan MIS EN
 AVANT via `kioskSelectedIndex(x)` (même règle linéaire que l'affichage,

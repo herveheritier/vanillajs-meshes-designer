@@ -771,6 +771,7 @@ const KIOSK_PERSPECTIVE_D = 2.5       // distance du spectateur (en demi-largeur
 const KIOSK_MIN_SCALE = 0.4           // taille min des cartes lointaines
 const KIOSK_SCALE_FALLOFF = 1.4       // décroissance gaussienne de la taille
 const KIOSK_CARD_H_RATIO = 0.6        // hauteur de carte / hauteur canvas
+const KIOSK_CARD_W_RATIO = 0.55       // largeur max de carte / largeur canvas (plans très allongés)
 const KIOSK_CARD_SPACING_RATIO = 0.35 // espacement max entre cartes / largeur (réduit : la perspective élargit l'empreinte)
 const KIOSK_CARD_SPAN_RATIO = 0.88    // envergure totale max / largeur
 const KIOSK_EDGE_RATIO = 0.3          // épaisseur du faux-3D / hauteur carte
@@ -843,13 +844,23 @@ export const planBounds = (shape) => {
     }
 }
 
-// Dimensions écran d'une carte (AVANT inclinaison) : hauteur = ratio du
-// canvas × scale, largeur = hauteur × aspect du plan. La perspective est
-// appliquée ensuite par projectKioskPoint (trapèze), pas par un scale.
+// Dimensions écran d'une carte (AVANT inclinaison) : la carte doit tenir
+// dans l'écran dans LES DEUX dimensions — hauteur = ratio du canvas ×
+// scale, largeur = hauteur × aspect, mais si un plan très allongé
+// produirait une carte plus large que l'écran, la hauteur est réduite en
+// conséquence (aspect préservé) pour qu'il soit vu en totalité. La
+// perspective est appliquée ensuite par projectKioskPoint (trapèze), pas
+// par un scale.
 const cardDims = (bounds, scale) => {
     const aspect = Math.max(KIOSK_ASPECT_MIN, Math.min(KIOSK_ASPECT_MAX, bounds.bw / bounds.bh))
-    const cardH = cssBoardH() * KIOSK_CARD_H_RATIO * scale
-    const cardW = cardH * aspect
+    const maxH = cssBoardH() * KIOSK_CARD_H_RATIO * scale
+    const maxW = cssBoardW() * KIOSK_CARD_W_RATIO * scale
+    let cardH = maxH
+    let cardW = cardH * aspect
+    if (cardW > maxW) {
+        cardW = maxW
+        cardH = cardW / aspect
+    }
     return { cardH, cardW, halfW: cardW / 2, halfH: cardH / 2 }
 }
 
@@ -898,12 +909,21 @@ export const computeKioskLayout = () => {
         // (bord proche agrandi) ; on décale la carte pour que le MILIEU de
         // son empreinte projetée reste sur son slot — sans cela les cartes
         // extrêmes (fortement inclinées) débordent de l'écran côté bord
-        // proche. Layout et hit-test partagent cette même position. Le
-        // milieu d'empreinte est mémorisé pour centrer l'étiquette dessus.
+        // proche. Puis CLAMP anti-débordement écran : un slot peut sortir du
+        // canvas quand le focus est près d'un bord — la carte entière
+        // (empreinte + bande) reste alors visible dans l'écran. Clamp X
+        // uniquement : verticalement les cartes tiennent par construction
+        // (cardH ≤ 0.6·H et sMax ≤ ~1.57 → projection ≤ ~0.94·H). Layout et
+        // hit-test partagent cette même position. Le milieu d'empreinte est
+        // mémorisé (après clamp) pour centrer l'étiquette dessus.
         const d = cardDims(planBounds(state.shapes[i]), scale)
         const fp = cardFootprint(card, d)
-        card.fpMid = (fp.left + fp.right) / 2
-        card.x += slotX - card.fpMid
+        card.x += slotX - (fp.left + fp.right) / 2
+        const f2 = cardFootprint(card, d)
+        if (f2.left < 0) card.x -= f2.left
+        else if (f2.right > w) card.x -= f2.right - w
+        const f3 = cardFootprint(card, d)
+        card.fpMid = (f3.left + f3.right) / 2
         cards.push(card)
     }
     return { cards }
