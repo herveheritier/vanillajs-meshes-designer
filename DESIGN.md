@@ -1871,8 +1871,7 @@ mis en avant), `tilt = clamp(dx × KIOSK_TILT_RAD_PER_STEP, ±KIOSK_MAX_TILT_RAD
 (45° par carte d'écart — `KIOSK_TILT_RAD_PER_STEP = π/4` —, plafond
 ~66°), `scale = min + (1-min)·exp(-|dx|/falloff)`
 (gaussienne, plancher `KIOSK_MIN_SCALE = 0.4`), `y` surélevé des cartes
-lointaines (`KIOSK_MAX_PARALLAX_Y = 18` px) et étiquette « Plan n »
-sous chaque carte (badge vert + texte décalé sur le plan actif).
+lointaines (`KIOSK_MAX_PARALLAX_Y = 18` px).
 `kioskFocus()` = le focus CONTINU piloté par l'abscisse du pointeur
 via la règle linéaire `t·(n-1)` (`t = clamp(x/w, 0, 1)` : bords du
 canvas => premier/dernier plan mis en avant) — le pointeur « fait
@@ -1882,9 +1881,18 @@ clic (`kioskSelectedIndex`) : l'affichage et le clic ne peuvent
 diverger (cf. « Sélection au clic » ci-dessous). `drawKiosk` rend les cartes par ordre de `|dx|` croissant
 (le plan en avant passe PAR-DESSUS ses voisins — chevauchement simulé),
 avec un faux-3D (tranche `KIOSK_EDGE_RATIO` plus sombre du côté de
-l'inclinaison), le plan mis en avant est pleine opacité + bordure verte
-`KIOSK_FOCUS_BORDER` (les autres sont dimmés `KIOSK_DIM_MIN_ALPHA = 0.3`)
-et une ligne-guide verte souligne le focus. **La face de chaque carte est
+l'inclinaison). AUCUN cadre ni anneau : le plan mis en évidence ne se
+distingue que par son nom vert « Plan n » (texte simple GROS
+`KIOSK_LABEL_FONT = bold 18px`, sans pastille) affiché sous sa carte et
+sa pleine opacité (les autres sont dimmés). Le passage d'un plan à un
+autre est un FONDU PROGRESSIF : l'opacité d'une carte suit une courbe
+exponentielle de son écart au focus (`KIOSK_DIM_MIN_ALPHA = 0.3` +
+`(1-min)·exp(-|dx|/KIOSK_DIM_FALLOFF = 2)`), rehaussée par la
+« prominence » `prom = max(0, 1-|dx|)` (1 au focus, 0 dès |dx| ≥ 1) —
+`alpha = prom + (1-prom)·dim` — et le nom s'affiche en FONDU CROISÉ
+(alpha = prom) sur les deux cartes voisines du focus : l'ancien nom
+s'efface pendant que le nouveau apparaît. Une ligne-guide verte
+souligne le focus. **La face de chaque carte est
 dessinée en vraie PROJECTION PERSPECTIVE** (`projectKioskPoint`, un
 point local `(u, v) ∈ [-1, 1]²` pivoté de `tilt` autour de l'axe
 vertical central puis projeté depuis `KIOSK_PERSPECTIVE_D = 2.5`
@@ -1894,9 +1902,10 @@ verticaux restent verticaux (effet trapèze, l'impression d'un plan
 incliné de 45°), au lieu de la compression orthographique
 `scale(cos tilt, 1)` d'origine qui « aplatissait » sans donner de
 relief. Les triangles du plan sont projetés sommet par sommet (la
-perspective n'est pas affine : un scale global ne suffit pas), l'étiquette
-« Plan n » passe sous le bas du bord proche agrandi et l'anneau de focus
-épouse la bbox du trapèze. `cardFootprint`/`cardBand` restent le
+perspective n'est pas affine : un scale global ne suffit pas), le nom
+« Plan n » (uniquement pour le plan mis en évidence, texte vert simple
+sans pastille, centré sur le milieu de l'empreinte projetée) passe sous
+le bas du bord proche agrandi. `cardFootprint`/`cardBand` restent le
 contrat partagé rendu/layout (les bords u = ±1 projetés + bande
 `KIOSK_EDGE_RATIO`) : le recentrage anti-clipping du layout et la
 tranche dessinée partagent la même géométrie.

@@ -779,11 +779,11 @@ const KIOSK_ASPECT_MIN = 0.35
 const KIOSK_ASPECT_MAX = 2.8
 const KIOSK_PANEL_BG = 'rgba(30, 30, 30, 0.9)'
 const KIOSK_PANEL_BG_EDGE = 'rgba(16, 16, 16, 0.95)'
-const KIOSK_PANEL_BORDER = 'rgba(255, 255, 255, 0.16)'
-const KIOSK_FOCUS_BORDER = 'rgba(0, 255, 0, 0.95)'
 const KIOSK_DIM_MIN_ALPHA = 0.3
+const KIOSK_DIM_FALLOFF = 2.0        // décroissance exponentielle de l'atténuation (fondu progressif)
+const KIOSK_LABEL_FONT = 'bold 18px monospace' // numéro de plan en gros (facilite le choix)
+const KIOSK_LABEL_OFFSET = 16
 const KIOSK_GUIDE_COLOR = 'rgba(0, 255, 0, 0.25)'
-const KIOSK_LABEL_H = 16
 
 // Focus CONTINU 0..N-1 dérivé d'une abscisse : règle linéaire (bords
 // du canvas => 1er / dernier plan mis en avant) PARTAGÉE par l'affichage
@@ -875,7 +875,6 @@ const projectKioskPoint = (c, d, u, v) => {
 export const computeKioskLayout = () => {
     const n = state.shapes.length
     const focus = kioskFocus()
-    const focusedIndex = Math.min(n - 1, Math.max(0, Math.round(focus)))
     const w = cssBoardW()
     const spacing = Math.min(
         w * KIOSK_CARD_SPACING_RATIO,
@@ -907,7 +906,7 @@ export const computeKioskLayout = () => {
         card.x += slotX - card.fpMid
         cards.push(card)
     }
-    return { cards, focusedIndex }
+    return { cards }
 }
 
 
@@ -944,13 +943,18 @@ const cardFootprint = (c, d) => {
 // Rendu d'une carte : bande d'épaisseur (faux-3D) du côté opposé à
 // l'inclinaison, puis face en TRAPÈZE (perspective : le bord proche est
 // agrandi, le lointain rétréci — vraie impression d'un plan incliné).
-const drawKioskCard = (c, isFocused) => {
+const drawKioskCard = (c) => {
     const shape = state.shapes[c.index]
     const bounds = planBounds(shape)
     const d = cardDims(bounds, c.scale)
     const ctx = state._ctx
-    const alpha = isFocused ? 1 : Math.max(KIOSK_DIM_MIN_ALPHA, 1 - Math.abs(c.dx) * 0.3)
-    const sinT = Math.sin(c.tilt)
+    // Fondu progressif : l'opacité suit une courbe exponentielle de
+    // l'écart au focus (KIOSK_DIM_FALLOFF), rehaussée par la prominence
+    // du plan (1 au focus, 0 dès |dx| ≥ 1) — le passage d'un plan à un
+    // autre est un glissement continu, pas un basculement d'opacité.
+    const prom = Math.max(0, 1 - Math.abs(c.dx))
+    const dim = KIOSK_DIM_MIN_ALPHA + (1 - KIOSK_DIM_MIN_ALPHA) * Math.exp(-Math.abs(c.dx) / KIOSK_DIM_FALLOFF)
+    const alpha = prom + (1 - prom) * dim
 
     // Bande d'épaisseur : collée au bord lointain (côté qui « recule »).
     const { side, uFar, edgeW, sFar } = cardBand(c, d)
@@ -975,15 +979,16 @@ const drawKioskCard = (c, isFocused) => {
     ctx.closePath()
     ctx.fillStyle = KIOSK_PANEL_BG
     ctx.fill()
-    ctx.strokeStyle = isFocused ? KIOSK_FOCUS_BORDER : KIOSK_PANEL_BORDER
-    ctx.lineWidth = isFocused ? 2 : 1
-    ctx.stroke()
     // Géométrie du plan : bbox -> carte (fit plein, la perspective
     // s'occupe de l'écrasement), chaque sommet projeté individuellement.
     const fit = Math.min(d.cardW / bounds.bw, d.cardH / bounds.bh)
-    drawShapeInCard(shape, bounds, c, d, fit, isFocused)
+    // Trait plein dès que le plan devient majoritaire (prom > 0.5) : la
+    // bascule du style suit la transition d'opacité, pas le round() du focus.
+    drawShapeInCard(shape, bounds, c, d, fit, prom > 0.5)
     ctx.globalAlpha = 1
-    drawKioskLabel(c, d, isFocused, c.index === state.activeShapeIndex)
+    // Nom du plan en gros : fondu croisé entre les deux cartes voisines
+    // du focus — l'ancien nom s'efface pendant que le nouveau apparaît.
+    if (prom > 0.02) drawKioskLabel(c, d, prom)
 }
 
 // Triangles du plan en coords locales (bbox centrée, fit appliqué), puis
@@ -1045,65 +1050,36 @@ const drawShapeInCard = (shape, bounds, c, d, fit, isFocused) => {
     ctx.setLineDash([])
 }
 
-// Étiquette « Plan N » sous la carte : verte (focus), cyan + point (plan
-// actif), neutre sinon. Le point cyan distingue l'actif du mis en avant.
-const drawKioskLabel = (c, d, isFocused, isActive) => {
+// Nom « Plan N » du plan mis en évidence (ou en transition vers lui) :
+// texte vert GROS (KIOSK_LABEL_FONT), centré sur le milieu de l'empreinte
+// projetée (centre VISUEL, qui diffère du centre géométrique c.x sous la
+// perspective), sous le bas du trapèze (bord PROCHE agrandi). `alpha`
+// pilote le fondu croisé entre les deux cartes voisines du focus.
+const drawKioskLabel = (c, d, alpha) => {
     const ctx = state._ctx
     const text = `Plan ${c.index + 1}`
-    ctx.font = '11px monospace'
+    ctx.font = KIOSK_LABEL_FONT
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    const w = ctx.measureText(text).width + 16 + (isActive ? 8 : 0)
-    // Centrée sur le milieu de l'empreinte projetée (centre VISUEL de la
-    // carte, qui diffère du centre géométrique c.x sous la perspective).
-    const x = (c.fpMid !== undefined ? c.fpMid : c.x) - w / 2
-    // Sous le bas du trapèze : le bord PROCHE (|u| = 1 côté sinT) est
-    // agrandi par la perspective — y max des deux coins bas projetés.
     const sMax = KIOSK_PERSPECTIVE_D / (KIOSK_PERSPECTIVE_D - Math.abs(Math.sin(c.tilt)))
-    const y = c.y + d.halfH * sMax + 10
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
-    ctx.fillRect(x, y, w, KIOSK_LABEL_H)
-    ctx.strokeStyle = isFocused
-        ? KIOSK_FOCUS_BORDER
-        : (isActive ? COLOR_SELECTED_POINT : KIOSK_PANEL_BORDER)
-    ctx.lineWidth = 1
-    ctx.strokeRect(x, y, w, KIOSK_LABEL_H)
-    ctx.fillStyle = isFocused
-        ? '#55ff55'
-        : (isActive ? COLOR_SELECTED_POINT : 'rgba(220, 220, 220, 0.8)')
-    ctx.fillText(text, c.x + (isActive ? 4 : 0), y + KIOSK_LABEL_H / 2)
-    if (isActive) {
-        ctx.fillStyle = COLOR_SELECTED_POINT
-        ctx.beginPath()
-        ctx.arc(x + 6, y + KIOSK_LABEL_H / 2, 2, 0, TAU)
-        ctx.fill()
-    }
+    const y = c.y + d.halfH * sMax + KIOSK_LABEL_OFFSET
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = '#55ff55'
+    ctx.fillText(text, c.fpMid !== undefined ? c.fpMid : c.x, y)
+    ctx.globalAlpha = 1
 }
 
 // Rendu complet : cartes du plus lointain au plus proche du focus (le
-// plan mis en avant passe AU-DESSUS des voisins qui le chevauchent),
-// puis anneau de focus par-dessus.
+// plan mis en avant passe AU-DESSUS des voisins qui le chevauchent).
+// Aucun cadre ni anneau : le plan mis en évidence ne se distingue que par
+// son nom vert (drawKioskLabel) et sa pleine opacité (les autres dimmés).
 export const drawKiosk = () => {
     const n = state.shapes.length
     if (n === 0) return
-    const { cards, focusedIndex } = computeKioskLayout()
+    const { cards } = computeKioskLayout()
     const ordered = [...cards].sort((a, b) => Math.abs(b.dx) - Math.abs(a.dx))
     for (let i = 0; i < ordered.length; i++) {
-        drawKioskCard(ordered[i], ordered[i].index === focusedIndex)
-    }
-    const f = cards[focusedIndex]
-    if (f) {
-        const d = cardDims(planBounds(state.shapes[f.index]), f.scale)
-        // Bbox du trapèze projeté : bords u = ±1, haut/bas v = ±1.
-        const left = projectKioskPoint(f, d, -1, 0).x
-        const right = projectKioskPoint(f, d, 1, 0).x
-        const top = Math.min(projectKioskPoint(f, d, -1, -1).y, projectKioskPoint(f, d, 1, -1).y)
-        const bottom = Math.max(projectKioskPoint(f, d, -1, 1).y, projectKioskPoint(f, d, 1, 1).y)
-        const ctx = state._ctx
-        ctx.globalAlpha = 1
-        ctx.strokeStyle = KIOSK_FOCUS_BORDER
-        ctx.lineWidth = 2
-        ctx.strokeRect(left - 5, top - 5, right - left + 10, bottom - top + 10)
+        drawKioskCard(ordered[i])
     }
 }
 
