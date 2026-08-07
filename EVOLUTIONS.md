@@ -8,7 +8,7 @@ Le présent fichier liste les évolutions à réaliser et l'historique des évol
 - ajouter un nouveau plan se fait en l'intercalant soit avant le plan courant (clic gauche) soit après le plan courant (clic droit)
 - pouvoir modifier l'ordre des plans
 ## évolutions effectuées sur l'application (date, id de commit)
-- 07/08/2026 (à compléter) : les éléments de la scène sont désormais appelés « plans » et plus « formes » ; le terme « forme » ne désigne plus que les formes prédéfinies (cercle, rectangle, étoile…), partout dans l'interface, l'aide et la documentation
+- 07/08/2026 (bd4171b) : les éléments de la scène sont désormais appelés « plans » et plus « formes » ; le terme « forme » ne désigne plus que les formes prédéfinies (cercle, rectangle, étoile…), partout dans l'interface, l'aide et la documentation
 - 06/08/2026 (9f30f55) : le HUD affiche une aide contextuelle : survoler un élément indique ce qu'on peut faire avec (ex. créer un nouveau triangle à partir d'un segment), et chaque action rappelle le geste suivant à effectuer
 - 06/08/2026 (7d1408c) : des boutons et des raccourcis clavier (Alt+flèches) permettent d'aligner ou de répartir uniformément les points sélectionnés, horizontalement ou verticalement
 - 06/08/2026 (94e8124) : des boutons et des raccourcis clavier (Alt+flèches haut/bas) permettent de monter ou de descendre la forme active dans l'ordre des plans
