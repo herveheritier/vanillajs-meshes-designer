@@ -183,8 +183,8 @@ const computeHoverSignature = (cursorScreen) => {
 }
 
 export const updateMouseHover = (cursorScreen) => {
-    // Preview : aucun overlay de survol (aides d'edition, pas de geometrie).
-    if (state.previewMode) return
+    // Preview / kiosque : aucun overlay de survol (aides d'edition, pas de geometrie).
+    if (state.previewMode || state.kioskMode) return
     updateCoordsDisplay(cursorScreen)
     if (!cursorScreen) return
     // Modes de construction : les overlays de survol sont du bruit ;
@@ -2414,6 +2414,14 @@ export const resolveMouseMoveOnBoard = (e) => {
     const mouseScreen = {
         x: e.x - state.board.getBoundingClientRect().x,
         y: e.y - state.board.getBoundingClientRect().y,
+    }
+
+    // Kiosque : le pointeur pilote l'inclinaison des cartes (focus),
+    // aucun hit-test d'edition ; requestDraw pour le tilt en direct.
+    if (state.kioskMode) {
+        state.lastMousePos = mouseScreen
+        requestDraw()
+        return
     }
 
     // Mode cercle : le glisser regle le rayon (preview dans

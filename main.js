@@ -1,7 +1,7 @@
 // Rationale : voir DESIGN.md §4.1
 
 import { state, initDomRefs } from './state.js'
-import { drawBoard, requestDraw, getDevicePixelRatio } from './draw.js'
+import { drawBoard, requestDraw, getDevicePixelRatio, kioskSelectedIndex } from './draw.js'
 import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
@@ -37,6 +37,7 @@ import {
     restoreFpsVisible, wireFpsControl, toggleFps, updateFpsButton,
     wireGridControl, togglePreview, exitPreview, wirePreviewControl, wireCircleWheelControl,
     restoreCircleSegments, wireMergeDropWheelControl, restoreMergeDropRadius,
+    toggleKiosk, exitKiosk, wireKioskControl,
 } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
 import {
@@ -46,6 +47,7 @@ import {
 } from './modals.js'
 import {
     prevShape, nextShape, moveShapeUp, moveShapeDown, addShape, deleteShape, hideDeleteShapeModal, wireDeleteShapeModal,
+    goToShape,
 } from './shapes.js'
 import { mergeSelectedPoints, wireMergeErrorModal, hideMergeErrorModal, attemptDropMerge } from './merge.js'
 import { log } from './log.js'
@@ -137,6 +139,7 @@ wireBeforeUnload()
 wireTriangleColorPanel()
 wireShapesPanel()
 wireAlignPanel()
+wireKioskControl()
 
 // ===== Toolbar buttons =====
 
@@ -168,6 +171,8 @@ wireButton('paste', () => pasteClipboard())
 wireButton('helpBtn', () => showHelp())
 wireButton('prevShape', () => prevShape())
 wireButton('nextShape', () => nextShape())
+// Le bouton #kiosk est câblé par wireKioskControl (viewport.js), meme
+// pattern que #preview — pas de wireButton ici (double toggle sinon).
 wireButton('moveShapeUp', () => moveShapeUp())
 wireButton('moveShapeDown', () => moveShapeDown())
 wireButton('newShape', () => addShape())
@@ -227,6 +232,25 @@ document.addEventListener('contextmenu', (e) => {
 
 document.addEventListener('mousedown', (e) => {
     if (e.target.id !== 'board') return
+    // Kiosque : le clic gauche sélectionne le plan MIS EN AVANT (même
+    // règle linéaire que l'affichage, évaluée à l'abscisse du clic —
+    // jamais un plan précédent/suivant quand le pointeur est hors de la
+    // carte mise en avant) et sort du mode ; le clic droit annule sans
+    // changement ; le milieu est consommé (pas de pan).
+    if (state.kioskMode) {
+        if (e.button === 0) {
+            const mousePos = {
+                x: e.x - state.board.getBoundingClientRect().x,
+                y: e.y - state.board.getBoundingClientRect().y,
+            }
+            const idx = kioskSelectedIndex(mousePos.x)
+            if (idx !== -1) goToShape(idx)
+            exitKiosk()
+        } else if (e.button === 2) {
+            exitKiosk()
+        }
+        return
+    }
     // Preview = visualisation seule : seul le clic milieu panne. Le
     // clic gauche sort (exitPreview, avalé pour ne pas déclencher un
     // lasso) ; le droit reste ignoré.
@@ -434,6 +458,12 @@ document.addEventListener('keydown', (e) => {
     const isDeleteShapeOpen = deleteShapeM && !deleteShapeM.hidden
     const isMergeErrorOpen = mergeErrorM && !mergeErrorM.hidden
     const isSaveOpen = saveM && !saveM.hidden
+    // Echap en kiosque : sortie sans changement (le clic sélectionne).
+    if (e.code === 'Escape' && !e.repeat && state.kioskMode) {
+        e.preventDefault()
+        exitKiosk()
+        return
+    }
     // Echap en preview : priorite absolue, sortie directe des deux etats.
     if (e.code === 'Escape' && !e.repeat && state.previewMode) {
         e.preventDefault()
@@ -504,6 +534,13 @@ document.addEventListener('keydown', (e) => {
     if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyC' && !e.repeat) {
         e.preventDefault()
         toggleCircleMode()
+    }
+    // Alt+K : ouvre / ferme le kiosque de sélection des plans. Gardes :
+    // typing, AltGr exclu (!e.ctrlKey), !e.repeat. En preview, toggleKiosk
+    // sort d'abord (chrome masquée, le raccourci reste actif).
+    if (!typing && !e.ctrlKey && !e.metaKey && e.altKey && !e.repeat && e.code === 'KeyK') {
+        e.preventDefault()
+        toggleKiosk()
     }
     // Alt+↑/↓ : deplace le plan actif d'un rang (memes fonctions que
     // les boutons #moveShapeUp/Down). Gardes : typing, preview, AltGr

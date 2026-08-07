@@ -12,7 +12,7 @@ import {
 } from './constants.js'
 import { drawBoard, requestDraw, consumeDrawStats } from './draw.js'
 import { screenToModel } from './geometry.js'
-import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateShapesButton, updateMergeButtonState } from './hud.js'
+import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateShapesButton, updateMergeButtonState, showActionComment } from './hud.js'
 import { persistState, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
@@ -372,6 +372,79 @@ export const wirePreviewControl = () => {
     })
 }
 
+// ===== Kiosque de sélection des plans (cf. EVOLUTIONS.md) =====
+// Mode transitoire (jamais persisté, comme la preview) : chaque plan
+// est rendu comme une carte inclinée autour d'un axe vertical virtuel
+// (draw.js drawKiosk) ; la position horizontale du pointeur pilote
+// l'inclinaison et met un plan en avant. Un clic sur une carte la
+// sélectionne comme plan actif et sort du mode (main.js) ; Échap ou
+// clic droit annulent. La chrome est masquée via body.kiosk-mode (seul
+// le bouton #kiosk flotte, le toast #actionComment reste visible).
+
+export const updateKioskButton = () => {
+    const btn = document.querySelector('#kiosk')
+    if (!btn) return
+    btn.classList.toggle('kiosk-active', !!state.kioskMode)
+    btn.setAttribute('aria-pressed', state.kioskMode ? 'true' : 'false')
+}
+
+const applyKioskMode = () => {
+    const body = state.body
+    if (body) body.classList.toggle('kiosk-mode', !!state.kioskMode)
+    // Reset defensif des gestes en cours (meme contrat qu'applyPreviewMode) :
+    // le kiosque consomme la souris, aucun geste (lasso, hover, traces
+    // cercle/anneau/forme) ne doit survivre a la bascule.
+    state.isSelectingBox = false
+    state.selectionBoxStart = undefined
+    state.selectionBoxCurrent = undefined
+    state.nearestPoint = undefined
+    state.nearestLine = undefined
+    state.nearestTriangle = undefined
+    state.circleCenterModel = undefined
+    state.circleRadiusModel = 0
+    state.circleOffsetAngle = 0
+    state.annulusCenterModel = undefined
+    state.annulusOuterRadiusModel = 0
+    state.annulusOffsetAngle = 0
+    state.annulusPhase = 0
+    state.annulusInnerRatio = 0
+    state.shapeAnchorModel = undefined
+    state.shapeCurrentModel = undefined
+    state.shapeRadiusModel = 0
+    updateKioskButton()
+    requestDraw()
+}
+
+export const toggleKiosk = () => {
+    if (state.shapes.length <= 1) return
+    if (state.kioskMode) {
+        exitKiosk()
+        return
+    }
+    if (state.previewMode) exitPreview()
+    state.kioskMode = true
+    applyKioskMode()
+    showActionComment('Survolez les plans : le pointeur fait varier l\'inclinaison — cliquez pour sélectionner le plan mis en avant, Échap pour annuler')
+    log('Kiosque de sélection des plans activé')
+}
+
+export const exitKiosk = () => {
+    if (!state.kioskMode) return
+    state.kioskMode = false
+    applyKioskMode()
+    showActionComment('◀ ▶ pour naviguer entre les plans — Alt+↑/↓ pour l\'ordre des plans')
+    log('Kiosque désactivé')
+}
+
+export const wireKioskControl = () => {
+    const btn = document.querySelector('#kiosk')
+    if (!btn) return
+    btn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        toggleKiosk()
+    })
+}
+
 // ===== Wheel handler (sur board) =====
 
 // Reglage du nombre de cotes du cercle, partage entre la molette sur le
@@ -465,6 +538,8 @@ export const wireMergeDropWheelControl = () => {
 export const onBoardWheel = (e) => {
     e.preventDefault()
     if (!state.board) return
+    // Kiosque : la molette ne fait rien (selection par clic uniquement).
+    if (state.kioskMode) return
     const boardRect = state.board.getBoundingClientRect()
     const cursorScreen = { x: e.x - boardRect.x, y: e.y - boardRect.y }
     // Mode cercle/anneau (hors preview) : la molette regle les cotes au lieu de zoomer.

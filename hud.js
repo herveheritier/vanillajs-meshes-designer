@@ -77,6 +77,9 @@ export const updateShapeHud = () => {
     const downBtn = document.querySelector('#moveShapeDown')
     if (upBtn) upBtn.disabled = state.activeShapeIndex >= state.shapes.length - 1
     if (downBtn) downBtn.disabled = state.activeShapeIndex <= 0
+    // Kiosque : inutile (et grisé) avec un seul plan — rien à choisir.
+    const kioskBtn = document.querySelector('#kiosk')
+    if (kioskBtn) kioskBtn.disabled = state.shapes.length <= 1
 }
 
 export const updateUndoRedoHud = () => {

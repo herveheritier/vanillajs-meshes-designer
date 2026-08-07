@@ -189,6 +189,13 @@ export const state = {
     // les precedents).
     previewPlans: false,
 
+    // ===== Kiosque de sélection des plans (cf. EVOLUTIONS.md) =====
+    // Mode transitoire, jamais persiste (comme la preview) : chaque plan est
+    // rendu comme une carte inclinee autour d'un axe vertical virtuel ; la
+    // position horizontale du pointeur pilote l'inclinaison et met un plan
+    // en avant. Un clic selectionne le plan clique et sort du mode.
+    kioskMode: false,
+
     // ===== Render time instrumentation (gate) =====
     // Flag dev : `state.debugRenderTime = true` (console navigateur) active
     // console.time autour de renderSceneToOffscreen. Voir DESIGN.md §2.5.5.

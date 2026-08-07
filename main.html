@@ -1264,6 +1264,49 @@
                 cursor: grab !important;
             }
 
+            /* ========= Kiosque de sélection des plans (Alt+K) ========= */
+            /* Bouton toolbar Kiosque : meme langage d'etat actif que
+               #preview.preview-active — vert accent quand le mode
+               kiosque est actif (le kiosque est un selecteur
+               transitoire, cf. EVOLUTIONS.md). */
+            #toolbar #kiosk.kiosk-active {
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border-color: rgba(55, 194, 0, 0.45);
+            }
+            /* body.kiosk-mode : meme masquage de chrome que la preview,
+               MAIS le toast #actionComment reste visible (guide du
+               geste : « cliquez pour selectionner le plan mis en
+               avant ») et le curseur reste celui de l'editeur (none,
+               dessine par le canvas). Seul le bouton #kiosk flotte. */
+            body.kiosk-mode #messageBoard,
+            body.kiosk-mode #coords,
+            body.kiosk-mode #zoomDisplay,
+            body.kiosk-mode #fpsDisplay,
+            body.kiosk-mode #sceneStatus,
+            body.kiosk-mode #triangleColorPanel,
+            body.kiosk-mode #shapesPanel,
+            body.kiosk-mode #alignPanel,
+            body.kiosk-mode .modal {
+                display: none !important;
+            }
+            body.kiosk-mode #toolbar {
+                background-color: transparent;
+                border: none;
+                box-shadow: none;
+                backdrop-filter: none;
+                padding: 0;
+                overflow: visible;
+                max-height: none;
+            }
+            body.kiosk-mode #toolbar .toolbar-group:not(:has(> #kiosk)),
+            body.kiosk-mode #toolbar .toolbar-sep {
+                display: none !important;
+            }
+            body.kiosk-mode #toolbar .toolbar-group:has(> #kiosk) > *:not(#kiosk) {
+                display: none !important;
+            }
+
             /* ========= HUD bas-gauche : indicateur de zoom ========= */
             /* Une petite pilule affichee juste au-dessus de #coords.
                Affiche le niveau de zoom courant (ex. "1.2x") pour que
@@ -1859,6 +1902,7 @@
                 <button id="prevShape" title="Plan précédent"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l-5 5 5 5"/></svg></button>
                 <span id="shapeLabel" title="Plan actif / nombre total">1/1</span>
                 <button id="nextShape" title="Plan suivant"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+                <button id="kiosk" title="Kiosque de sélection des plans (Alt+K) : chaque plan est affiché comme une carte inclinée autour d'un axe vertical — la position du pointeur fait varier l'inclinaison et met un plan en avant ; un clic le sélectionne comme plan actif, Échap annule"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2l5.5 2.8L8 7.8 2.5 5z"/><path d="M2.5 8.2l5.5 2.8 5.5-2.8"/><path d="M2.5 11.2l5.5 2.8 5.5-2.8"/></svg></button>
                 <button id="moveShapeUp" title="Monter le plan actif d'un rang (Alt+Flèche Haut) : dans la vue plans, il passe au-dessus du plan suivant" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="13" x2="8" y2="3"/><polyline points="4,7 8,3 12,7"/></svg></button>
                 <button id="moveShapeDown" title="Descendre le plan actif d'un rang (Alt+Flèche Bas) : dans la vue plans, il passe en dessous du plan précédent" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="4,9 8,13 12,9"/></svg></button>
                 <button id="newShape" title="Ajouter un nouveau plan vide"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>
@@ -2034,7 +2078,7 @@
                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">→</kbd><span>répartir Y les points sélectionnés — espacement uniforme selon Y entre les deux points extrêmes (qui restent en place, bouton Répartir Y)</span></div>
                     <div class="help-row"><kbd class="kbd">G</kbd><span>afficher / masquer la grille</span></div>
                     <div class="help-row"><kbd class="kbd">R</kbd><span>réticule : off / simple / projection symétrique (cycle)</span></div>
-                    <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; un 2e clic (ou P) affiche tous les plans dans leur ordre ; Échap ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd><span>monter / descendre le plan actif d'un rang dans l'ordre des plans (dans la vue plans : monter le fait passer au-dessus, descendre en dessous) ; boutons de la barre d'outils (grisés aux bornes de l'ordre)</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
+                    <div class="help-row"><kbd class="kbd">P</kbd><span>prévisualiser la scène (masque points de contrôle, axes, grille, HUD et boutons) ; un 2e clic (ou P) affiche tous les plans dans leur ordre ; Échap ou clic gauche pour quitter — molette = zoom, clic milieu = pan, aucune édition</span></div>                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd><span>monter / descendre le plan actif d'un rang dans l'ordre des plans (dans la vue plans : monter le fait passer au-dessus, descendre en dessous) ; boutons de la barre d'outils (grisés aux bornes de l'ordre)</span></div>                     <div class="help-row"><kbd class="kbd wide">Kiosque (bouton)</kbd><span>sélectionner le plan actif dans un kiosque 3D : chaque plan est affiché comme une carte inclinée autour d'un axe vertical virtuel — la position du pointeur fait varier l'inclinaison et met un plan en avant ; un clic le sélectionne comme plan actif et referme le kiosque, Échap annule</span></div>                     <div class="help-row"><kbd class="kbd">Alt</kbd><kbd class="kbd">K</kbd><span>ouvrir / fermer le kiosque de sélection des plans</span></div>                     <div class="help-row"><kbd class="kbd">C</kbd><span>activer / désactiver le mode cercle (cercle aussi dans le panneau Formes) : 2 clics sur le canvas (1er clic = centre, mouvement de la souris règle le rayon + l'angle de départ — le sommet 0 du polygone pointe vers la souris, 2e clic = valider) ; molette sur le canvas ou sur le bouton actif = nombre de côtés ; le mode se désactive après la création ; Échap = quitter le mode, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Formes (bouton)</kbd><span>ouvre la liste des formes prédéfinies (cercle, rectangle, carré, triangle, pentagone, hexagone, étoile, anneau) : choisir une forme puis la tracer en 2 clics (1er clic = ancre, mouvement = taille et orientation pour les polygones, 2e clic = valider) ; l'étoile et l'anneau se tracent en 3 clics (1er = centre, mouvement = rayon + angle de départ, 2e = verrouille, mouvement = profondeur des branches / taille du trou, 3e = valider ; molette = côtés pour l'anneau) ; Échap = fermer le panneau ou annuler l'outil, clic droit = annuler le tracé</span></div>
                     <div class="help-row"><kbd class="kbd wide">Clic milieu sur grille</kbd><span>reinitialiser le pas</span></div>
                     <div class="help-row"><kbd class="kbd wide">Molette</kbd><span>zoomer (centre sur le curseur) ; pivoter si 2+ points sont selectionnes</span></div>

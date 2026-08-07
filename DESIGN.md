@@ -1833,6 +1833,114 @@ en plus serait du bruit. Couvert par `scripts/smoke-comment.mjs` (16e
 suite — y compris l'exemple fondateur : survol du milieu d'un segment →
 « créer un nouveau triangle à partir de ce segment »).
 
+### §7.16 Kiosque de sélection des plans (`#kiosk`, Alt+K)
+
+**Motivation** (EVOLUTIONS.md) : avec plusieurs plans, passer de l'un à
+l'autre par la navigation répétitive (`◀`/`▶`) devient pénible ; il
+manque une vue d'ensemble qui montre TOUS les plans à la fois et rende
+la sélection immédiate. Le kiosque est un mode de sélection dédié :
+chaque plan devient une « carte » inclinée autour d'un axe vertical
+virtuel (effet cover-flow / kiosque), et la position horizontale du
+pointeur fait varier l'inclinaison des cartes pour mettre un plan en
+avant — l'analogie du kiosque de sélection de la consigne.
+
+**Mode transitoire** (jamais persisté, même politique que la preview) :
+`state.kioskMode` (state.js) + `body.kiosk-mode` (main.html) masque la
+chrome (CSS `:has()` groupe par groupe, seule la barre d'outils est
+réduite au bouton `#kiosk` flottant — vert actif + `aria-pressed` —,
+contrairement à la preview le toast `#actionComment` reste visible pour
+guider). Bouton `#kiosk` (groupe shape-nav) + raccourci `Alt+K`
+(main.js, gardes typing / AltGr exclu `!e.ctrlKey` / `!e.repeat` ; en
+preview le raccourci sort d'abord de la preview — `toggleKiosk` appelle
+`exitPreview` —, mutuellement exclusifs). Bouton grisé quand
+`state.shapes.length <= 1` (`updateShapeHud` dans hud.js, synchro via
+`updateKioskButton`). Contrôle : `viewport.js` `toggleKiosk` /
+`exitKiosk` / `applyKioskMode` (reset défensif des gestes en cours,
+comme `applyPreviewMode`) / `updateKioskButton` / `wireKioskControl`
+(suivi du pattern `#preview` : câblage DÉDIÉ, pas de doublon avec
+`wireButton`).
+
+**Rendu** (`draw.js` — branche kiosque dans `drawBoard` qui remplace
+TOUTE la scène par les cartes : ni grille, ni axes, ni points de
+contrôle, fond canvas normal ; plus un guide vertical pointillé vert
+`KIOSK_GUIDE_COLOR` dans `renderTransient` matérialisant l'axe piloté
+par le pointeur) :
+`computeKioskLayout` calcule le layout partagé entre le rendu et le
+focus/sélection : chaque carte `i` a `dx = i - focus` (écart au plan
+mis en avant), `tilt = clamp(dx × KIOSK_TILT_RAD_PER_STEP, ±KIOSK_MAX_TILT_RAD)`
+(45° par carte d'écart — `KIOSK_TILT_RAD_PER_STEP = π/4` —, plafond
+~66°), `scale = min + (1-min)·exp(-|dx|/falloff)`
+(gaussienne, plancher `KIOSK_MIN_SCALE = 0.4`), `y` surélevé des cartes
+lointaines (`KIOSK_MAX_PARALLAX_Y = 18` px) et étiquette « Plan n »
+sous chaque carte (badge vert + texte décalé sur le plan actif).
+`kioskFocus()` = le focus CONTINU piloté par l'abscisse du pointeur
+via la règle linéaire `t·(n-1)` (`t = clamp(x/w, 0, 1)` : bords du
+canvas => premier/dernier plan mis en avant) — le pointeur « fait
+varier l'inclinaison des plans et met un plan en valeur », comme
+demandé. Cette règle (`kioskFocusAt`) est PARTAGÉE avec la sélection au
+clic (`kioskSelectedIndex`) : l'affichage et le clic ne peuvent
+diverger (cf. « Sélection au clic » ci-dessous). `drawKiosk` rend les cartes par ordre de `|dx|` croissant
+(le plan en avant passe PAR-DESSUS ses voisins — chevauchement simulé),
+avec un faux-3D (tranche `KIOSK_EDGE_RATIO` plus sombre du côté de
+l'inclinaison), le plan mis en avant est pleine opacité + bordure verte
+`KIOSK_FOCUS_BORDER` (les autres sont dimmés `KIOSK_DIM_MIN_ALPHA = 0.3`)
+et une ligne-guide verte souligne le focus. **La face de chaque carte est
+dessinée en vraie PROJECTION PERSPECTIVE** (`projectKioskPoint`, un
+point local `(u, v) ∈ [-1, 1]²` pivoté de `tilt` autour de l'axe
+vertical central puis projeté depuis `KIOSK_PERSPECTIVE_D = 2.5`
+demi-largeurs de carte : `s = D/(D - u·sin(tilt))`) — le bord qui
+s'approche du spectateur est AGRANDI, l'opposé RÉTRÉCI, et les bords
+verticaux restent verticaux (effet trapèze, l'impression d'un plan
+incliné de 45°), au lieu de la compression orthographique
+`scale(cos tilt, 1)` d'origine qui « aplatissait » sans donner de
+relief. Les triangles du plan sont projetés sommet par sommet (la
+perspective n'est pas affine : un scale global ne suffit pas), l'étiquette
+« Plan n » passe sous le bas du bord proche agrandi et l'anneau de focus
+épouse la bbox du trapèze. `cardFootprint`/`cardBand` restent le
+contrat partagé rendu/layout (les bords u = ±1 projetés + bande
+`KIOSK_EDGE_RATIO`) : le recentrage anti-clipping du layout et la
+tranche dessinée partagent la même géométrie.
+`computeKioskLayout` RECENTRE chaque carte sur son slot : le MILIEU de
+son empreinte projetée (et non son centre géométrique, décalé par
+l'asymétrie perspective) occupe `w/2 + dx·spacing` — sans cela les
+cartes extrêmes (fortement inclinées) débordent de l'écran côté bord
+proche ; l'espacement max a été resserré en conséquence
+(`KIOSK_CARD_SPACING_RATIO = 0.35`).
+
+**Entrées** (main.js) : le clic gauche sélectionne le plan MIS EN
+AVANT via `kioskSelectedIndex(x)` (même règle linéaire que l'affichage,
+évaluée à l'abscisse du clic), `goToShape(idx)` puis `exitKiosk()` =
+sélection + sortie immédiate (consigne utilisateur) ; clic droit =
+annule sans changement ; clic milieu consommé (pas de pan). `Échap` sort sans changement (main.js, garde
+`state.kioskMode`). Le pointeur pilote le tilt via
+`resolveMouseMoveOnBoard` (editor.js : branche kiosque =
+`lastMousePos` + `requestDraw`, aucun hit-test d'édition). Toutes les
+autres entrées sont coupées en kiosque : `updateMouseHover`
+(editor.js, garde `previewMode || kioskMode`), la molette (viewport.js,
+garde `kioskMode` → pas de zoom ni de cercle), le clavier d'édition.
+
+**Sélection au clic = le plan mis en avant (règle anti-régression)** :
+`kioskSelectedIndex(x)` n'effectue AUCUN hit-test d'empreinte — le clic
+sélectionne le plan mis en avant (le focus arrondi), calculé avec la
+MÊME règle linéaire que l'affichage (`kioskFocusAt`, partagée avec
+`kioskFocus`). L'affichage et le clic ne peuvent donc pas diverger : si
+le pointeur n'est pas au-dessus de la carte mise en avant (marges,
+interstices), un clic ne peut PAS déclencher un plan précédent/suivant
+(régression des anciens hit-tests « centre le plus proche » puis
+« ordre de profondeur des empreintes », qui divergeaient du focus
+affiche). Couvert par `smoke-kiosk.mjs` : 9 plans — clic à 0.375 ×
+largeur dans le chevauchement → plan 4/9 (le mis en avant) ; clic à
+0.09 × largeur dans la marge gauche, AUCUNE carte sous le pointeur →
+plan 2/9 (le mis en avant, jamais le plan 1).
+
+**Post-action HUD** : `showActionComment` à l'entrée (« Survolez les
+plans : le pointeur fait varier l'inclinaison — cliquez pour sélectionner
+le plan mis en avant, Échap pour annuler ») et à la sortie (« ◀ ▶ pour
+naviguer entre les plans — Alt+↑/↓ pour l'ordre des plans ») — les deux
+côtés du mode sont prospectifs. Couvert par `scripts/smoke-kiosk.mjs`
+(17e suite : ouverture bouton + Alt+K, garde ≤ 1 plan, focus piloté par
+le pointeur, clic → `goToShape` + sortie, Échap sans changement).
+
 ---
 
 ## §8. Pile d'historique avec stockage delta

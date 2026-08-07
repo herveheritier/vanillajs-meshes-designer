@@ -224,15 +224,21 @@ const renderSceneToOffscreen = () => {
         applyDprTransform(offCtx)
         offCtx.fillStyle = CANVAS_BACKGROUND
         offCtx.fillRect(0, 0, cssBoardW(), cssBoardH())
-        // Preview (cf. DESIGN.md §2.6) : scene reduite a la geometrie.
-        if (!state.previewMode) {
-            if (state.activeGrid) drawGrid()
-            drawAxis()
-        }
-        drawShapes()
-        if (!state.previewMode) {
-            drawSelectedPoints()
-            drawMultiPointMarkers()
+        // Kiosque (cf. EVOLUTIONS.md) : remplace TOUTE la scene par les
+        // cartes de selection des plans (la chrome est masquee cote CSS).
+        if (state.kioskMode) {
+            drawKiosk()
+        } else {
+            // Preview (cf. DESIGN.md §2.6) : scene reduite a la geometrie.
+            if (!state.previewMode) {
+                if (state.activeGrid) drawGrid()
+                drawAxis()
+            }
+            drawShapes()
+            if (!state.previewMode) {
+                drawSelectedPoints()
+                drawMultiPointMarkers()
+            }
         }
     } finally {
         state._ctx = visibleCtx
@@ -244,6 +250,21 @@ const renderSceneToOffscreen = () => {
 const renderTransient = () => {
     // Preview : aucun calque transitoire.
     if (state.previewMode) return
+    // Kiosque : guide vertical matérialisant l'axe piloté par le pointeur
+    // (l'inclinaison des cartes suit son abscisse) + curseur standard.
+    if (state.kioskMode) {
+        if (state.lastMousePos) {
+            state._ctx.setLineDash([4, 6])
+            state._ctx.strokeStyle = KIOSK_GUIDE_COLOR
+            state._ctx.beginPath()
+            state._ctx.moveTo(state.lastMousePos.x, 0)
+            state._ctx.lineTo(state.lastMousePos.x, cssBoardH())
+            state._ctx.stroke()
+            state._ctx.setLineDash([])
+            drawMouse(state.lastMousePos)
+        }
+        return
+    }
     if (typeof state.reticleMode !== 'undefined' && state.reticleMode > 0) drawReticle()
     if (
         typeof state.isSelectingBox !== 'undefined' &&
@@ -733,6 +754,357 @@ export const drawShape = (shape, isActive) => {
 
     // Points de controle sautes en preview (seule la geometrie reste visible).
     if (!state.previewMode) drawPointsBatch(vertexPoints, 2, pointColor)
+}
+
+// ===== Kiosque de sélection des plans (cf. EVOLUTIONS.md) =====
+// Mode « kiosque » : chaque plan est rendu comme une CARTE inclinée
+// autour d'un axe vertical virtuel (effet cover-flow). La position
+// horizontale du pointeur (state.lastMousePos.x) pilote un « focus »
+// continu : le plan sous le focus est mis en avant (face au spectateur,
+// pleine opacité), les autres s'inclinent, rétrécissent et s'estompent
+// avec l'écart. Un clic sélectionne le plan MIS EN AVANT
+// (kioskSelectedIndex = le focus, jamais un précédent/suivant) et sort
+// du mode (viewport.js exitKiosk).
+const KIOSK_MAX_TILT_RAD = 1.15       // ~66° : inclinaison max des cartes lointaines
+const KIOSK_TILT_RAD_PER_STEP = Math.PI / 4  // 45° par carte d'écart au focus
+const KIOSK_PERSPECTIVE_D = 2.5       // distance du spectateur (en demi-largeurs de carte) : perspective du kiosque
+const KIOSK_MIN_SCALE = 0.4           // taille min des cartes lointaines
+const KIOSK_SCALE_FALLOFF = 1.4       // décroissance gaussienne de la taille
+const KIOSK_CARD_H_RATIO = 0.6        // hauteur de carte / hauteur canvas
+const KIOSK_CARD_SPACING_RATIO = 0.35 // espacement max entre cartes / largeur (réduit : la perspective élargit l'empreinte)
+const KIOSK_CARD_SPAN_RATIO = 0.88    // envergure totale max / largeur
+const KIOSK_EDGE_RATIO = 0.3          // épaisseur du faux-3D / hauteur carte
+const KIOSK_MAX_PARALLAX_Y = 18       // surélévation des cartes lointaines (px)
+const KIOSK_ASPECT_MIN = 0.35
+const KIOSK_ASPECT_MAX = 2.8
+const KIOSK_PANEL_BG = 'rgba(30, 30, 30, 0.9)'
+const KIOSK_PANEL_BG_EDGE = 'rgba(16, 16, 16, 0.95)'
+const KIOSK_PANEL_BORDER = 'rgba(255, 255, 255, 0.16)'
+const KIOSK_FOCUS_BORDER = 'rgba(0, 255, 0, 0.95)'
+const KIOSK_DIM_MIN_ALPHA = 0.3
+const KIOSK_GUIDE_COLOR = 'rgba(0, 255, 0, 0.25)'
+const KIOSK_LABEL_H = 16
+
+// Focus CONTINU 0..N-1 dérivé d'une abscisse : règle linéaire (bords
+// du canvas => 1er / dernier plan mis en avant) PARTAGÉE par l'affichage
+// (kioskFocus, piloté par le pointeur) et la sélection au clic
+// (kioskSelectedIndex) — l'affichage et le clic ne peuvent diverger.
+const kioskFocusAt = (x) => {
+    const n = state.shapes.length
+    if (n <= 1) return 0
+    const w = cssBoardW()
+    if (!w) return 0
+    const t = Math.max(0, Math.min(1, x / w))
+    return t * (n - 1)
+}
+
+// Focus continu suivi par le pointeur (pilote l'inclinaison et le plan
+// mis en avant). Sans pointeur (boot), retombe sur le plan actif.
+export const kioskFocus = () => {
+    if (!state.lastMousePos || !state.board) return state.activeShapeIndex
+    return kioskFocusAt(state.lastMousePos.x)
+}
+
+// Sélection au clic = le plan MIS EN AVANT (focus arrondi), évalué à
+// l'abscisse du clic. Même règle que l'affichage : le plan sélectionné
+// est TOUJOURS celui mis en valeur, même si le pointeur n'est pas
+// au-dessus de sa carte (marges, interstices) — un clic ne peut plus
+// déclencher un plan précédent/suivant (régression des hit-tests
+// précédents « centre le plus proche » puis « ordre de profondeur », qui
+// divergeaient tous deux du focus affiché).
+export const kioskSelectedIndex = (screenX) => {
+    const n = state.shapes.length
+    if (n === 0) return -1
+    // Garde défensive : sans board, retombe sur le plan actif (comme
+    // kioskFocus) au lieu de crasher dans cssBoardW().
+    if (!state.board) return state.activeShapeIndex
+    return Math.min(n - 1, Math.max(0, Math.round(kioskFocusAt(screenX))))
+}
+
+// Bounding box du plan (vide => carte neutre 1×1 centree a l'origine).
+export const planBounds = (shape) => {
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    if (pointList.length === 0) return { cx: 0, cy: 0, bw: 1, bh: 1 }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (let i = 0; i < pointList.length; i++) {
+        const p = pointList[i]
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
+        if (p.x < minX) minX = p.x
+        if (p.y < minY) minY = p.y
+        if (p.x > maxX) maxX = p.x
+        if (p.y > maxY) maxY = p.y
+    }
+    if (!Number.isFinite(minX)) return { cx: 0, cy: 0, bw: 1, bh: 1 }
+    return {
+        cx: (minX + maxX) / 2,
+        cy: (minY + maxY) / 2,
+        bw: Math.max(maxX - minX, 1e-3),
+        bh: Math.max(maxY - minY, 1e-3),
+    }
+}
+
+// Dimensions écran d'une carte (AVANT inclinaison) : hauteur = ratio du
+// canvas × scale, largeur = hauteur × aspect du plan. La perspective est
+// appliquée ensuite par projectKioskPoint (trapèze), pas par un scale.
+const cardDims = (bounds, scale) => {
+    const aspect = Math.max(KIOSK_ASPECT_MIN, Math.min(KIOSK_ASPECT_MAX, bounds.bw / bounds.bh))
+    const cardH = cssBoardH() * KIOSK_CARD_H_RATIO * scale
+    const cardW = cardH * aspect
+    return { cardH, cardW, halfW: cardW / 2, halfH: cardH / 2 }
+}
+
+// Projection perspective d'un point local (u, v) ∈ [-1, 1]² de la carte :
+// rotation de `tilt` autour de l'axe vertical CENTRAL (u·cos, profondeur
+// u·sin), puis échelle D/(D - u·sin) — le bord qui s'approche du
+// spectateur est agrandi, l'opposé rétréci : vraie impression d'un plan
+// incliné (trapèze), pas une simple compression orthographique. Garde
+// défensive sur le dénominateur (jamais atteint : |u·sin| ≤ 0.91 < D).
+const projectKioskPoint = (c, d, u, v) => {
+    const sinT = Math.sin(c.tilt)
+    const cosT = Math.cos(c.tilt)
+    const s = KIOSK_PERSPECTIVE_D / Math.max(KIOSK_PERSPECTIVE_D - u * sinT, 0.25)
+    return {
+        x: c.x + u * cosT * d.halfW * s,
+        y: c.y + v * d.halfH * s,
+    }
+}
+
+// Layout complet du kiosque : positions + inclinaison + scale de chaque
+// carte (ordre du tableau), index du plan mis en avant. Servi à
+// drawKiosk (rendu) et au focus/sélection (kioskFocus/kioskSelectedIndex).
+export const computeKioskLayout = () => {
+    const n = state.shapes.length
+    const focus = kioskFocus()
+    const focusedIndex = Math.min(n - 1, Math.max(0, Math.round(focus)))
+    const w = cssBoardW()
+    const spacing = Math.min(
+        w * KIOSK_CARD_SPACING_RATIO,
+        (w * KIOSK_CARD_SPAN_RATIO) / Math.max(n - 1, 1),
+    )
+    const cards = []
+    for (let i = 0; i < n; i++) {
+        const dx = i - focus
+        const tilt = Math.max(-KIOSK_MAX_TILT_RAD, Math.min(KIOSK_MAX_TILT_RAD, dx * KIOSK_TILT_RAD_PER_STEP))
+        const scale = KIOSK_MIN_SCALE + (1 - KIOSK_MIN_SCALE) * Math.exp(-Math.abs(dx) / KIOSK_SCALE_FALLOFF)
+        const slotX = w / 2 + dx * spacing
+        const card = {
+            index: i,
+            dx,
+            tilt,
+            scale,
+            x: slotX,
+            y: cssBoardH() / 2 - Math.min(Math.abs(dx), 3) * (KIOSK_MAX_PARALLAX_Y / 3),
+        }
+        // Recentrage : la projection perspective rend l'empreinte ASYMÉTRIQUE
+        // (bord proche agrandi) ; on décale la carte pour que le MILIEU de
+        // son empreinte projetée reste sur son slot — sans cela les cartes
+        // extrêmes (fortement inclinées) débordent de l'écran côté bord
+        // proche. Layout et hit-test partagent cette même position. Le
+        // milieu d'empreinte est mémorisé pour centrer l'étiquette dessus.
+        const d = cardDims(planBounds(state.shapes[i]), scale)
+        const fp = cardFootprint(card, d)
+        card.fpMid = (fp.left + fp.right) / 2
+        card.x += slotX - card.fpMid
+        cards.push(card)
+    }
+    return { cards, focusedIndex }
+}
+
+
+
+// Bande d'épaisseur du faux-3D : côté opposé à l'inclinaison (le bord
+// qui « recule »). CONTRAT partagé entre le rendu (drawKioskCard) et
+// l'empreinte de layout (cardFootprint, recentrage) — side/uFar/edgeW/
+// sFar doivent rester identiques des deux côtés (une divergence =
+// bande dessinée qui ne colle pas à l'empreinte du layout).
+const cardBand = (c, d) => {
+    const sinT = Math.sin(c.tilt)
+    const side = c.dx < 0 ? 1 : -1
+    const uFar = side === -1 ? -1 : 1
+    return {
+        side,
+        uFar,
+        edgeW: Math.abs(sinT) * d.cardH * KIOSK_EDGE_RATIO,
+        sFar: KIOSK_PERSPECTIVE_D / (KIOSK_PERSPECTIVE_D - uFar * sinT),
+    }
+}
+
+// Empreinte écran d'une carte : span X de la face PROJETÉE (bords
+// u = ±1 dans la perspective) + bande d'épaisseur du faux-3D du côté
+// opposé à l'inclinaison. Sert au RECENTRAGE anti-clipping du layout
+// (computeKioskLayout) et reste le pendant exact de la bande dessinée
+// par drawKioskCard via cardBand (mêmes side/uFar/edgeW/sFar).
+const cardFootprint = (c, d) => {
+    const { side, edgeW } = cardBand(c, d)
+    const left = projectKioskPoint(c, d, -1, 0).x - (side === -1 ? edgeW : 0)
+    const right = projectKioskPoint(c, d, 1, 0).x + (side === 1 ? edgeW : 0)
+    return { left, right }
+}
+
+// Rendu d'une carte : bande d'épaisseur (faux-3D) du côté opposé à
+// l'inclinaison, puis face en TRAPÈZE (perspective : le bord proche est
+// agrandi, le lointain rétréci — vraie impression d'un plan incliné).
+const drawKioskCard = (c, isFocused) => {
+    const shape = state.shapes[c.index]
+    const bounds = planBounds(shape)
+    const d = cardDims(bounds, c.scale)
+    const ctx = state._ctx
+    const alpha = isFocused ? 1 : Math.max(KIOSK_DIM_MIN_ALPHA, 1 - Math.abs(c.dx) * 0.3)
+    const sinT = Math.sin(c.tilt)
+
+    // Bande d'épaisseur : collée au bord lointain (côté qui « recule »).
+    const { side, uFar, edgeW, sFar } = cardBand(c, d)
+    const farX = projectKioskPoint(c, d, uFar, 0).x
+    if (edgeW > 0.5) {
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = KIOSK_PANEL_BG_EDGE
+        ctx.fillRect(Math.min(farX, farX + side * edgeW), c.y - d.halfH * sFar, edgeW, d.cardH * sFar)
+    }
+
+    // Face : quadrilatère aux 4 coins projetés (trapèze en perspective).
+    const tl = projectKioskPoint(c, d, -1, -1)
+    const tr = projectKioskPoint(c, d, 1, -1)
+    const br = projectKioskPoint(c, d, 1, 1)
+    const bl = projectKioskPoint(c, d, -1, 1)
+    ctx.globalAlpha = alpha
+    ctx.beginPath()
+    ctx.moveTo(tl.x, tl.y)
+    ctx.lineTo(tr.x, tr.y)
+    ctx.lineTo(br.x, br.y)
+    ctx.lineTo(bl.x, bl.y)
+    ctx.closePath()
+    ctx.fillStyle = KIOSK_PANEL_BG
+    ctx.fill()
+    ctx.strokeStyle = isFocused ? KIOSK_FOCUS_BORDER : KIOSK_PANEL_BORDER
+    ctx.lineWidth = isFocused ? 2 : 1
+    ctx.stroke()
+    // Géométrie du plan : bbox -> carte (fit plein, la perspective
+    // s'occupe de l'écrasement), chaque sommet projeté individuellement.
+    const fit = Math.min(d.cardW / bounds.bw, d.cardH / bounds.bh)
+    drawShapeInCard(shape, bounds, c, d, fit, isFocused)
+    ctx.globalAlpha = 1
+    drawKioskLabel(c, d, isFocused, c.index === state.activeShapeIndex)
+}
+
+// Triangles du plan en coords locales (bbox centrée, fit appliqué), puis
+// PROJETÉS sommet par sommet dans la perspective de la carte (le trapèze
+// rendu n'est pas affine : un scale global ne suffirait pas).
+// Fill par-tri (globalAlpha posé par la carte), stroke global, aucune
+// dépendance à modelToScreen — la carte est un monde local.
+const drawShapeInCard = (shape, bounds, c, d, fit, isFocused) => {
+    const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    const tris = Array.isArray(shape.tris) ? shape.tris : []
+    if (tris.length === 0) return
+    const ctx = state._ctx
+    // Coordonnée locale (px carte, avant inclinaison) puis projection :
+    // u ∈ [-1, 1] (axe horizontal de rotation) = x / halfW, v = y / halfH.
+    const project = (p) => projectKioskPoint(c, d, ((p.x - bounds.cx) * fit) / d.halfW, ((p.y - bounds.cy) * fit) / d.halfH)
+    const resolved = []
+    for (let i = 0; i < tris.length; i++) {
+        const t = tris[i]
+        const p1 = Number.isInteger(t.p1) ? pointList[t.p1] : undefined
+        const p2 = Number.isInteger(t.p2) ? pointList[t.p2] : undefined
+        const p3 = Number.isInteger(t.p3) ? pointList[t.p3] : undefined
+        resolved.push({ p1, p2, p3, fill: t.fill !== undefined ? t.fill : COLOR_TRIANGLE_FILL_ACTIVE })
+    }
+    // Fill per-tri (aucun safe-belt nécessaire : un path par triangle).
+    for (let i = 0; i < resolved.length; i++) {
+        const r = resolved[i]
+        if (!r.p1 || !r.p2 || !r.p3) continue
+        const s1 = project(r.p1)
+        const s2 = project(r.p2)
+        const s3 = project(r.p3)
+        ctx.fillStyle = r.fill
+        ctx.beginPath()
+        ctx.moveTo(s1.x, s1.y)
+        ctx.lineTo(s2.x, s2.y)
+        ctx.lineTo(s3.x, s3.y)
+        ctx.closePath()
+        ctx.fill()
+    }
+    // Stroke global (pointillés pour les cartes atténuées).
+    ctx.setLineDash(isFocused ? [] : PATTERN_LINES_INACTIVE)
+    ctx.strokeStyle = isFocused ? COLOR_LINES : COLOR_LINES_INACTIVE
+    ctx.beginPath()
+    for (let i = 0; i < resolved.length; i++) {
+        const r = resolved[i]
+        if (!r.p1) continue
+        const s1 = project(r.p1)
+        ctx.moveTo(s1.x, s1.y)
+        if (r.p2) {
+            const s2 = project(r.p2)
+            ctx.lineTo(s2.x, s2.y)
+            if (r.p3) {
+                const s3 = project(r.p3)
+                ctx.lineTo(s3.x, s3.y)
+                ctx.closePath()
+            }
+        }
+    }
+    ctx.stroke()
+    ctx.setLineDash([])
+}
+
+// Étiquette « Plan N » sous la carte : verte (focus), cyan + point (plan
+// actif), neutre sinon. Le point cyan distingue l'actif du mis en avant.
+const drawKioskLabel = (c, d, isFocused, isActive) => {
+    const ctx = state._ctx
+    const text = `Plan ${c.index + 1}`
+    ctx.font = '11px monospace'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const w = ctx.measureText(text).width + 16 + (isActive ? 8 : 0)
+    // Centrée sur le milieu de l'empreinte projetée (centre VISUEL de la
+    // carte, qui diffère du centre géométrique c.x sous la perspective).
+    const x = (c.fpMid !== undefined ? c.fpMid : c.x) - w / 2
+    // Sous le bas du trapèze : le bord PROCHE (|u| = 1 côté sinT) est
+    // agrandi par la perspective — y max des deux coins bas projetés.
+    const sMax = KIOSK_PERSPECTIVE_D / (KIOSK_PERSPECTIVE_D - Math.abs(Math.sin(c.tilt)))
+    const y = c.y + d.halfH * sMax + 10
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+    ctx.fillRect(x, y, w, KIOSK_LABEL_H)
+    ctx.strokeStyle = isFocused
+        ? KIOSK_FOCUS_BORDER
+        : (isActive ? COLOR_SELECTED_POINT : KIOSK_PANEL_BORDER)
+    ctx.lineWidth = 1
+    ctx.strokeRect(x, y, w, KIOSK_LABEL_H)
+    ctx.fillStyle = isFocused
+        ? '#55ff55'
+        : (isActive ? COLOR_SELECTED_POINT : 'rgba(220, 220, 220, 0.8)')
+    ctx.fillText(text, c.x + (isActive ? 4 : 0), y + KIOSK_LABEL_H / 2)
+    if (isActive) {
+        ctx.fillStyle = COLOR_SELECTED_POINT
+        ctx.beginPath()
+        ctx.arc(x + 6, y + KIOSK_LABEL_H / 2, 2, 0, TAU)
+        ctx.fill()
+    }
+}
+
+// Rendu complet : cartes du plus lointain au plus proche du focus (le
+// plan mis en avant passe AU-DESSUS des voisins qui le chevauchent),
+// puis anneau de focus par-dessus.
+export const drawKiosk = () => {
+    const n = state.shapes.length
+    if (n === 0) return
+    const { cards, focusedIndex } = computeKioskLayout()
+    const ordered = [...cards].sort((a, b) => Math.abs(b.dx) - Math.abs(a.dx))
+    for (let i = 0; i < ordered.length; i++) {
+        drawKioskCard(ordered[i], ordered[i].index === focusedIndex)
+    }
+    const f = cards[focusedIndex]
+    if (f) {
+        const d = cardDims(planBounds(state.shapes[f.index]), f.scale)
+        // Bbox du trapèze projeté : bords u = ±1, haut/bas v = ±1.
+        const left = projectKioskPoint(f, d, -1, 0).x
+        const right = projectKioskPoint(f, d, 1, 0).x
+        const top = Math.min(projectKioskPoint(f, d, -1, -1).y, projectKioskPoint(f, d, 1, -1).y)
+        const bottom = Math.max(projectKioskPoint(f, d, -1, 1).y, projectKioskPoint(f, d, 1, 1).y)
+        const ctx = state._ctx
+        ctx.globalAlpha = 1
+        ctx.strokeStyle = KIOSK_FOCUS_BORDER
+        ctx.lineWidth = 2
+        ctx.strokeRect(left - 5, top - 5, right - left + 10, bottom - top + 10)
+    }
 }
 
 export const drawTriangle = (p1, p2, p3, pattern, color, fill) => {
