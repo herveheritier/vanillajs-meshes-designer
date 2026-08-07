@@ -636,6 +636,23 @@ export const drawShapes = () => {
         }
         return
     }
+    // Mode d'affichage « toutes couleurs » en édition (cf. DESIGN.md
+    // §7.18) : TOUS les plans remplis de leurs couleurs de triangles —
+    // les inactifs conservent leurs lignes pointillées + points
+    // atténués mais sont remplis (forceFill), dans l'ordre du tableau
+    // (z-order entre eux préservé). Le plan ACTIF est dessiné en
+    // DERNIER (par-dessus) : il garde son rendu actif et reste la
+    // cible d'édition visible même quand un plan postérieur le
+    // chevauche (remplissage opaque). C'est un MODE D'AFFICHAGE :
+    // édition inchangée.
+    if (state.showAllFills) {
+        for (let i = 0; i < state.shapes.length; i++) {
+            if (i === state.activeShapeIndex) continue
+            drawShape(state.shapes[i], false, true)
+        }
+        drawShape(state.shapes[state.activeShapeIndex], true, true)
+        return
+    }
     for (let i = 0; i < state.shapes.length; i++) {
         if (i === state.activeShapeIndex) continue
         drawShape(state.shapes[i], false)
@@ -645,12 +662,17 @@ export const drawShapes = () => {
 
 // tris = indices dans pointList ; resolution en coords, slots undefined
 // (triangles partiels) filtres.
-export const drawShape = (shape, isActive) => {
+// `forceFill` (mode « toutes couleurs » §7.18) : remplit le plan meme
+// quand il n'est pas actif (meme regle de couleur : t.fill ou le defaut
+// COLOR_TRIANGLE_FILL_ACTIVE) — le style de ligne/points reste pilote
+// par isActive, le plan actif garde son rendu actif.
+export const drawShape = (shape, isActive, forceFill = false) => {
     if (!shape || !Array.isArray(shape.tris) || shape.tris.length === 0) return
     const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
     let lineColor = isActive ? COLOR_LINES : COLOR_LINES_INACTIVE
     let linePattern = isActive ? PATTERN_LINES : PATTERN_LINES_INACTIVE
     let pointColor = isActive ? POINT_COLOR_ACTIVE : POINT_COLOR_INACTIVE
+    const filled = isActive || forceFill
 
     // 3 passes au lieu d'un drawTriangle par tri (opt #3) : fill par
     // groupe de couleur (active shape), stroke global unique, vertex
@@ -661,7 +683,7 @@ export const drawShape = (shape, isActive) => {
         const p1 = Number.isInteger(t.p1) ? pointList[t.p1] : undefined
         const p2 = Number.isInteger(t.p2) ? pointList[t.p2] : undefined
         const p3 = Number.isInteger(t.p3) ? pointList[t.p3] : undefined
-        const fill = isActive ? (t.fill !== undefined ? t.fill : COLOR_TRIANGLE_FILL_ACTIVE) : undefined
+        const fill = filled ? (t.fill !== undefined ? t.fill : COLOR_TRIANGLE_FILL_ACTIVE) : undefined
         if (p1) vertexPoints.push(p1)
         if (p2) vertexPoints.push(p2)
         if (p3) vertexPoints.push(p3)
@@ -671,7 +693,7 @@ export const drawShape = (shape, isActive) => {
     // === Fill pass (active shape, tris completes) ===
     // fill() applique le fillStyle courant a TOUS les sub-paths du
     // beginPath courant : un beginPath par groupe de couleur distinct.
-    if (isActive) {
+    if (filled) {
         const fillGroups = new Map()
         for (let i = 0; i < resolvedTris.length; i++) {
             const r = resolvedTris[i]

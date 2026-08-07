@@ -204,6 +204,16 @@ export const updateSelectionModeButton = () => {
     if (text) text.textContent = label
 }
 
+// État du bouton #showAllFills (mode d'affichage « toutes couleurs »,
+// cf. DESIGN.md §7.18) : accent vert quand le mode est actif — même
+// langage que #fps.fps-active.
+export const updateAllFillsButton = () => {
+    const btn = document.querySelector('#showAllFills')
+    if (!btn) return
+    btn.classList.toggle('all-fills-active', !!state.showAllFills)
+    btn.setAttribute('aria-pressed', state.showAllFills ? 'true' : 'false')
+}
+
 export const updateConsoleButton = () => {
     const btn = document.querySelector('#toggleConsole')
     if (!btn) return

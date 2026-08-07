@@ -964,6 +964,17 @@
                 border-color: rgba(55, 194, 0, 0.45);
             }
 
+            /* Bouton « toutes couleurs » (mode d'affichage en édition,
+               cf. DESIGN.md §7.18) : meme langage d'etat actif que
+               #fps.fps-active / #preview.preview-active — accent vert
+               quand le mode est actif (tous les plans remplis de leurs
+               couleurs pendant l'edition). */
+            #toolbar #showAllFills.all-fills-active {
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border-color: rgba(55, 194, 0, 0.45);
+            }
+
             /* ========= Preview (mode visualisation seule) ========= */
             /* Bouton toolbar Preview (oeil) : meme langage d'etat actif
                que #fps.fps-active — vert accent quand la preview est
@@ -1715,6 +1726,17 @@
                      aucune edition possible. Sortie directe via Echap
                      ou clic gauche sur le canvas. Icone oeil. -->
                 <button id="preview" title="Prévisualiser la scène (P / Échap / clic gauche pour quitter) : masque points de contrôle, axes, grille, HUD et boutons ; un 2e clic affiche tous les plans dans leur ordre"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2.2"/></svg><span id="previewText"></span></button>
+                <!-- Mode d'affichage en édition (évolution « bouton pour
+                     choisir le mode d'affichage ») : cycle standard /
+                     toutes couleurs. En mode toutes couleurs, TOUS les
+                     plans sont remplis de leurs couleurs de triangles
+                     pendant l'edition — le plan actif garde son rendu
+                     actif (lignes pleines + points) pour rester la
+                     cible d'edition. Preference de vue persistee (comme
+                     le reticule), jamais dans le wire format. Icone :
+                     3 triangles remplis (= les couleurs de tous les
+                     plans). -->
+                <button id="showAllFills" title="Mode d'affichage en édition : toutes les couleurs — tous les plans sont remplis de leurs couleurs de triangles (le plan actif reste mis en valeur pour l'édition) ; re-clic pour revenir au mode standard"><svg viewBox="0 0 16 16" fill="currentColor" stroke="none" aria-hidden="true"><path d="M2.5 12l1.9-4 1.9 4z"/><path d="M6.9 12L8.8 8l1.9 4z"/><path d="M11.3 12l1.9-4 1.9 4z"/></svg></button>
                 <!-- Mode de selection : cycle vertex / segment / triangle.
                      Mode "vertex" = comportement actuel (clic sur un
                      sommet). Mode "segment" = clic sur un edge

@@ -9,10 +9,11 @@ import {
     EDITING_MODE_STORAGE_KEY, EDITING_MODES,
     CONSOLE_VISIBLE_STORAGE_KEY,
     FPS_VISIBLE_STORAGE_KEY,
+    ALL_FILLS_STORAGE_KEY,
 } from './constants.js'
 import { drawBoard, requestDraw, consumeDrawStats } from './draw.js'
 import { screenToModel } from './geometry.js'
-import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateShapesButton, updateMergeButtonState, showActionComment } from './hud.js'
+import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateShapesButton, updateMergeButtonState, updateAllFillsButton, showActionComment } from './hud.js'
 import { persistState, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
@@ -369,6 +370,36 @@ export const wirePreviewControl = () => {
     btn.addEventListener('click', (e) => {
         if (e.button !== 0) return
         togglePreview()
+    })
+}
+
+// ===== Mode d'affichage « toutes couleurs » (cf. DESIGN.md §7.18) =====
+// Bouton du groupe Canvas ops (apres #preview) : cycle standard /
+// toutes couleurs — TOUS les plans remplis de leurs couleurs de
+// triangles pendant l'edition (le plan actif garde son rendu actif).
+// Preference de vue persistee (meme statut que le reticule) : cle
+// dediee, jamais dans le wire format, jamais dirty.
+
+export const toggleAllFills = () => {
+    state.showAllFills = !state.showAllFills
+    updateAllFillsButton()
+    requestDraw()
+    // Preference persistee en ecriture directe (hors du wire format).
+    try { localStorage.setItem(ALL_FILLS_STORAGE_KEY, state.showAllFills ? '1' : '0') } catch (e) { /* ignore */ }
+}
+
+export const restoreAllFills = () => {
+    if (localStorage.getItem(ALL_FILLS_STORAGE_KEY) === '1') {
+        state.showAllFills = true
+    }
+}
+
+export const wireAllFillsControl = () => {
+    const btn = document.querySelector('#showAllFills')
+    if (!btn) return
+    btn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        toggleAllFills()
     })
 }
 

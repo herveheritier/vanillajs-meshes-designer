@@ -151,6 +151,7 @@ export const CONSOLE_VISIBLE_STORAGE_KEY = 'meshesDesigner.consoleVisible'
 export const CONSOLE_FRAME_STORAGE_KEY = 'meshesDesigner.consoleFrame'
 export const IMPORT_MODE_STORAGE_KEY = 'mesh-designer-import-mode'
 export const FPS_VISIBLE_STORAGE_KEY = 'meshesDesigner.fpsVisible'
+export const ALL_FILLS_STORAGE_KEY = 'meshesDesigner.showAllFills'
 // Nombre de cotes du cercle persiste (preference de session, regle a la molette).
 export const CIRCLE_SEGMENTS_STORAGE_KEY = 'meshesDesigner.circleSegments'
 // Palette de couleurs : preference persistee (meme statut que consoleVisible),

@@ -6,7 +6,7 @@ import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
     updateSelectionModeButton, updateColorButtonState, updateAccessibilityLabels, updateSceneStatus,
-    updateShapesButton,
+    updateShapesButton, updateAllFillsButton,
 } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import {
@@ -38,6 +38,7 @@ import {
     wireGridControl, togglePreview, exitPreview, wirePreviewControl, wireCircleWheelControl,
     restoreCircleSegments, wireMergeDropWheelControl, restoreMergeDropRadius,
     toggleKiosk, exitKiosk, wireKioskControl,
+    restoreAllFills, wireAllFillsControl,
 } from './viewport.js'
 import { wireConsoleOverlay, wireClearConsole, applyConsoleFrame } from './console_overlay.js'
 import {
@@ -112,6 +113,7 @@ restoreReticleMode()
     restoreFpsVisible()
     restoreCircleSegments()
     restoreMergeDropRadius()
+    restoreAllFills()
     restoreColorPalette()
 
 // ===== Branchement des listeners "locaux" =====
@@ -140,6 +142,7 @@ wireTriangleColorPanel()
 wireShapesPanel()
 wireAlignPanel()
 wireKioskControl()
+wireAllFillsControl()
 
 // ===== Toolbar buttons =====
 
@@ -624,6 +627,7 @@ updateConsoleButton()
 updateAccessibilityLabels()
 updateSceneStatus()
 updateFpsButton()
+updateAllFillsButton()
 
 // ===== Boot =====
 

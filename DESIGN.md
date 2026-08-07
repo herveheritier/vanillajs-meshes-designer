@@ -2011,6 +2011,61 @@ le 1er point »). Couvert par `scripts/smoke-shapeorder.mjs` (section
 plans vides : clic gauche → 1/2, clic droit → 2/3, undo des
 insertions, suppression multi-plan + undo sans doublon).
 
+### §7.18 Mode d'affichage en édition : toutes couleurs (`#showAllFills`)
+
+(évolution « bouton pour choisir le mode d'affichage en édition »)
+
+**Problème** : en édition, seul le plan actif est rempli — les
+couleurs de triangles des AUTRES plans ne se voient pas sans passer
+par la preview plans (§2.6), qui coupe toute édition. Le mode
+« toutes couleurs » rend TOUS les plans remplis de leurs couleurs de
+triangles PENDANT l'édition, pour contrôler l'harmonie des couleurs de
+la scène complète en travaillant.
+
+**Sémantique** : `state.showAllFills` (bool) = mode d'affichage en
+édition, cycle standard → toutes couleurs → standard par le bouton
+`#showAllFills` (groupe Canvas ops, juste après `#preview`). C'est un
+MODE D'AFFICHAGE PUR : l'édition est strictement inchangée
+(selection, hover, clics — seuls les pixels changent). Aucun
+raccourci clavier (comme le réticule — toggle de vue au clic).
+
+**Rendu** (draw.js) : `drawShapes` a une branche `showAllFills`
+(dessinée après la preview plans, avant le rendu standard). Les plans
+INACTIFS sont rendus dans l'ordre du tableau (z-order entre eux
+préservé, le plus haut recouvre les précédents) avec le 3e paramètre
+`forceFill` de `drawShape` — qui force le remplissage (lignes
+pointillées + points atténués conservés) ; le plan ACTIF est dessiné
+EN DERNIER, par-dessus : il garde SON rendu actif complet (lignes
+pleines + points actifs) et reste la cible d'édition visible même
+quand un plan postérieur le chevauche (remplissage opaque — à la
+différence de la preview plans où l'ordre strict du tableau prime).
+Règle de couleur inchangée : `t.fill` ou le défaut
+`COLOR_TRIANGLE_FILL_ACTIVE`. En preview SIMPLE (pas « plans »),
+`drawShapes` est aussi appelé : le mode continue de s'appliquer
+tranquillement (les fills de tous les plans restent visibles) — le
+bouton, lui, est masqué par la chrome. En preview PLANS, la branche
+`previewPlans` de `drawShapes` sort avant (`return`), le mode ne
+s'applique pas.
+
+**Préférence persistée** : `meshesDesigner.showAllFills`
+(`ALL_FILLS_STORAGE_KEY`, constants.js) — même statut que le
+réticule : clé dédiée hors wire format, restaurée au boot par
+`restoreAllFills` (viewport.js), jamais dirty, jamais serialisée.
+
+**Câblage** (viewport.js) : `toggleAllFills` (bascule + bouton + draw
++ persistance en écriture directe), `restoreAllFills`, `wireAllFillsControl`
+(déclaré au boot dans main.js). État du bouton par `updateAllFillsButton`
+(hud.js) : classe `.all-fills-active` (même langage vert accent que
+`#fps.fps-active`) + `aria-pressed`. Chrome masquée en preview par les
+selectors `:has()` du groupe Canvas ops (le bouton disparaît avec la
+preview, comme `#preview` lui-même).
+
+**Couvert par** `scripts/smoke-allfills.mjs` (18e suite) : scène de 2
+plans injectée (fills distincts) — standard (actif rempli / inactif
+non rempli), toggle (inactif rempli de SA couleur, actif inchangé),
+retour au standard, persistance de la clé + restore au boot, masquage
+en preview et retour à la sortie.
+
 ---
 
 ## §8. Pile d'historique avec stockage delta

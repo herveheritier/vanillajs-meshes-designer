@@ -189,6 +189,13 @@ export const state = {
     // les precedents).
     previewPlans: false,
 
+    // ===== Mode d'affichage en édition (§7.18) =====
+    // « Toutes couleurs » : TOUS les plans remplis de leurs couleurs de
+    // triangles pendant l'edition (le plan actif garde son rendu actif).
+    // Preference de vue persistee (meshesDesigner.showAllFills, comme le
+    // reticule), jamais serialisee dans le wire format, jamais dirty.
+    showAllFills: false,
+
     // ===== Kiosque de sélection des plans (cf. EVOLUTIONS.md) =====
     // Mode transitoire, jamais persiste (comme la preview) : chaque plan est
     // rendu comme une carte inclinee autour d'un axe vertical virtuel ; la
