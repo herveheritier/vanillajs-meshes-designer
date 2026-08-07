@@ -1819,7 +1819,7 @@ hud.js — pas de cycle : hud.js ne lit que `state` et les constantes) :
 | `editor.js` | créations cercle / étoile / anneau / forme prédéfinie | « C pour tracer un autre cercle… » / « Panneau Formes pour une autre étoile… » |
 | `editor.js` | `paintTriangleAtCursor` | « Ctrl+Z pour annuler — cliquez sur un autre triangle pour le peindre » |
 | `merge.js` | `applyMergeToSelection` (cœur commun fusion classique ET par déplacement) | « Ctrl+Z pour annuler — sélectionnez ≥ 2 points pour une autre fusion » |
-| `shapes.js` | `moveShapeUp/Down` (via `moveShape`) + `addShape` | « Ctrl+Z pour annuler — Alt+↑/↓ pour continuer à réordonner » / « Ce plan est vide : cliquez pour poser le 1er point » |
+| `shapes.js` | `moveShapeUp/Down` (via `moveShape`) + `addShape` (§7.17) | « Ctrl+Z pour annuler — Alt+↑/↓ pour continuer à réordonner » / « Plan vide AVANT/APRÈS le plan courant — cliquez pour poser le 1er point » |
 | `history.js` | `undo` / `redo` | « Ctrl+Shift+Z (ou Ctrl+Y) pour rétablir » / « Ctrl+Z pour annuler à nouveau » |
 | `io.js` | `saveMesh` / `applyImport` (merge + replace) / `resetAll` | « Ctrl+S pour ré-enregistrer… » / « Ctrl+Z pour annuler l'import… » / « Cliquez pour poser le 1er point de votre nouvelle scène » |
 
@@ -1961,6 +1961,55 @@ naviguer entre les plans — Alt+↑/↓ pour l'ordre des plans ») — les deux
 côtés du mode sont prospectifs. Couvert par `scripts/smoke-kiosk.mjs`
 (17e suite : ouverture bouton + Alt+K, garde ≤ 1 plan, focus piloté par
 le pointeur, clic → `goToShape` + sortie, Échap sans changement).
+
+### §7.17 Insertion d'un plan avant / après le plan courant (`#newShape`, clic gauche / droit)
+
+(évolution « ajouter un nouveau plan se fait en l'intercalant soit avant
+le plan courant (clic gauche) soit après le plan courant (clic droit) »)
+
+**Sémantique** : le bouton `+` (`#newShape`, groupe shape-nav) crée un
+plan vide RELATIF au plan courant — **clic gauche = AVANT** (le nouveau
+plan prend l'index du plan courant, qui recule d'un rang) ; **clic droit
+= APRÈS** (index courant + 1). Dans les deux cas le nouveau plan devient
+le plan actif (le compteur `#shapeLabel` montre sa position `i/N`).
+L'ancien append en fin de tableau est remplacé par cette insertion
+relative — avec un seul plan, gauche = index 0, droit = index 1, les
+deux gestes restent valides (pas de bornes).
+
+**Câblage** (main.js) : pas de `wireButton` (qui ne gère que le clic
+gauche) — un listener `click` (garde `e.button !== 0`) appelle
+`addShape('before')`, et un listener `contextmenu` dédié (avec
+`preventDefault` : le listener global du document ne protège que le
+board, sinon le menu natif du navigateur s'ouvrirait) appelle
+`addShape('after')`. Le `title` du bouton porte le geste complet et
+l'aria-label en est dérivé (`updateAccessibilityLabels`, hud.js).
+
+**`addShape(position = 'after')`** (shapes.js) : index d'insertion
+`position === 'before' ? activeShapeIndex : activeShapeIndex + 1`, puis
+`splice` au lieu de `push`. Historique : mêmes patches delta que
+l'ancien append — `shapeArrayPatch(newIndex, null, newShape)` +
+`activeShapeIndexPatch(fromIndex, newIndex)` — avec `from === to` dans
+le cas before (l'undo remet l'index actif sur le plan courant retrouvé à
+la même position). **`saveState` est appelé APRÈS le splice** (contrat
+§8.5 : le fallback snapshot rejoue l'inverse des patches sur l'état
+post-mutation pour reconstruire le pré-mutation). L'ancien pattern
+(`saveState` avant la mutation) ne valait que pour l'append en fin de
+tableau, où l'inverse `splice(index = length, 1)` était un no-op ; avec
+une insertion relative, il retirait un plan RÉEL du clone — undo corrompu
+sur petites scènes (≤ ~4 pts/tris, scène vide incluse).
+
+Le nouveau plan est activé par `activateShape`, helper extrait de
+`goToShape` : l'insertion AVANT garde le même index numérique que le
+plan courant, la garde `newIndex === state.activeShapeIndex` de
+`goToShape` (no-op de navigation) sauterait donc tout le nettoyage
+transitoire (sélection de l'ancien plan, hover, construction en cours)
+— `activateShape` est partagé par les deux chemins.
+
+**Guidance (§7.15)** : le post-action `showActionComment` précise la
+position (« Plan vide AVANT/APRÈS le plan courant — cliquez pour poser
+le 1er point »). Couvert par `scripts/smoke-shapeorder.mjs` (section
+plans vides : clic gauche → 1/2, clic droit → 2/3, undo des
+insertions, suppression multi-plan + undo sans doublon).
 
 ---
 
@@ -2117,8 +2166,7 @@ Cas concret où le seuil déclenche :
 **L'entry snapshot stocke l'état PRÉ-mutation (fix undo)** : les
 call sites patche-courants appellent `saveState` APRÈS la mutation,
 et `applyEntry('inverse')` d'une entry snapshot restaure
-`snapshotShapes` tel quel. Un fallback naïf (clone de la scène
-courante, c.-à-d. post-mutation) rendait donc l'undo no-op pour
+`snapshotShapes` tel quel. Un fallback naïf (clone de lascène courante, c.-à-d. post-mutation) rendait donc l'undo no-op pour
 TOUTES les suppressions / fusions / rotations sur petites scènes
 mono-shape (le cas le plus courant). `saveState` reconstruit désormais
 la scène pré-mutation via `snapshotBeforeState` (history.js) : un
@@ -2130,6 +2178,16 @@ scène courante EST déjà l'état pré-mutation, et rejouer l'inverse
 dessus détruirait un point/tri pré-existant. Le redo reste correct
 sans changement : `transferEntry` re-capture la scène courante au
 moment de l'undo (= état post-mutation) comme cible du redo.
+
+**Corollaire saveState-before (anti-régression)** : tout call site qui
+appelle `saveState` AVANT une mutation `shapeArray` corrompt le
+snapshot — l'inverse du patch est rejoué sur l'état pré-mutation et
+retire/ré-insert un plan RÉEL du clone. C'était un no-op accidentel
+pour l'ancien append d'`addShape` (inverse `splice(index = length, 1)`
+sans effet) mais pas pour une insertion relative (§7.17) ni pour le
+remove de `performDeleteShape` (ré-insertion = doublon). Les deux
+appellent désormais `saveState` APRÈS la mutation (l'index actif n'est
+pas encore muté → `entry.activeShapeIndex` reste l'index pré-mutation).
 
 ### §8.6 Pattern deferred fill (geste long)
 

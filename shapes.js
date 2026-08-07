@@ -9,16 +9,17 @@ import { persistState } from './io.js'
 import { log } from './log.js'
 import { updateMouseHover } from './editor.js'
 
-export const goToShape = (newIndex) => {
-    if (!Array.isArray(state.shapes) || state.shapes.length === 0) return
-    if (newIndex < 0 || newIndex >= state.shapes.length) return
-    if (newIndex === state.activeShapeIndex) return
+// Activation d'un plan : nettoyage transitoire + refresh HUD. Partagé
+// entre goToShape (navigation) et addShape (l'insertion AVANT garde le
+// même index numérique — la garde early-return de goToShape sauterait
+// tout le nettoyage, cf. DESIGN.md §7.17).
+const activateShape = (index) => {
     state.currentAction = ACTION_NONE
     state.grabbedGroup = []
     clearTimeout(state.wheelRotateTimer)
     state.wheelRotateTimer = undefined
     state.isWheelRotating = false
-    state.activeShapeIndex = newIndex
+    state.activeShapeIndex = index
     state.selectedPoints = []
     state.selectedTriangles = []
     state.nearestPoint = undefined
@@ -32,6 +33,13 @@ export const goToShape = (newIndex) => {
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateShapeHud()
     updateSelectionHud()
+}
+
+export const goToShape = (newIndex) => {
+    if (!Array.isArray(state.shapes) || state.shapes.length === 0) return
+    if (newIndex < 0 || newIndex >= state.shapes.length) return
+    if (newIndex === state.activeShapeIndex) return
+    activateShape(newIndex)
 }
 
 export const prevShape = () => {
@@ -80,22 +88,39 @@ export const moveShapeDown = () => {
     moveShape(state.activeShapeIndex, state.activeShapeIndex - 1)
 }
 
-export const addShape = () => {
+// Nouveau plan vide inséré RELATIF au plan courant (évolution « ajouter
+// un nouveau plan en l'intercalant avant/après le plan courant ») :
+// 'before' = index actif (le plan courant recule d'un rang), 'after' =
+// index actif + 1 (défaut). Le bouton #newShape câble clic gauche →
+// 'before', clic droit → 'after' (main.js).
+export const addShape = (position = 'after') => {
     // shapeArrayPatch.insert + activeShapeIndexPatch (delta ~200 B vs clone O(scene)).
     const fromIndex = state.activeShapeIndex
     const newShape = { pointList: [], tris: [] }
-    const newIndex = state.shapes.length
+    const newIndex = position === 'before' ? fromIndex : fromIndex + 1
+    state.shapes.splice(newIndex, 0, newShape)
+    // saveState APRÈS la mutation (contrat history.js §8.5) : le
+    // fallback snapshot rejoue l'inverse des patches sur l'état
+    // post-mutation pour reconstruire le pré-mutation. L'ancien pattern
+    // (saveState avant le splice) ne valait que pour l'append en fin de
+    // tableau, où l'inverse splice(index = length, 1) était un no-op —
+    // avec l'insertion relative, il retirait un plan RÉEL du clone
+    // (undo corrompu sur petites scènes ≤ ~4 pts/tris). activeShapeIndex
+    // est encore fromIndex ici = index pré-mutation de l'entry.
     saveState({
         patches: [
             shapeArrayPatch(newIndex, null, newShape),
             activeShapeIndexPatch(fromIndex, newIndex),
         ],
     })
-    state.shapes.push(newShape)
-    goToShape(newIndex)
-    showActionComment(
-        `Ce plan est vide : cliquez pour poser le 1er point`
-    )
+    // activateShape, pas goToShape : l'insertion AVANT garde le même
+    // index (early-return = nettoyage sauté). L'undo du cas before est
+    // correct : activeShapeIndexPatch(from === to) remet l'index actif
+    // sur le plan courant retrouvé à la même position.
+    activateShape(newIndex)
+    showActionComment(position === 'before'
+        ? `Plan vide AVANT le plan courant — cliquez pour poser le 1er point`
+        : `Plan vide APRÈS le plan courant — cliquez pour poser le 1er point`)
     persistState()
 }
 
@@ -130,13 +155,19 @@ export const performDeleteShape = () => {
         state.activeShapeIndex = 0
     } else {
         // Forward = remove : before = removedShape, after = null.
+        state.shapes.splice(removedIndex, 1)
+        // saveState APRÈS le splice (contrat history.js §8.5, même
+        // correctif que addShape §7.17) : avant, le fallback snapshot
+        // rejouait l'inverse du remove (ré-insertion du plan) sur l'état
+        // PRÉ-mutation → plan en DOUBLON à l'undo sur petites scènes
+        // (2 plans → 3 après Ctrl+Z). activeShapeIndex non encore muté
+        // ici = index pré-mutation de l'entry.
         saveState({
             patches: [
                 shapeArrayPatch(removedIndex, removedShape, null),
                 activeShapeIndexPatch(removedIndex, newActiveIndex),
             ],
         })
-        state.shapes.splice(removedIndex, 1)
         state.activeShapeIndex = newActiveIndex
     }
     state.selectedPoints = []

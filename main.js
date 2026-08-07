@@ -175,7 +175,24 @@ wireButton('nextShape', () => nextShape())
 // pattern que #preview — pas de wireButton ici (double toggle sinon).
 wireButton('moveShapeUp', () => moveShapeUp())
 wireButton('moveShapeDown', () => moveShapeDown())
-wireButton('newShape', () => addShape())
+// + plan vide : clic GAUCHE = insérer AVANT le plan courant, clic
+// DROIT (contextmenu, preventDefault — le listener global ne protège
+// que le board) = insérer APRÈS (évolution « intercaler avant/après »,
+// cf. DESIGN.md §7.17). Pas de wireButton : le clic droit n'est pas un
+// 'click' standard.
+const newShapeBtn = document.querySelector('#newShape')
+if (newShapeBtn) {
+    newShapeBtn.addEventListener('click', (e) => {
+        if (e.button !== 0) return
+        addShape('before')
+    })
+    // e.button === 2 : exclut le contextmenu clavier (Menu / Shift+F10,
+    // button 0) — seul le clic droit souris insère.
+    newShapeBtn.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        if (e.button === 2) addShape('after')
+    })
+}
 wireButton('deleteShape', () => deleteShape())
 wireButton('mergePoints', () => mergeSelectedPoints())
 wireButton('undo', () => undo())

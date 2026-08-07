@@ -122,37 +122,73 @@ try {
     check('reload : compteur 2/3 restauré', (await label()) === '2/3')
     check('reload : ordre [20,0,40] restauré', JSON.stringify(await shapeOrder()) === '[20,0,40]')
 
-    // --- 9. Plans VIDES : le fallback snapshot de saveState doit
-    // rester correct (scène 0 pt / 0 tri → shouldUseSnapshot promeut
-    // l'entry en snapshot ; shapeMove est skipé par snapshotBeforeState
-    // comme insertPoint — sans ça, l'undo restaurerait un ordre
-    // corrompu). Contexte neuf (storage isolé, URL SANS autoimport : le
-    // beforeunload re-persiste la scène en mémoire au reload, il faut
-    // donc un contexte frais pour repartir d'une scène vide propre).
+    // --- 9. Plans VIDES : insertion AVANT/APRÈS le plan courant
+    // (évolution « intercaler un nouveau plan », cf. DESIGN.md §7.17) +
+    // fallback snapshot de saveState (scène 0 pt / 0 tri →
+    // shouldUseSnapshot promeut l'entry en snapshot ; shapeMove est
+    // skipé par snapshotBeforeState comme insertPoint — sans ça, l'undo
+    // restaurerait un ordre corrompu). Contexte neuf (storage isolé,
+    // URL SANS autoimport : le beforeunload re-persiste la scène en
+    // mémoire au reload, il faut donc un contexte frais pour repartir
+    // d'une scène vide propre).
     const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 800 } })
     const page2 = await ctx2.newPage()
     const errors2 = attachErrorCollector(page2)
     await page2.goto(BASE_URL, { waitUntil: 'networkidle' })
     await page2.waitForSelector('#board')
     await page2.waitForTimeout(400)
+    // Clic GAUCHE sur + : le nouveau plan s'intercale AVANT le plan
+    // courant (index 0) et devient actif → compteur 1/2. Clic DROIT :
+    // s'intercale APRÈS (index 1) et devient actif → compteur 2/3.
     await page2.click('#newShape')
     await page2.waitForTimeout(120)
-    await page2.click('#newShape')
+    check('clic gauche : plan vide inséré AVANT (1/2)', (await page2.locator('#shapeLabel').textContent()) === '1/2')
+    await page2.click('#newShape', { button: 'right' })
     await page2.waitForTimeout(120)
-    // addShape rend le NOUVEAU plan actif (goToShape(newIndex)) :
-    // après 2 ajouts, compteur 3/3 (dernier plan, vide).
-    check('3 plans vides (3/3)', (await page2.locator('#shapeLabel').textContent()) === '3/3')
+    check('clic droit : plan vide inséré APRÈS (2/3)', (await page2.locator('#shapeLabel').textContent()) === '2/3')
     await page2.click('#moveShapeDown')
     await page2.waitForTimeout(120)
-    check('descendre un plan vide : 2/3', (await page2.locator('#shapeLabel').textContent()) === '2/3')
+    check('descendre un plan vide : 1/3', (await page2.locator('#shapeLabel').textContent()) === '1/3')
     await page2.keyboard.press('Control+z')
     await page2.waitForTimeout(120)
-    check('undo (fallback snapshot) : compteur 3/3 restauré', (await page2.locator('#shapeLabel').textContent()) === '3/3')
+    check('undo (fallback snapshot) : compteur 2/3 restauré', (await page2.locator('#shapeLabel').textContent()) === '2/3')
+    // Undo des INSERTIONS elles-mêmes (fallback snapshot, scène vide).
+    // Régression couverte : saveState appelé AVANT le splice corrompait
+    // le snapshot (l'inverse splice(newIndex, 1) retirait un plan RÉEL
+    // du clone — no-op seulement pour l'ancien append en fin de
+    // tableau) — l'undo d'une insertion relative rendait la scène
+    // corrompue (0 plan ou plan manquant).
+    await page2.keyboard.press('Control+z')
+    await page2.waitForTimeout(120)
+    check('undo insertion APRÈS : compteur 1/2 restauré', (await page2.locator('#shapeLabel').textContent()) === '1/2')
+    await page2.keyboard.press('Control+z')
+    await page2.waitForTimeout(120)
+    check('undo insertion AVANT : compteur 1/1 restauré', (await page2.locator('#shapeLabel').textContent()) === '1/1')
     const emptyOrder = await page2.evaluate((key) => {
         const s = JSON.parse(localStorage.getItem(key) || '{}')
         return Array.isArray(s.shapes) ? s.shapes.length : -1
     }, SCENE_STORAGE_KEY)
-    check('undo (fallback snapshot) : 3 plans toujours présents', emptyOrder === 3)
+    check('undo insertions : état initial restauré (1 seul plan)', emptyOrder === 1)
+    // Suppression multi-plan + undo sur petite scène (fallback snapshot) :
+    // régression couverte — performDeleteShape appelait saveState AVANT le
+    // splice, l'inverse du remove (ré-insertion du plan) était rejoué sur
+    // l'état pré-mutation → plan en DOUBLON (2 plans → 3 après Ctrl+Z).
+    await page2.click('#newShape')
+    await page2.waitForTimeout(120)   // insertion AVANT : [new, old], actif 1/2
+    check('2 plans après insertion avant (1/2)', (await page2.locator('#shapeLabel').textContent()) === '1/2')
+    await page2.click('#deleteShape')
+    await page2.waitForTimeout(100)
+    await page2.click('#deleteShapeModalValidate')
+    await page2.waitForTimeout(120)   // 1 plan, actif 1/1
+    check('suppression multi-plan : 1/1', (await page2.locator('#shapeLabel').textContent()) === '1/1')
+    await page2.keyboard.press('Control+z')
+    await page2.waitForTimeout(120)
+    check('undo suppression : 1/2 restauré (pas de doublon)', (await page2.locator('#shapeLabel').textContent()) === '1/2')
+    const afterDeleteUndo = await page2.evaluate((key) => {
+        const s = JSON.parse(localStorage.getItem(key) || '{}')
+        return Array.isArray(s.shapes) ? s.shapes.length : -1
+    }, SCENE_STORAGE_KEY)
+    check('undo suppression : 2 plans (pas de doublon)', afterDeleteUndo === 2)
     check('contexte 2 : aucune erreur JS', errors2.length === 0)
     await ctx2.close()
 
