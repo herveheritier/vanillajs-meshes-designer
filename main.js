@@ -34,7 +34,7 @@ import {
     wireBoardWheel, toggleGrid, toggleReticle, resetZoom,
     startPan, updatePan, endPan,
     restoreEditingMode, restoreSelectionMode, wireSelectionModeControl,
-    restoreFpsVisible, wireFpsControl, toggleFps, updateFpsButton,
+    restoreFpsVisible, wireFpsControl, toggleFps, updateFpsButton, startFpsCounter,
     wireGridControl, togglePreview, exitPreview, wirePreviewControl, wireCircleWheelControl,
     restoreCircleSegments, wireMergeDropWheelControl, restoreMergeDropRadius,
     toggleKiosk, exitKiosk, wireKioskControl,
@@ -628,6 +628,9 @@ updateAccessibilityLabels()
 updateSceneStatus()
 updateFpsButton()
 updateAllFillsButton()
+// Compteur FPS discret (pilule toolbar) : toujours visible, la boucle
+// rAF demarre au boot et ne s'arrete jamais (cf. DESIGN.md §2.4.1).
+startFpsCounter()
 
 // ===== Boot =====
 

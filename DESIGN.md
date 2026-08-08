@@ -266,6 +266,39 @@ Couts invariants : persistance `meshesDesigner.fpsVisible`, raccourci
 `F`, bouton toolbar `#fps` -- inchanges (toggle stable, seul le
 contenu textuel et la semantique evoluent).
 
+#### §2.4.1 Compteur FPS discret (pilule toolbar, toujours visible)
+
+Demande utilisateur : « un compteur discret de fps à afficher en haut à
+gauche de l'écran ». Choix validés avec l'utilisateur : (1) **TOUJOURS
+visible** — pas de toggle, pas de persistance ; (2) **pilule verte
+read-only DANS la toolbar** (haut-gauche, même langage que `#shapeLabel` /
+`#undoCount` / `#selectionCount`) ; (3) le HUD redraws/s bas-gauche reste
+**inchangé** (toggle `F`) — les deux affichages coexistent car ils
+répondent à deux questions différentes.
+
+Le compteur (`#fpsCounter`) affiche le **vrai fps** (fréquence des
+callbacks `requestAnimationFrame`), PAS le nombre de `drawBoard`
+(§2.4) : c'est une mesure de **fluidité perçue** — le chiffre attendu
+d'un « compteur de fps » —, pas de charge de rendu. La remarque §2.4
+(« 60 rAF/s en idle = factuellement faux comme indicateur de travail »)
+reste vraie pour le diagnostic redraws/s ; elle ne s'applique pas ici
+car l'intention est exactement celle-là : montrer la fréquence
+d'affichage de la session.
+
+Mesure (viewport.js `startFpsCounter`) : delta entre callbacks rAF,
+lissage exponentiel (`FPS_COUNTER_EMA = 0.1`, 1er échantillon à pleine
+pondération — la pilule s'affiche dès la première frame), frames à
+`dt > 1000 ms` sautées (onglet en arrière-plan / réveil machine — non
+représentatives). DOM throttlé à 1 `textContent` toutes les
+`FPS_COUNTER_DISPLAY_INTERVAL_MS = 500 ms` (jamais par frame, cf. §2.4
+anti-thrash). Boucle permanente : coût en idle = 1 callback rAF/frame +
+1 textContent/500 ms — négligeable, et le navigateur suspend
+automatiquement rAF quand l'onglet est masqué.
+
+Masquage : la pilule vit dans le groupe « canvas ops » de la toolbar —
+les règles `:has()` de `body.preview-mode` / `body.kiosk-mode` (§2.6.1)
+la masquent donc avec le reste de la chrome, sans règle dédiée.
+
 ---
 
 ### §2.5 Optimiseurs de batch rendering (branch `feature/performance`)

@@ -622,6 +622,31 @@
                 border-radius: 14px;
                 white-space: nowrap;
             }
+
+            /* Compteur FPS discret : pilule verte read-only (meme
+               langage que #shapeLabel / #undoCount / #selectionCount)
+               dans la toolbar (haut-gauche), TOUJOURS visible — vrai
+               fps (frequence des callbacks rAF), independant du HUD
+               redraws/s bas-gauche (cf. DESIGN.md §2.4.1). Valeur
+               injectee ~2x/s par startFpsCounter (viewport.js) ; pas
+               de toggle, jamais persiste (decision utilisateur).
+               Masque en preview / kiosque par les :has() du groupe
+               (aucune regle dediee). */
+            #toolbar #fpsCounter {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                height: 30px;
+                padding: 0 12px;
+                min-width: 44px;
+                font-family: monospace;
+                font-size: 13px;
+                color: rgb(55, 194, 0);
+                background-color: rgba(55, 194, 0, 0.10);
+                border: 1px solid rgba(55, 194, 0, 0.35);
+                border-radius: 14px;
+                white-space: nowrap;
+            }
             /* Bouton Peinture (#triangleColor) : releve la stylistique
                partagee des autres boutons de la toolbar (hauteur
                30px, monospace, border subtil). Deux classes CSS
@@ -1711,7 +1736,13 @@
                      pas de text-label inline (coherent avec les
                      voisins). Le raccourci F est mentionne dans le
                      title pour la discoverabilite. -->
-                <button id="fps" title="Afficher / masquer le compteur FPS (F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="13" x2="3" y2="9"/><line x1="7" y1="13" x2="7" y2="5"/><line x1="11" y1="13" x2="11" y2="11"/><line x1="2" y1="14" x2="14" y2="14"/></svg></button>
+                <button id="fps" title="Afficher / masquer le HUD de performance (X redraws/s, F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="13" x2="3" y2="9"/><line x1="7" y1="13" x2="7" y2="5"/><line x1="11" y1="13" x2="11" y2="11"/><line x1="2" y1="14" x2="14" y2="14"/></svg></button>
+                <!-- Compteur FPS discret : pilule verte read-only
+                     TOUJOURS visible (pas de toggle) affichant le vrai
+                     fps (frequence rAF), independant du HUD redraws/s
+                     ci-dessus (cf. DESIGN.md §2.4.1). Valeur injectee
+                     par startFpsCounter (viewport.js). -->
+                <span id="fpsCounter" title="Fréquence d'affichage (images par seconde, fréquence rAF)">–</span>
                 <!-- Preview : mode visualisation propre de la scene —
                      le bouton (oeil) cycle en 3 etats (clic ou P) :
                      1er clic = preview simple (masque points de

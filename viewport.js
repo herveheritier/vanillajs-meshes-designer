@@ -120,6 +120,53 @@ export const wireFpsControl = () => {
     })
 }
 
+// ===== Compteur FPS discret (pilule toolbar, cf. DESIGN.md §2.4.1) =====
+// Vrai fps (frequence des callbacks rAF), independant du HUD redraws/s
+// ci-dessus : ce dernier mesure la charge de rendu effective, ce compteur
+// la fluidite percue (demande utilisateur : « compteur discret de fps en
+// haut a gauche »). TOUJOURS visible (pas de toggle, pas de persistance)
+// : boucle permanente, cout en idle = 1 callback rAF/frame + 1
+// textContent toutes les 500 ms (jamais par frame, cf. anti-thrash §2.4).
+let fpsCounterRafId = 0
+let fpsCounterLastTime = 0
+let fpsCounterSmooth = 0
+let fpsCounterLastDisplay = 0
+// Lissage exponentiel : moyenne glissante ~10 frames a 60 fps.
+const FPS_COUNTER_EMA = 0.1
+// Throttle DOM : 2 mises a jour/s suffisent pour un indicateur discret.
+const FPS_COUNTER_DISPLAY_INTERVAL_MS = 500
+
+const fpsCounterLoop = (now) => {
+    if (fpsCounterLastTime > 0) {
+        const dt = now - fpsCounterLastTime
+        // dt > 1000 ms : long gap (onglet en arriere-plan, machine
+        // endormie) — la frame de reveil n'est pas representative.
+        if (dt > 0 && dt <= 1000) {
+            const instant = 1000 / dt
+            // 1er echantillon a pleine ponderation : la pilule affiche
+            // une valeur des la premiere frame (pas de convergence
+            // lente depuis 0, ni d'attente du 1er intervalle).
+            const first = fpsCounterSmooth === 0
+            fpsCounterSmooth = first
+                ? instant
+                : fpsCounterSmooth * (1 - FPS_COUNTER_EMA) + instant * FPS_COUNTER_EMA
+            if (first || now - fpsCounterLastDisplay >= FPS_COUNTER_DISPLAY_INTERVAL_MS) {
+                const el = document.querySelector('#fpsCounter')
+                if (el) el.textContent = `${Math.round(fpsCounterSmooth)} fps`
+                fpsCounterLastDisplay = now
+            }
+        }
+    }
+    fpsCounterLastTime = now
+    fpsCounterRafId = requestAnimationFrame(fpsCounterLoop)
+}
+
+export const startFpsCounter = () => {
+    if (fpsCounterRafId) return
+    fpsCounterLastTime = 0
+    fpsCounterRafId = requestAnimationFrame(fpsCounterLoop)
+}
+
 // ===== Zoom reset (Ctrl+0) =====
 
 export const resetZoom = () => {
