@@ -4,6 +4,7 @@ Le présent fichier liste les évolutions à réaliser et l'historique des évol
 ## évolutions à réaliser sur l'application
 - mettre à disposition du concepteur une interface légère pour gérer les messages HUD ; 2 finalités : 1) internationalisation 2) associer un message à une action ; pour permettre cette association, il faut ajouter dans le code des identifiants à chaque action ; on définie une action comme un geste élémentaire effectuée sur un élément (bouton, sommet, segment, triangle) et faisant suite éventuellement à une action qui la précède directement
 ## évolutions effectuées sur l'application (date, id de commit)
+- 08/08/2026 (649a9a0) : le compteur d'images par seconde passe en ambre sous 42 images par seconde et redevient vert au-dessus de 48, en restant stable entre les deux pour éviter le clignotement
 - 08/08/2026 (556dd07) : le compteur d'images par seconde passe en ambre quand la fréquence d'affichage descend sous 45 images par seconde
 - 08/08/2026 (6a43fa4) : un compteur discret d'images par seconde (fps) est toujours affiché en haut à gauche, dans la barre d'outils
 - 07/08/2026 (f5f565c) : un bouton permet de choisir le mode d'affichage en édition : standard ou « toutes couleurs », qui montre les couleurs des triangles de tous les plans pendant l'édition
