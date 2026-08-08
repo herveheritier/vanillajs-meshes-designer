@@ -135,6 +135,10 @@ let fpsCounterLastDisplay = 0
 const FPS_COUNTER_EMA = 0.1
 // Throttle DOM : 2 mises a jour/s suffisent pour un indicateur discret.
 const FPS_COUNTER_DISPLAY_INTERVAL_MS = 500
+// Seuil de fluidite : sous cette frequence, la pilule passe en ambre
+// (data-perf="warn", meme langage visuel que #fpsDisplay[data-perf="warn"]
+// — cf. DESIGN.md §2.4.1).
+const FPS_COUNTER_WARN_THRESHOLD = 45
 
 const fpsCounterLoop = (now) => {
     if (fpsCounterLastTime > 0) {
@@ -152,7 +156,13 @@ const fpsCounterLoop = (now) => {
                 : fpsCounterSmooth * (1 - FPS_COUNTER_EMA) + instant * FPS_COUNTER_EMA
             if (first || now - fpsCounterLastDisplay >= FPS_COUNTER_DISPLAY_INTERVAL_MS) {
                 const el = document.querySelector('#fpsCounter')
-                if (el) el.textContent = `${Math.round(fpsCounterSmooth)} fps`
+                if (el) {
+                    el.textContent = `${Math.round(fpsCounterSmooth)} fps`
+                    // Etat ambre sous le seuil : attribute pose seulement
+                    // au changement (pas de style recalc par tick).
+                    const perf = fpsCounterSmooth < FPS_COUNTER_WARN_THRESHOLD ? 'warn' : 'good'
+                    if (el.dataset.perf !== perf) el.dataset.perf = perf
+                }
                 fpsCounterLastDisplay = now
             }
         }
