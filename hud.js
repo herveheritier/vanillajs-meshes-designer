@@ -2,6 +2,7 @@
 
 import { state } from './state.js'
 import { SHAPE_DEFS } from './constants.js'
+import { syncCursorOverlay } from './draw.js'
 
 // ===== Commentaire d'action (HUD) =====
 // Toast contextuel à deux sources (cf. DESIGN.md §7.15) :
@@ -286,4 +287,7 @@ export const updateColorButtonState = () => {
     const panelOpen = !!state.isTriangleColorPanelOpen
     btn.classList.toggle('color-panel-open', panelOpen)
     btn.classList.toggle('color-active', panelOpen && !!state.brushMode)
+    // Disque pinceau du curseur DOM : suivi de la couleur courante a
+    // chaque mutation de la palette (voir aussi persistColorPalette).
+    syncCursorOverlay()
 }

@@ -229,6 +229,35 @@ survol (`drawHoverOverlays` dans `renderTransient`, ex-
 (drag) les effaçait entre deux mousemove (flicker) ; c'est désormais
 dans le pipeline, z-order préservé (après le curseur).
 
+**Curseur hors canvas (evolution « pointeur en élément distinct »)** :
+le pointeur applicatif n'est PLUS un calque transitoire — la croix
+blanche est un élément DOM `#cursorOverlay` (main.html), position
+fixed + pointer-events none, déplacé en transform (composite) par
+`moveCursorOverlay` (draw.js) au mousemove sur le board ; l'overlay se
+masque hors board (toolbar/modales) et en preview (`body.preview-mode
+#cursorOverlay { display:none }`, le curseur natif grab reprend la
+main). `renderTransient` ne peint plus le curseur (ni en édition, ni
+en kiosque — le guide vert reste dans le canvas). En mode pinceau,
+l'overlay porte la classe `.brush` : disque 14 px rempli de
+`brushColor` (background posé par `syncCursorOverlay`, draw.js),
+synchronisé à chaque mutation de la palette (hud.js
+`updateColorButtonState`, editor.js `persistColorPalette`) et à chaque
+mousemove. Conséquence sur le pipeline : la POSITION DU CURSEUR ne
+fait plus partie de la signature de survol par défaut (editor.js
+`computeHoverSignature`) — un mousemove pur sur une zone dont les
+`nearest*` ne changent pas ne déclenche PLUS de `drawBoard` (avant,
+chaque pixel de déplacement invalidait la signature et forçait blit +
+transient) : le canvas n'est redessiné que si une interaction l'exige
+(survol d'élément, geste, drag, zoom). Exception assumée : quand le
+réticule est armé (`reticleMode > 0`), ses lignes pleine-écran suivent
+la souris (`lastMousePos`), donc la position du curseur est ré-incluse
+dans la signature (`rKey`) pour forcer le repaint — mode off (défaut)
+= aucun surcoût. Les
+smoke tests « pointeur visible après le 1er clic » vérifient désormais
+l'overlay DOM (`cursorOverlayState`, smoke_lib.mjs) au lieu des pixels
+blancs canvas (le disque pinceau se lit dans son `backgroundColor`, cf.
+smoke-palette.mjs `brushCursorColor`).
+
 **Instrumentation (HUD bas-gauche : `#fpsDisplay`)** :
 
 Pour valider *que* ces mecanismes font leur travail, la metrique

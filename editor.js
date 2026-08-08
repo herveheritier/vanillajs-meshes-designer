@@ -11,7 +11,7 @@ import {
     STAR_INNER_RATIO_MIN, STAR_INNER_RATIO_MAX,
     ANNULUS_INNER_RATIO_MIN, ANNULUS_INNER_RATIO_MAX, ANNULUS_INNER_RATIO_DEFAULT,
 } from './constants.js'
-import { drawBoard, requestDraw, requestTransientDraw, isSceneDirty } from './draw.js'
+import { drawBoard, requestDraw, requestTransientDraw, isSceneDirty, syncCursorOverlay } from './draw.js'
 import { updateSelectionHud, updateColorButtonState, updateShapesButton, updateClipboardButtons, updateAlignButton, updateAlignPanelButtons, showActionComment, showHoverComment, isActionCommentActive } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
 import {
@@ -199,23 +199,35 @@ export const findSelectedLine = (point) => {
 
 // ===== Hover et HUD bas-gauche =====
 
-// Clef de dedup : tant que la signature visuelle (curseur, nearest*,
-// selection dimmed, lasso) est inchangee ET que le cache scene n'est
-// pas dirty, aucun redraw n'est necessaire. isSceneDirty() absorbe
-// les mutations raw (drag qui mute pointList sans requestDraw).
+// Clef de dedup : tant que la signature visuelle (nearest*, selection
+// dimmed, lasso) est inchangee ET que le cache scene n'est pas dirty,
+// aucun redraw n'est necessaire. Le CURSEUR n'en fait plus partie
+// (evolution « pointeur hors canvas ») : c'est un overlay DOM suivi
+// par le mousemove (draw.js moveCursorOverlay) — un simple mousemove
+// sur une zone inchangee ne repaint donc PLUS le canvas. isSceneDirty()
+// absorbe les mutations raw (drag qui mute pointList sans requestDraw).
 let lastHoverSignature = null
 const computeHoverSignature = (cursorScreen) => {
     const npKey = state.nearestPoint ? state.nearestPoint.pointIndex : '_'
     const nlKey = state.nearestLine ? state.nearestLine.triangleIndex + ':' + state.nearestLine.lineIndex : '_'
     const ntKey = state.nearestTriangle ? state.nearestTriangle.triangleIndex : '_'
-    const cKey = cursorScreen ? (Math.round(cursorScreen.x) + ',' + Math.round(cursorScreen.y)) : '_'
     const boxKey = state.isSelectingBox && state.selectionBoxStart && state.selectionBoxCurrent
         ? '1|' + Math.round(state.selectionBoxCurrent.x) + ',' + Math.round(state.selectionBoxCurrent.y)
         : '0'
+    // Reticule (mode 1 : lignes plein ecran ancrees sur lastMousePos dans
+    // renderTransient) : il SUIT la souris. Le curseur est exclu de la
+    // signature par defaut (l'overlay DOM le porte), mais quand le
+    // reticule est arme sa position est re-incluse pour forcer le repaint
+    // a chaque mousemove — sinon les lignes figeraient pendant que
+    // l'overlay continue de bouger (regression evitee). Mode off = '_'
+    // (aucun surcout), le defaut.
+    const rKey = state.reticleMode > 0
+        ? (cursorScreen ? (Math.round(cursorScreen.x) + ',' + Math.round(cursorScreen.y)) : '_')
+        : '_'
     // selectionMode / brushMode changent le MESSAGE de survol sans
     // changer les nearest* : inclus pour forcer le recalcul du toast
     // a la bascule de mode.
-    return cKey + '|' + npKey + '|' + nlKey + '|' + ntKey + '|' + (state.isSelectionDimmed ? 'd' : 'n') + '|' + boxKey + '|' + state.selectionMode + '|' + (state.brushMode ? 'b' : 'n') + '|' + (state.activeConstructionTriangle ? 'c' : 'n')
+    return npKey + '|' + nlKey + '|' + ntKey + '|' + (state.isSelectionDimmed ? 'd' : 'n') + '|' + boxKey + '|' + rKey + '|' + state.selectionMode + '|' + (state.brushMode ? 'b' : 'n') + '|' + (state.activeConstructionTriangle ? 'c' : 'n')
 }
 
 export const updateMouseHover = (cursorScreen) => {
@@ -224,8 +236,8 @@ export const updateMouseHover = (cursorScreen) => {
     updateCoordsDisplay(cursorScreen)
     if (!cursorScreen) return
     // Modes de construction : les overlays de survol sont du bruit ;
-    // seule la preview (renderTransient) + le curseur + le toast de
-    // phase (computeHoverComment) sont dessines.
+    // seule la preview (renderTransient) + le toast de phase
+    // (computeHoverComment) sont dessines (le curseur est l'overlay DOM).
     if (state.circleMode || state.starMode || state.annulusMode || state.shapeKind !== undefined) {
         updateHoverComment()
         drawBoard()
@@ -246,6 +258,13 @@ export const updateMouseHover = (cursorScreen) => {
     if (!state.nearestLine || state.nearestLine.distance > lineHitRadiusModel()) state.nearestLine = undefined
     state.nearestTriangle = findNearestTriangle(target)
 
+    // Le toast de survol est recalcule a CHAQUE mousemove (dedup cote
+    // showHoverComment : meme texte + source 'hover' + classe visible =
+    // pas de rewrite DOM) — un post-action expire laisse la zone vide
+    // repasser au message generique au prochain mouvement, SANS repaint
+    // canvas (le dedup drawBoard reste pilote par la signature).
+    updateHoverComment()
+
     // Skip de frame si la signature est inchangee ET que le cache
     // scene est valide (le 2e terme absorbe les drags qui muent
     // pointList sans requestDraw).
@@ -253,14 +272,10 @@ export const updateMouseHover = (cursorScreen) => {
     if (signature === lastHoverSignature && !isSceneDirty()) return
     lastHoverSignature = signature
 
-    // Le toast de survol ne se met à jour que quand la signature change
-    // (dedup cote showHoverComment).
-    updateHoverComment()
-
-    // Repaint : curseur + overlays de survol (nearest*) vivent maintenant
-    // dans drawBoard (renderTransient -> drawHoverOverlays) — le drawBoard
-    // est SYNC pour que la preview suive la souris dans la meme frame
-    // (les smoke tests échantillonnent les pixels juste apres le mousemove).
+    // Repaint : les overlays de survol (nearest*) vivent dans drawBoard
+    // (renderTransient -> drawHoverOverlays) — le drawBoard est SYNC
+    // pour que le survol suive la souris dans la meme frame (les smoke
+    // tests échantillonnent les pixels juste apres le mousemove).
     drawBoard()
 }
 
@@ -384,7 +399,7 @@ export const resolveMouseClickOnBoard = (e) => {
     state.nearestLine = findSelectedLine(pointToAdd)
     if (!state.nearestLine || state.nearestLine.distance > lineHitRadiusModel()) state.nearestLine = undefined
     addPoint(pointToAdd)
-    // lastMousePos = position du clic pour que le pointeur survive au repaint.
+    // lastMousePos = position du clic (survol/reticule re-invoques apres).
     state.lastMousePos = mouseScreen
     requestDraw()
 }
@@ -860,8 +875,7 @@ export const beginCircleGesture = (e) => {
     state.circleCenterModel = { x: center.x, y: center.y }
     state.circleRadiusModel = 0
     state.circleOffsetAngle = 0
-    // lastMousePos sync : sans lui, un 1er clic sans mouvement
-    // ferait disparaître le pointeur au repaint differe.
+    // lastMousePos sync : le reticule/survol suivent le clic sans mouvement.
     state.lastMousePos = mouseScreen
     requestDraw()
 }
@@ -1033,7 +1047,7 @@ export const beginStarGesture = (e) => {
     state.starPhase = 0
     state.starInnerRatio = SHAPE_STAR_INNER_RATIO
     // Sync lastMousePos (meme raison que beginCircleGesture : le
-    // drawBoard differe repeint le curseur via renderTransient).
+    // reticule/survol suivent le 1er clic sans mouvement).
     state.lastMousePos = mouseScreen
     requestDraw()
 }
@@ -1234,7 +1248,7 @@ export const beginAnnulusGesture = (e) => {
     state.annulusPhase = 0
     state.annulusInnerRatio = ANNULUS_INNER_RATIO_DEFAULT
     // Sync lastMousePos (meme raison que beginCircleGesture : le
-    // drawBoard differe repeint le curseur via renderTransient).
+    // reticule/survol suivent le 1er clic sans mouvement).
     state.lastMousePos = mouseScreen
     requestDraw()
 }
@@ -1472,8 +1486,7 @@ export const beginShapeGesture = (e) => {
     state.shapeCurrentModel = { x: anchor.x, y: anchor.y }
     state.shapeRadiusModel = 0
     state.shapeOffsetAngle = 0
-    // Meme sync que beginCircleGesture : lastMousePos pointe le 1er clic pour
-    // que renderTransient repeigne le curseur (visible meme sans mouvement).
+    // Meme sync que beginCircleGesture : lastMousePos suit le 1er clic.
     state.lastMousePos = mouseScreen
     requestDraw()
 }
@@ -2789,6 +2802,10 @@ export const persistColorPalette = () => {
     try {
         localStorage.setItem(COLOR_PALETTE_STORAGE_KEY, JSON.stringify(state.colorPalette.map(p => p.bg)))
     } catch (e) { /* ignore */ }
+    // Le disque pinceau du curseur DOM suit la couleur courante meme
+    // souris immobile (les chemins d'edition qui passent ici ne
+    // declenchent pas forcement updateColorButtonState).
+    syncCursorOverlay()
 }
 
 // Termine le mode edition : nettoie l'index et la surbrillance

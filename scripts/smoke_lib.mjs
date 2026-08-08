@@ -70,32 +70,6 @@ export const hudHelpers = (page) => ({
     sceneDirty: () => page.locator('#sceneStatus').getAttribute('data-dirty'),
 })
 
-// Compte les pixels blancs (r,g,b > 200) dans une fenêtre 16×16 autour
-// de la position CSS (x, y) du canvas. Sert aux checks « le pointeur
-// est visible après un clic sans mouvement » : la croix blanche du
-// curseur (COLOR_CURSOR = #FFFFFF, ring rayon ~3 px) laisse des pixels
-// blancs, le marqueur de centre de la preview (COLOR_CIRCLE_PREVIEW,
-// vert) n'en laisse pas.
-// PRECONDITION : le réticule doit être désactivé (reticleMode = 0) —
-// COLOR_RETICLE est aussi #FFFFFF et tracerait des lignes à travers la
-// fenêtre (faux positif). Les suites ne l'activent jamais et tournent
-// dans un contexte frais (défaut 0) ; ne pas toggler le réticule
-// avant cet appel.
-export const countWhitePixelsNear = (page, cssX, cssY) => page.evaluate(({ x, y }) => {
-    const board = document.querySelector('#board')
-    const ctx = board.getContext('2d')
-    const dpr = window.devicePixelRatio || 1
-    // Position CSS px -> pixels physiques du bitmap (dpr).
-    const px = Math.round(x * dpr)
-    const py = Math.round(y * dpr)
-    const img = ctx.getImageData(px - 8, py - 8, 16, 16).data
-    let white = 0
-    for (let i = 0; i < img.length; i += 4) {
-        if (img[i] > 200 && img[i + 1] > 200 && img[i + 2] > 200) white++
-    }
-    return white
-}, { x: cssX, y: cssY })
-
 // Compte les pixels VERTS (r < 100, g > 150, b < 100) dans une fenêtre
 // 16×16 autour de la position CSS (x, y) du canvas. Sert aux checks
 // « la prévisualisation du geste (cercle / étoile / anneau / formes)
@@ -110,7 +84,8 @@ export const countWhitePixelsNear = (page, cssX, cssY) => page.evaluate(({ x, y 
 // Y compterait des pixels d'axe même sans aucune preview (faux positif).
 // Le cyan de la selection-box (rgba(0,255,255,0.15) sur noir -> b≈38)
 // matcherait aussi, mais la box n'est jamais armée pendant un geste de
-// construction.
+// construction. (Le curseur, lui, est un overlay DOM depuis l'evolution
+// « pointeur hors canvas » : plus aucune croix blanche dans le canvas.)
 export const countGreenPixelsNear = (page, cssX, cssY) => page.evaluate(({ x, y }) => {
     const board = document.querySelector('#board')
     const ctx = board.getContext('2d')
@@ -124,3 +99,21 @@ export const countGreenPixelsNear = (page, cssX, cssY) => page.evaluate(({ x, y 
     }
     return green
 }, { x: cssX, y: cssY })
+
+// Etat de l'overlay curseur DOM (#cursorOverlay, evolution « pointeur
+// hors canvas ») : le curseur applicatif ne vit plus dans le canvas —
+// c'est un element position fixed suivi par le mousemove (draw.js
+// moveCursorOverlay). Sert aux checks « le pointeur est visible apres
+// un 1er clic sans mouvement » : visible + centre en coords viewport.
+// null si l'element est absent.
+export const cursorOverlayState = (page) => page.evaluate(() => {
+    const el = document.querySelector('#cursorOverlay')
+    if (!el) return null
+    const style = getComputedStyle(el)
+    const rect = el.getBoundingClientRect()
+    return {
+        visible: style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+    }
+})

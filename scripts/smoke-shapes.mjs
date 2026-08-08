@@ -11,7 +11,7 @@
 //   1. Lancer le serveur dev :  python3 test_server.py   (port 8000)
 //   2. node scripts/smoke-shapes.mjs [baseUrl]
 
-import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY, countWhitePixelsNear, countGreenPixelsNear } from './smoke_lib.mjs'
+import { launchBrowser, createHarness, attachErrorCollector, SCENE_STORAGE_KEY, cursorOverlayState, countGreenPixelsNear } from './smoke_lib.mjs'
 
 const BASE_URL = (process.argv[2] || 'http://localhost:8000/main.html').replace(/\/$/, '')
 
@@ -309,15 +309,14 @@ try {
     check('clic sans glisser : aucune forme creee', info.points === 0 && info.tris === 0)
     check('outil toujours arme apres clic ignore', await shapesArmed())
     // (evolution pointeur) : meme sans mouvement apres le 1er clic, la
-    // croix blanche doit rester visible — beginShapeGesture appelait
-    // requestDraw() seul, le drawBoard differe effacait le curseur du
-    // dernier mousemove jusqu'au prochain mousemove (fix : renderTransient
-    // repeint le curseur a chaque drawBoard via state.lastMousePos).
-    // On compte les pixels blancs (COLOR_CURSOR = #FFFFFF) autour de la
-    // position du clic ; le marqueur de centre de la preview (vert) ne
-    // compte pas.
-    check('pointeur visible apres le 1er clic forme sans mouvement (pixels blancs > 0)',
-        (await countWhitePixelsNear(page, 500, 400)) > 0)
+    // croix blanche doit rester visible — le curseur est un overlay DOM
+    // (#cursorOverlay) suivi par le mousemove (draw.js moveCursorOverlay) :
+    // il ne vit plus dans le canvas, donc aucun repaint ne peut plus
+    // l'effacer (renderTransient ne le peint plus). On verifie que
+    // l'overlay est visible et centre sur la position du clic.
+    const curs = await cursorOverlayState(page)
+    check('pointeur visible apres le 1er clic forme sans mouvement (overlay DOM centre sur le clic)',
+        curs !== null && curs.visible && Math.abs(curs.x - 500) <= 2 && Math.abs(curs.y - 400) <= 2)
     await page.keyboard.press('Escape')
     await page.waitForTimeout(100)
 

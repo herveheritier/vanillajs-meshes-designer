@@ -34,6 +34,46 @@
             body { margin: 0; padding: 0; }
             canvas#board { display: block; }
 
+            /* ========= Curseur applicatif en overlay DOM (evolution
+               « pointeur hors canvas ») ========= */
+            /* Le board a un cursor: 'none' inline en JS (main.js) : la
+               croix blanche du curseur est portee par CE div, en
+               position fixed (le canvas couvre le viewport) + pointer-
+               events none (les clics traversent vers le canvas). Le
+               mousemove le deplace en transform (composite, pas de
+               layout) via moveCursorOverlay (draw.js) — le canvas n'est
+               PLUS redessine pour le curseur (il ne vit plus dans
+               renderTransient) : un simple mousemove ne repaint plus la
+               scene. Anneau blanc ~r4 px ; en mode pinceau (classe
+               .brush), disque 14 px rempli de brushColor (background
+               pose par syncCursorOverlay) + ring blanc. Cache par
+               defaut, affiche au premier mousemove sur le board.
+               z-index 40 : au-dessus du canvas et de la console
+               (#messageBoard, z-index auto — l'ancienne croix canvas
+               passait DESSOUS, la croix DOM passe dessus : visible sur
+               le fond semi-transparent, acceptable) et sous la toolbar
+               (z-index 50, jamais survolee : l'overlay se cache hors
+               board). */
+            #cursorOverlay {
+                position: fixed;
+                left: 0;
+                top: 0;
+                width: 8px;
+                height: 8px;
+                border: 1px solid #ffffff;
+                border-radius: 50%;
+                background-color: transparent;
+                pointer-events: none;
+                z-index: 40;
+                display: none;
+                will-change: transform;
+            }
+            #cursorOverlay.brush {
+                width: 14px;
+                height: 14px;
+                background-color: #ffffff;
+            }
+
             /* ========= Messages console (overlay transparent sur le canvas) ========= */
             #messageBoard {
                 /* Frame : border + padding + fond legerement plus opaque
@@ -1309,6 +1349,11 @@
             body.preview-mode #board {
                 cursor: grab !important;
             }
+            /* En preview, le curseur natif grab reprend la main :
+               l'overlay DOM doit disparaitre (sinon croix + grab). */
+            body.preview-mode #cursorOverlay {
+                display: none;
+            }
 
             /* ========= Kiosque de sélection des plans (Alt+K) ========= */
             /* Bouton toolbar Kiosque : meme langage d'etat actif que
@@ -1989,6 +2034,12 @@
             </div>
         </div>
         <canvas id="board" width="100" height="100"></canvas>
+        <!-- Curseur applicatif en overlay DOM (evolution « pointeur
+             hors canvas ») : croix blanche deployee par
+             moveCursorOverlay (draw.js) au mousemove sur le board,
+             masquee hors board / en preview (CSS ci-dessus). Le
+             canvas ne le peint plus (renderTransient). -->
+        <div id="cursorOverlay"></div>
         <!-- Panneau flottant de selection de couleur pour les
              triangles (mode 'triangle' uniquement). Positionne en
              absolu (ancre viewport) et apparie avec le bouton

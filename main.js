@@ -1,7 +1,7 @@
 // Rationale : voir DESIGN.md §4.1
 
 import { state, initDomRefs, boardOffset } from './state.js'
-import { drawBoard, requestDraw, getDevicePixelRatio, kioskSelectedIndex } from './draw.js'
+import { drawBoard, requestDraw, getDevicePixelRatio, kioskSelectedIndex, moveCursorOverlay, hideCursorOverlay } from './draw.js'
 import { CANVAS_BACKGROUND } from './constants.js'
 import {
     updateShapeHud, updateUndoRedoHud, updateSelectionHud, updateConsoleButton,
@@ -381,8 +381,23 @@ document.addEventListener('mousemove', (e) => {
         }
         updatePan(mouseScreen)
     }
-    if (e.target.id === 'board') resolveMouseMoveOnBoard(e)
+    if (e.target.id === 'board') {
+        // Curseur applicatif en overlay DOM (evolution « pointeur hors
+        // canvas ») : position client (viewport) centree par le CSS —
+        // le canvas n'est plus redessine pour le curseur. Hors board
+        // (toolbar, modales, poignees console) ou en preview (masque
+        // par body.preview-mode), l'overlay se cache : le curseur OS
+        // natif reprend la main.
+        moveCursorOverlay(e.clientX, e.clientY)
+        resolveMouseMoveOnBoard(e)
+    } else {
+        hideCursorOverlay()
+    }
 })
+
+// Pointeur sorti de la fenetre : plus aucun mousemove pour masquer
+// l'overlay, il resterait fige au dernier point.
+document.addEventListener('mouseleave', hideCursorOverlay)
 
 document.addEventListener('mouseup', (e) => {
     const wasGrabbing = grabbed()

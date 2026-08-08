@@ -10,7 +10,6 @@ import {
     COLOR_HOVER_NEAREST_POINT,
     COLOR_HOVER_NEAREST_TRIANGLE_STROKE, COLOR_HOVER_NEAREST_TRIANGLE_FILL,
     CANVAS_BACKGROUND,
-    COLOR_CURSOR,
     COLOR_RETICLE,
     COLOR_GRID,
     POINT_COLOR_ACTIVE,
@@ -59,26 +58,61 @@ export const drawPointsBatch = (points, radius, color) => {
     state._ctx.stroke()
 }
 
-// Le curseur est peint ici (le board a `cursor: none`) ; en mode
-// pinceau, disque de la couleur courante + ring blanc lisible sur
-// fond noir ou deja colore.
-const BRUSH_CURSOR_RADIUS = 7
-export const drawMouse = (p) => {
-    if (!p) return
-    state._ctx.setLineDash([])
-    state._ctx.strokeStyle = COLOR_CURSOR
-    state._ctx.beginPath()
-    state._ctx.arc(p.x, p.y, 3, 0, TAU)
-    state._ctx.stroke()
-    if (state.brushMode && typeof state.brushColor === 'string') {
-        state._ctx.beginPath()
-        state._ctx.fillStyle = state.brushColor
-        state._ctx.arc(p.x, p.y, BRUSH_CURSOR_RADIUS, 0, TAU)
-        state._ctx.fill()
-        state._ctx.strokeStyle = '#ffffff'
-        state._ctx.lineWidth = 1
-        state._ctx.stroke()
+// ===== Curseur applicatif en overlay DOM (evolution « pointeur hors
+// canvas ») =====
+// Le board a `cursor: none` (main.js) ; la croix blanche est portee par
+// l'element #cursorOverlay (main.html), position fixed + pointer-events
+// none, deplacee en transform (composite) a chaque mousemove. Elle ne
+// vit PLUS dans renderTransient : le canvas n'est plus redessine pour
+// le curseur — un simple mousemove ne repaint pas la scene. En mode
+// pinceau, un disque 14 px rempli de brushColor (classe .brush,
+// background pose ici) remplace la croix (lisible sur fond noir ou
+// deja colore).
+let cursorOverlayEl = null
+const getCursorOverlayEl = () => {
+    if (!cursorOverlayEl) cursorOverlayEl = document.querySelector('#cursorOverlay')
+    return cursorOverlayEl
+}
+// Clef du dernier style applique ('' = croix) : le guard evite les
+// ecritures DOM par mousemove quand le pinceau n'a pas change de
+// couleur (le transform de position, lui, est toujours reecrit).
+let cursorBrushStyleKey = ''
+
+// Synchronise le STYLE (disque pinceau vs croix) sans deplacer
+// l'element. Appele a chaque mousemove ET par les mutations de la
+// palette (hud.js updateColorButtonState, editor.js persistColorPalette)
+// pour que le disque suive la couleur courante meme souris immobile.
+export const syncCursorOverlay = () => {
+    const el = getCursorOverlayEl()
+    if (!el) return
+    const brush = (state.brushMode && typeof state.brushColor === 'string') ? state.brushColor : null
+    const key = brush === null ? '' : 'b:' + brush
+    if (key === cursorBrushStyleKey) return
+    cursorBrushStyleKey = key
+    if (brush === null) {
+        el.classList.remove('brush')
+        el.style.backgroundColor = ''
+    } else {
+        el.classList.add('brush')
+        el.style.backgroundColor = brush
     }
+}
+
+// Deplace + affiche la croix aux coords CLIENT (viewport) : le board
+// couvre le viewport (99vw/99vh, body sans marge), donc client ==
+// position ecran du pointeur ; le translate(-50%, -50%) la centre
+// sur le pointeur (taille variable : croix 8 px / disque pinceau 14 px).
+export const moveCursorOverlay = (clientX, clientY) => {
+    const el = getCursorOverlayEl()
+    if (!el) return
+    syncCursorOverlay()
+    el.style.display = 'block'
+    el.style.transform = `translate(${clientX}px, ${clientY}px) translate(-50%, -50%)`
+}
+
+export const hideCursorOverlay = () => {
+    const el = getCursorOverlayEl()
+    if (el) el.style.display = 'none'
 }
 
 // Pill sombre avec l'index du vertex survole (cf. §7.8), sous le point (Y+14).
@@ -139,8 +173,9 @@ export const drawStackList = (p, refs) => {
 // ===== Scene cache =====
 // La scene STABLE (shapes, zoom/viewCenter, selection, grille) est rendue
 // une fois dans un offscreen puis blittee (drawImage) ; le TRANSITOIRE
-// (reticule, selectionBox, curseur, previews de geste) est repeint a
-// chaque frame par-dessus. invalidateScene() force le re-render ;
+// (reticule, selectionBox, previews de geste) est repeint a
+// chaque frame par-dessus. (Le curseur, lui, est un overlay DOM depuis
+// l'evolution « pointeur hors canvas ».) invalidateScene() force le re-render ;
 // requestDraw() coalesce via rAF (au plus 1 drawBoard/frame) ;
 // isSceneDirty() pour les tests. sceneDirty demarre a true (premier
 // repaint integral) ; frameScheduled limite les callbacks rAF a 1.
@@ -277,7 +312,6 @@ const renderTransient = () => {
             state._ctx.lineTo(state.lastMousePos.x, cssBoardH())
             state._ctx.stroke()
             state._ctx.setLineDash([])
-            drawMouse(state.lastMousePos)
         }
         return
     }
@@ -310,11 +344,6 @@ const renderTransient = () => {
             state._ctx.setLineDash([])
         }
     }
-    // Le curseur est repeint a CHAQUE drawBoard (pas seulement au mousemove),
-    // sinon tout requestDraw isole le blittait par-dessus et le faisait
-    // disparaître au 1er clic d'un geste. state.lastMousePos est maintenu
-    // par les chemins de saisie, donc il survit au repaint.
-    if (state.lastMousePos) drawMouse(state.lastMousePos)
     // Overlays de survol (nearest*) : repeints par drawBoard, par-dessus
     // le curseur — meme z-order qu'avant (ils etaient dessines apres
     // drawBoard dans updateMouseHover). Les dessiner ICI evite qu'un

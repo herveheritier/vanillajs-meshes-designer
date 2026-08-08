@@ -97,16 +97,18 @@ const setAlphaSlider = async (pct) => {
 const alphaLabel = () => page.locator('#colorAlphaValue').textContent()
 
 // Lit la couleur du disque du curseur pinceau : quand brushMode est
-// actif, drawMouse (draw.js) remplit un disque de rayon 7 avec
-// brushColor (alpha sur fond noir -> canal par canal alpha x hex,
-// arrondi) puis pose un ring blanc sur le pourtour. On deplace la
-// souris sur une zone vide du canvas (loin des axes #00A000 et du HUD
-// DOM) et on lit le pixel central (le disque rempli recouvre la croix
-// blanche du curseur, cf. drawMouse : fill du disque APRES le stroke
-// de la croix). Renvoie [r, g, b] du pixel.
-// NOTE : le disque n'est repeint qu'au prochain mousemove — chaque
-// lecture utilise donc une POSITION DIFFERENTE pour forcer un repaint
-// avec la couleur courante (les positions tournent en interne).
+// actif, l'overlay DOM #cursorOverlay (evolution « pointeur hors
+// canvas ») porte la classe .brush avec background = brushColor (rgba,
+// draw.js syncCursorOverlay) — plus aucune lecture de pixels canvas
+// (le curseur ne vit plus dans le canvas). On deplace la souris sur
+// une zone vide du board (loin des axes #00A000 et du HUD DOM) pour
+// repositionner l'overlay, puis on lit son backgroundColor et on
+// re-projette le rgba sur fond noir (canal par canal alpha x rgb,
+// arrondi) : MEME convention [r, g, b] que l'ancien getImageData,
+// les bornes numeriques des checks ci-dessous restent valables.
+// NOTE : chaque lecture utilise une POSITION DIFFERENTE pour forcer un
+// mousemove reel (les positions tournent en interne) — l'overlay suit
+// le pointeur et sa couleur est resynchronisee a chaque deplacement.
 let cursorProbePos = 0
 const brushCursorColor = async () => {
     cursorProbePos = (cursorProbePos + 1) % 4
@@ -114,13 +116,14 @@ const brushCursorColor = async () => {
     const [x, y] = spots[cursorProbePos]
     await page.mouse.move(x, y)
     await page.waitForTimeout(150)
-    return page.evaluate(({ px, py }) => {
-        const board = document.querySelector('#board')
-        const ctx = board.getContext('2d')
-        const dpr = window.devicePixelRatio || 1
-        const d = ctx.getImageData(Math.round(px * dpr), Math.round(py * dpr), 1, 1).data
-        return [d[0], d[1], d[2]]
-    }, { px: x, py: y })
+    return page.evaluate(() => {
+        const el = document.querySelector('#cursorOverlay')
+        if (!el) return [0, 0, 0]
+        const m = getComputedStyle(el).backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)
+        if (!m) return [0, 0, 0]
+        const a = m[4] !== undefined ? parseFloat(m[4]) : 1
+        return [Math.round(+m[1] * a), Math.round(+m[2] * a), Math.round(+m[3] * a)]
+    })
 }
 
 // Rectangle 2 coins (500,400) -> (700,550) via le panneau #shapes,
