@@ -1,11 +1,8 @@
 // Rationale : voir DESIGN.md §4.1
 
-import { state } from './state.js'
+import { state, boardOffset } from './state.js'
 import {
     ACTION_NONE, ACTION_GRABBING,
-    COLOR_HOVER_NEAREST_LINE, LINE_WIDTH_HOVER_NEAREST_LINE,
-    COLOR_HOVER_NEAREST_POINT,
-    COLOR_HOVER_NEAREST_TRIANGLE_STROKE, COLOR_HOVER_NEAREST_TRIANGLE_FILL,
     TRIANGLE_COLOR_PRESETS, TRIANGLE_COLOR_CLEAR, TRIANGLE_COLOR_DEFAULT_ALPHA, TAU,
     COLOR_PALETTE_STORAGE_KEY, COLOR_ALPHA_STORAGE_KEY, triangleFillFromBg,
     POINT_HIT_RADIUS_PX, LINE_HIT_RADIUS_PX, TRIANGLE_CENTROID_HIT_RADIUS_PX,
@@ -14,13 +11,12 @@ import {
     STAR_INNER_RATIO_MIN, STAR_INNER_RATIO_MAX,
     ANNULUS_INNER_RATIO_MIN, ANNULUS_INNER_RATIO_MAX, ANNULUS_INNER_RATIO_DEFAULT,
 } from './constants.js'
-import { drawBoard, drawPoint, drawVertexLabel, drawStackList, requestDraw, isSceneDirty } from './draw.js'
+import { drawBoard, requestDraw, requestTransientDraw, isSceneDirty } from './draw.js'
 import { updateSelectionHud, updateColorButtonState, updateShapesButton, updateClipboardButtons, updateAlignButton, updateAlignPanelButtons, showActionComment, showHoverComment, isActionCommentActive } from './hud.js'
 import { updateZoomDisplay } from './viewport.js'
-import { modelToScreen } from './geometry.js'
 import {
     screenToModel, snapToGrid,
-    activeTriangles, getAllVertices, getPointsAtSamePosition, getVertexIndex, getStackTriangleRefs, isPointSelected,
+    activeTriangles, getAllVertices, getPointsAtSamePosition, isPointSelected,
     getIndicesAtSamePosition,
     adjacentPoints, computeOrthogonalProjection, isInsideSegmentByDot,
     circleGeometry, triangleGeometry, rectGeometry, starGeometry, annulusGeometry,
@@ -43,19 +39,25 @@ export const findNearestPoint = (point) => {
 
 export const findNextNearestPoint = (nearestPoint) => {
     const pointList = activeShape() && Array.isArray(activeShape().pointList) ? activeShape().pointList : []
-    let shortDistance = Number.MAX_VALUE
+    // Distance au carré (perf : Math.hypot est 2-4× plus cher), sqrt
+    // une seule fois sur le gagnant — le contrat `distance` est inchangé.
+    let shortDistance2 = Number.MAX_VALUE
     let shortIndex = -1
+    const px = nearestPoint.point.x
+    const py = nearestPoint.point.y
     for (let i = (nearestPoint.pointIndex | 0) + 1; i < pointList.length; i++) {
         const p = pointList[i]
         if (!p) continue
-        const d = Math.hypot(p.x - nearestPoint.point.x, p.y - nearestPoint.point.y)
-        if (d < shortDistance) {
-            shortDistance = d
+        const dx = p.x - px
+        const dy = p.y - py
+        const d2 = dx * dx + dy * dy
+        if (d2 < shortDistance2) {
+            shortDistance2 = d2
             shortIndex = i
         }
     }
     if (shortIndex < 0) return undefined
-    return { pointIndex: shortIndex, distance: shortDistance, point: pointList[shortIndex] }
+    return { pointIndex: shortIndex, distance: Math.sqrt(shortDistance2), point: pointList[shortIndex] }
 }
 
 const modelToleranceForPixels = (pixels) => pixels / Math.max(state.ctx.zoomLevel, 0.0001)
@@ -67,10 +69,16 @@ const triangleCentroidHitRadiusModel = () => modelToleranceForPixels(TRIANGLE_CE
 export const findNearestTriangle = (point) => {
     const tris = activeShape() && Array.isArray(activeShape().tris) ? activeShape().tris : []
     const pointList = activeShape() && Array.isArray(activeShape().pointList) ? activeShape().pointList : []
+    // Distances au carré (perf), rayon calculé UNE fois (constant sur la
+    // boucle — l'original le re-évaluait par tri) ; sqrt sur le gagnant.
+    const hitRadius = triangleCentroidHitRadiusModel()
+    const hitRadius2 = hitRadius * hitRadius
     let bestInside = undefined
-    let bestInsideDist = Number.MAX_VALUE
+    let bestInsideDist2 = Number.MAX_VALUE
     let bestNear = undefined
-    let bestNearDist = Number.MAX_VALUE
+    let bestNearDist2 = Number.MAX_VALUE
+    const px = point.x
+    const py = point.y
     tris.forEach((t, i) => {
         if (t.p1 === undefined || t.p2 === undefined || t.p3 === undefined) return
         const p1 = pointList[t.p1]
@@ -79,22 +87,26 @@ export const findNearestTriangle = (point) => {
         if (!p1 || !p2 || !p3) return
         const cx = (p1.x + p2.x + p3.x) / 3
         const cy = (p1.y + p2.y + p3.y) / 3
-        const distToCentroid = Math.hypot(point.x - cx, point.y - cy)
+        const ddx = px - cx
+        const ddy = py - cy
+        const dist2 = ddx * ddx + ddy * ddy
         const inside = pointInsideTriangle(point, p1, p2, p3)
         const pointIndices = [t.p1, t.p2, t.p3]
         if (inside) {
-            if (distToCentroid < bestInsideDist) {
-                bestInsideDist = distToCentroid
-                bestInside = { triangleIndex: i, triangle: t, pointIndices, _distance: distToCentroid }
+            if (dist2 < bestInsideDist2) {
+                bestInsideDist2 = dist2
+                bestInside = { triangleIndex: i, triangle: t, pointIndices, _distance: dist2 }
             }
-        } else if (distToCentroid <= triangleCentroidHitRadiusModel()) {
-            if (distToCentroid < bestNearDist) {
-                bestNearDist = distToCentroid
-                bestNear = { triangleIndex: i, triangle: t, pointIndices, _distance: distToCentroid }
+        } else if (dist2 <= hitRadius2) {
+            if (dist2 < bestNearDist2) {
+                bestNearDist2 = dist2
+                bestNear = { triangleIndex: i, triangle: t, pointIndices, _distance: dist2 }
             }
         }
     })
-    return bestInside || bestNear
+    const best = bestInside || bestNear
+    if (best) best._distance = Math.sqrt(best._distance)
+    return best
 }
 
 const pointInsideTriangle = (p, a, b, c) => {
@@ -114,7 +126,14 @@ const sign = (p, a, b) => (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)
 export const findSelectedLine = (point) => {
     const tris = activeShape() && Array.isArray(activeShape().tris) ? activeShape().tris : []
     const pointList = activeShape() && Array.isArray(activeShape().pointList) ? activeShape().pointList : []
-    let shortDistance = Number.MAX_VALUE
+    // Distances au carré + REJET BBOX par rayon (perf) : un tri dont la
+    // bbox élargie de `radius` ne contient pas le point ne peut pas être
+    // le plus proche — les callers filtrent par le MÊME rayon après, le
+    // résultat est identique.
+    const radius = lineHitRadiusModel()
+    const px = point.x
+    const py = point.y
+    let shortDistance2 = Number.MAX_VALUE
     let shortTriangleIndex = -1
     let shortLineIndex = -1
     tris.forEach((t, i) => {
@@ -123,24 +142,41 @@ export const findSelectedLine = (point) => {
         const p2 = pointList[t.p2]
         const p3 = pointList[t.p3]
         if (!p1 || !p2 || !p3) return
+        // Bbox reject (cheap : 6 compares au lieu de 3 projections).
+        let minX = p1.x, maxX = p1.x, minY = p1.y, maxY = p1.y
+        if (p2.x < minX) minX = p2.x
+        else if (p2.x > maxX) maxX = p2.x
+        if (p2.y < minY) minY = p2.y
+        else if (p2.y > maxY) maxY = p2.y
+        if (p3.x < minX) minX = p3.x
+        else if (p3.x > maxX) maxX = p3.x
+        if (p3.y < minY) minY = p3.y
+        else if (p3.y > maxY) maxY = p3.y
+        if (px < minX - radius || px > maxX + radius || py < minY - radius || py > maxY + radius) return
         let cop = computeOrthogonalProjection(point, p1, p2)
-        let d = Math.hypot(point.x - cop.x, point.y - cop.y)
-        if (d < shortDistance && isInsideSegmentByDot(cop, p1, p2)) {
-            shortDistance = d
+        let ddx = px - cop.x
+        let ddy = py - cop.y
+        let d2 = ddx * ddx + ddy * ddy
+        if (d2 < shortDistance2 && isInsideSegmentByDot(cop, p1, p2)) {
+            shortDistance2 = d2
             shortTriangleIndex = i
             shortLineIndex = 0
         }
         cop = computeOrthogonalProjection(point, p2, p3)
-        d = Math.hypot(point.x - cop.x, point.y - cop.y)
-        if (d < shortDistance && isInsideSegmentByDot(cop, p2, p3)) {
-            shortDistance = d
+        ddx = px - cop.x
+        ddy = py - cop.y
+        d2 = ddx * ddx + ddy * ddy
+        if (d2 < shortDistance2 && isInsideSegmentByDot(cop, p2, p3)) {
+            shortDistance2 = d2
             shortTriangleIndex = i
             shortLineIndex = 1
         }
         cop = computeOrthogonalProjection(point, p3, p1)
-        d = Math.hypot(point.x - cop.x, point.y - cop.y)
-        if (d < shortDistance && isInsideSegmentByDot(cop, p3, p1)) {
-            shortDistance = d
+        ddx = px - cop.x
+        ddy = py - cop.y
+        d2 = ddx * ddx + ddy * ddy
+        if (d2 < shortDistance2 && isInsideSegmentByDot(cop, p3, p1)) {
+            shortDistance2 = d2
             shortTriangleIndex = i
             shortLineIndex = 2
         }
@@ -157,7 +193,7 @@ export const findSelectedLine = (point) => {
         secondPointIndex,
         firstPoint: pointList[firstPointIndex],
         secondPoint: pointList[secondPointIndex],
-        distance: shortDistance,
+        distance: Math.sqrt(shortDistance2),
     }
 }
 
@@ -221,70 +257,33 @@ export const updateMouseHover = (cursorScreen) => {
     // (dedup cote showHoverComment).
     updateHoverComment()
 
-    // Le curseur est repeint par renderTransient ; les overlays de
-    // survol se dessinent par-dessus.
+    // Repaint : curseur + overlays de survol (nearest*) vivent maintenant
+    // dans drawBoard (renderTransient -> drawHoverOverlays) — le drawBoard
+    // est SYNC pour que la preview suive la souris dans la meme frame
+    // (les smoke tests échantillonnent les pixels juste apres le mousemove).
     drawBoard()
-
-    if (state.nearestPoint && state.nearestPoint.point) {
-        drawPoint(state.nearestPoint.point, 5, COLOR_HOVER_NEAREST_POINT)
-        // §7.8 : index 0-based du sommet (fallback '?' si absent).
-        const vertexIdx = getVertexIndex(state.nearestPoint.point)
-        drawVertexLabel(state.nearestPoint.point, vertexIdx >= 0 ? vertexIdx : '?')
-        // §7.9 : pill des slots partageant la position, si > 1 ref.
-        const stackRefs = getStackTriangleRefs(state.nearestPoint.point)
-        if (stackRefs.length > 1) drawStackList(state.nearestPoint.point, stackRefs)
-    }
-    if (state.selectionMode === 'segment' || state.selectionMode === 'vertex') {
-        if (state.nearestLine && state.nearestLine.firstPoint && state.nearestLine.secondPoint) {
-            const s1 = modelToScreen(state.nearestLine.firstPoint)
-            const s2 = modelToScreen(state.nearestLine.secondPoint)
-            state._ctx.setLineDash([])
-            state._ctx.strokeStyle = COLOR_HOVER_NEAREST_LINE
-            state._ctx.lineWidth = LINE_WIDTH_HOVER_NEAREST_LINE
-            state._ctx.beginPath()
-            state._ctx.moveTo(s1.x, s1.y)
-            state._ctx.lineTo(s2.x, s2.y)
-            state._ctx.stroke()
-            state._ctx.lineWidth = 1
-        }
-    }
-    if (state.selectionMode === 'triangle') {
-        if (state.nearestTriangle) {
-            const t = state.nearestTriangle.triangle
-            const pointList = activeShape().pointList
-            const p1 = pointList[t.p1], p2 = pointList[t.p2], p3 = pointList[t.p3]
-            if (p1 && p2 && p3) {
-                const s1 = modelToScreen(p1)
-                const s2 = modelToScreen(p2)
-                const s3 = modelToScreen(p3)
-                state._ctx.setLineDash([])
-                state._ctx.strokeStyle = COLOR_HOVER_NEAREST_TRIANGLE_STROKE
-                state._ctx.fillStyle = COLOR_HOVER_NEAREST_TRIANGLE_FILL
-                state._ctx.beginPath()
-                state._ctx.moveTo(s1.x, s1.y)
-                state._ctx.lineTo(s2.x, s2.y)
-                state._ctx.lineTo(s3.x, s3.y)
-                state._ctx.closePath()
-                state._ctx.fill()
-                state._ctx.stroke()
-            }
-        }
-    }
 }
 
 export const updateCoordsDisplay = (cursorScreen) => {
     const div = document.querySelector('#coords')
     if (!div) return
+    let text
     if (!cursorScreen) {
-        div.textContent = ''
-        return
+        text = ''
+    } else {
+        const m = screenToModel(cursorScreen)
+        const np = (state.nearestPoint && state.nearestPoint.point) ? state.nearestPoint.point : null
+        const cursorTxt = `(${Math.round(m.x)}, ${Math.round(m.y)})`
+        const nearestTxt = np ? `(${Math.round(np.x)}, ${Math.round(np.y)})` : '\u2014'
+        text = `curseur ${cursorTxt}  plus proche ${nearestTxt}`
     }
-    const m = screenToModel(cursorScreen)
-    const np = (state.nearestPoint && state.nearestPoint.point) ? state.nearestPoint.point : null
-    const cursorTxt = `(${Math.round(m.x)}, ${Math.round(m.y)})`
-    const nearestTxt = np ? `(${Math.round(np.x)}, ${Math.round(np.y)})` : '\u2014'
-    div.textContent = `curseur ${cursorTxt}  plus proche ${nearestTxt}`
+    // Dedup : pas de write DOM par mousemove quand la valeur n'a pas changé
+    // (les coords sont arrondies, la souris bouge souvent dans le même pixel).
+    if (text === lastCoordsText) return
+    lastCoordsText = text
+    div.textContent = text
 }
+let lastCoordsText = ''
 
 // ===== Commentaire contextuel de survol (toast prospectif) =====
 // Le toast dit ce que l'utilisateur PEUT faire maintenant, au moment
@@ -378,8 +377,8 @@ const updateHoverComment = () => {
 // Rationale : voir DESIGN.md §2.1
 export const resolveMouseClickOnBoard = (e) => {
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     const pointToAdd = snapToGrid(screenToModel(mouseScreen))
     state.nearestLine = findSelectedLine(pointToAdd)
@@ -853,8 +852,8 @@ export const exitCircleMode = () => {
 
 export const beginCircleGesture = (e) => {
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     const rawCenter = screenToModel(mouseScreen)
     const center = state.activeGrid ? snapToGrid(rawCenter) : rawCenter
@@ -884,14 +883,17 @@ const updateCircleGesture = (mouseScreen) => {
         edge.y - state.circleCenterModel.y,
         edge.x - state.circleCenterModel.x,
     )
-    requestDraw()
+    // Transitoire pur : la preview du geste vit dans renderTransient —
+    // pas de re-render offscreen de la scene stable (perf). Le repaint
+    // sync est assure par updateMouseHover juste apres (drawBoard).
+    requestTransientDraw()
 }
 
 export const commitCircleGesture = (e) => {
     if (!state.circleCenterModel) return
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     // Refraichit rayon + angle sur la position exacte du 2e mousedown.
     updateCircleGesture(mouseScreen)
@@ -1020,8 +1022,8 @@ export const exitStarMode = () => {
 
 export const beginStarGesture = (e) => {
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     const rawCenter = screenToModel(mouseScreen)
     const center = state.activeGrid ? snapToGrid(rawCenter) : rawCenter
@@ -1061,14 +1063,16 @@ const updateStarGesture = (mouseScreen) => {
             ? Math.max(STAR_INNER_RATIO_MIN, Math.min(STAR_INNER_RATIO_MAX, Math.hypot(edge.x - cx, edge.y - cy) / state.starRadiusModel))
             : SHAPE_STAR_INNER_RATIO
     }
-    requestDraw()
+    // Transitoire pur (meme contrat que updateCircleGesture) : la
+    // preview de l'etoile vit dans renderTransient, pas dans l'offscreen.
+    requestTransientDraw()
 }
 
 export const lockStarRadius = (e) => {
     if (!state.starCenterModel) return
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     // Rafraichit rayon + angle sur la position exacte du 2e mousedown
     // (symetrique avec commitCircleGesture) puis passe en phase 2 : le
@@ -1081,8 +1085,8 @@ export const lockStarRadius = (e) => {
 export const commitStarGesture = (e) => {
     if (!state.starCenterModel) return
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     // Rafraichit la profondeur sur la position exacte du 3e mousedown
     // au cas ou le curseur aurait bouge entre le dernier mousemove
@@ -1219,8 +1223,8 @@ export const exitAnnulusMode = () => {
 
 export const beginAnnulusGesture = (e) => {
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     const rawCenter = screenToModel(mouseScreen)
     const center = state.activeGrid ? snapToGrid(rawCenter) : rawCenter
@@ -1256,14 +1260,15 @@ const updateAnnulusGesture = (mouseScreen) => {
             ? Math.max(ANNULUS_INNER_RATIO_MIN, Math.min(ANNULUS_INNER_RATIO_MAX, Math.hypot(edge.x - cx, edge.y - cy) / state.annulusOuterRadiusModel))
             : ANNULUS_INNER_RATIO_DEFAULT
     }
-    requestDraw()
+    // Transitoire pur (meme contrat que updateCircleGesture).
+    requestTransientDraw()
 }
 
 export const lockAnnulusRadius = (e) => {
     if (!state.annulusCenterModel) return
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     // Rafraichit rayon externe + angle sur la position exacte du 2e
     // mousedown (symetrique avec commitCircleGesture) puis passe en
@@ -1276,8 +1281,8 @@ export const lockAnnulusRadius = (e) => {
 export const commitAnnulusGesture = (e) => {
     if (!state.annulusCenterModel) return
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     // Rafraichit la taille du trou sur la position exacte du 3e
     // mousedown au cas ou le curseur aurait bouge entre le dernier
@@ -1458,8 +1463,8 @@ export const disarmShapeTool = () => {
 
 export const beginShapeGesture = (e) => {
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     const rawAnchor = screenToModel(mouseScreen)
     const anchor = state.activeGrid ? snapToGrid(rawAnchor) : rawAnchor
@@ -1491,7 +1496,8 @@ const updateShapeGesture = (mouseScreen) => {
             current.x - state.shapeAnchorModel.x,
         )
     }
-    requestDraw()
+    // Transitoire pur (meme contrat que updateCircleGesture).
+    requestTransientDraw()
 }
 
 export const cancelShapeGesture = () => {
@@ -1506,8 +1512,8 @@ export const cancelShapeGesture = () => {
 export const commitShapeGesture = (e) => {
     if (state.shapeKind === undefined || !state.shapeAnchorModel) return
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     updateShapeGesture(mouseScreen)
     const kind = state.shapeKind
@@ -1656,8 +1662,8 @@ export const wireShapesPanel = () => {
 export const processMouseUpSelection = (e) => {
     if (!state.board) return
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     const rawTargetModel = screenToModel(mouseScreen)
     const targetModel = state.activeGrid ? snapToGrid(rawTargetModel) : rawTargetModel
@@ -2085,8 +2091,8 @@ const selectAtRightClick = (e, targetModel, additive = true) => {
 
 export const processRightClickSelection = (e) => {
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     const rawTargetModel = screenToModel(mouseScreen)
     const targetModel = state.activeGrid ? snapToGrid(rawTargetModel) : rawTargetModel
@@ -2151,8 +2157,8 @@ const isSelectionSparse = () => {
 
 export const beginGrabbing = (e) => {
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
 
     const isAltGrDown = (e.ctrlKey && e.altKey) || (e.getModifierState && e.getModifierState('AltGraph'))
@@ -2412,8 +2418,8 @@ export const endGrabbing = (e) => {
 
 export const resolveMouseMoveOnBoard = (e) => {
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
 
     // Kiosque : le pointeur pilote l'inclinaison des cartes (focus),
@@ -3008,8 +3014,8 @@ export const paintTriangleAtCursor = (e) => {
     if (!state.brushMode) return
     if (typeof state.brushColor !== 'string') return
     const mouseScreen = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     const rawTarget = screenToModel(mouseScreen)
     const target = state.activeGrid ? snapToGrid(rawTarget) : rawTarget

@@ -215,6 +215,20 @@ Deux mecanismes cooperent pour minimiser les repeints :
   transient. Le flag n'est leve que par `invalidateScene()` ou
   `requestDraw()`.
 
+**Chemin transitoire pur (`requestTransientDraw`, opt #4)** : les
+previews de geste (cercle/étoile/anneau/forme) vivent dans
+`renderTransient` — ce sont des calques transitoires, PAS de la scène
+stable. Les `update*Gesture` (editor.js) appellent donc
+`requestTransientDraw()` (rAF-coalescé, `sceneDirty` NON posé) au lieu
+ de `requestDraw()` : pendant un drag de preview, le cache offscreen
+reste valide et `drawBoard` ne fait que blit + transient (au lieu d'un
+re-render intégral de la scène à chaque mousemove). Les overlays de
+survol (`drawHoverOverlays` dans `renderTransient`, ex-
+`updateMouseHover`) sont dessinés par CHAQUE `drawBoard` — avant, ils
+étaient peints hors pipeline après le blit et un `drawBoard` différé
+(drag) les effaçait entre deux mousemove (flicker) ; c'est désormais
+dans le pipeline, z-order préservé (après le curseur).
+
 **Instrumentation (HUD bas-gauche : `#fpsDisplay`)** :
 
 Pour valider *que* ces mecanismes font leur travail, la metrique
@@ -321,6 +335,23 @@ complétés d'un safe-belt. Tous gardent la parité visuelle avec l'ancien
 résultat, mais les meshes typiques (windings uniformes en canvas space,
 grille à step raisonnable, plans avec peu de tris custom-color)
 profitent du batching sans changement de comportement.
+
+#### §2.5.0 Opt #4 — Rendu zéro-allocation (`drawShape` scratch + dédup)
+
+`drawShape` projette TOUT le `pointList` une seule fois par render dans
+un scratch module `Float32Array` (agrandi à la demande, jamais alloué
+par frame — drawShape est synchrone et mono-contexte, un scratch
+module suffit) ; les passes fill/stroke/points lisent le scratch au
+lieu de re-invoquer `modelToScreen` 2-3× par tri (les ~9 objets/frame
+par tri disparaissent : `resolvedTris`, `screenTris`, `vertexPoints`).
+Les points de contrôle sont batchés en 1 arc par sommet RÉFÉRENCÉ
+(marqué via `usedScratch`) au lieu d'un arc par slot tri — rendu
+identique, ~3T arcs → V. La résolution indices→refs reste INLINE par
+render (3 lookups par tri, aucun cache par identité de tableau :
+`tris`/`pointList` sont mutés EN PLACE par undo/redo — `length = 0` +
+push dans history.js — un cache de refs deviendrait périmé sans
+changement d'identité). Le safe-belt winding (§2.5.4) est conservé,
+calculé dans le scratch (aucune allocation).
 
 #### §2.5.1 Opt #1 — `drawPointsBatch` (groupement des vertex en un seul path-stroke)
 

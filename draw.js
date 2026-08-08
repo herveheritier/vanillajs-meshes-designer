@@ -1,11 +1,14 @@
 import { state } from './state.js'
-import { modelToScreen, screenToModel, getMultiPointIndices } from './geometry.js'
+import { modelToScreen, screenToModel, getMultiPointIndices, getVertexIndex, getStackTriangleRefs } from './geometry.js'
 import {
     TAU,
     ACTION_GRABBING,
     COLOR_AXIS,
     COLOR_LINES,
     COLOR_LINES_INACTIVE,
+    COLOR_HOVER_NEAREST_LINE, LINE_WIDTH_HOVER_NEAREST_LINE,
+    COLOR_HOVER_NEAREST_POINT,
+    COLOR_HOVER_NEAREST_TRIANGLE_STROKE, COLOR_HOVER_NEAREST_TRIANGLE_FILL,
     CANVAS_BACKGROUND,
     COLOR_CURSOR,
     COLOR_RETICLE,
@@ -183,14 +186,27 @@ export const invalidateScene = () => {
 
 export const isSceneDirty = () => sceneDirty
 
-export const requestDraw = () => {
-    sceneDirty = true
+// Rendu transitoire SEUL : ne leve pas sceneDirty — le cache offscreen
+// (scene stable) reste valide, drawBoard ne fait que blit + transient.
+// Les previews de geste (cercle/etoile/anneau/forme) sont des calques
+// transitoires : les router sur requestTransientDraw evite le re-render
+// integral de la scene a chaque mousemove (opt #4).
+const scheduleDrawFrame = () => {
     if (frameScheduled) return
     frameScheduled = true
     requestAnimationFrame(() => {
         frameScheduled = false
         drawBoard()
     })
+}
+
+export const requestDraw = () => {
+    sceneDirty = true
+    scheduleDrawFrame()
+}
+
+export const requestTransientDraw = () => {
+    scheduleDrawFrame()
 }
 
 const ensureOffscreen = () => {
@@ -299,6 +315,65 @@ const renderTransient = () => {
     // disparaître au 1er clic d'un geste. state.lastMousePos est maintenu
     // par les chemins de saisie, donc il survit au repaint.
     if (state.lastMousePos) drawMouse(state.lastMousePos)
+    // Overlays de survol (nearest*) : repeints par drawBoard, par-dessus
+    // le curseur — meme z-order qu'avant (ils etaient dessines apres
+    // drawBoard dans updateMouseHover). Les dessiner ICI evite qu'un
+    // drawBoard differe (requestDraw pendant un drag) les efface entre
+    // deux mousemove (flicker).
+    drawHoverOverlays()
+}
+
+// Overlays de survol (point surligne + label §7.8 + stack list §7.9 +
+// segment/triangle sous le curseur) : deplaces depuis updateMouseHover
+// pour vivre dans le pipeline de rendu (invalides/repeints par chaque
+// drawBoard, pas par le seul mousemove).
+const drawHoverOverlays = () => {
+    if (state.nearestPoint && state.nearestPoint.point) {
+        drawPoint(state.nearestPoint.point, 5, COLOR_HOVER_NEAREST_POINT)
+        // §7.8 : index 0-based du sommet (fallback '?' si absent).
+        const vertexIdx = getVertexIndex(state.nearestPoint.point)
+        drawVertexLabel(state.nearestPoint.point, vertexIdx >= 0 ? vertexIdx : '?')
+        // §7.9 : pill des slots partageant la position, si > 1 ref.
+        const stackRefs = getStackTriangleRefs(state.nearestPoint.point)
+        if (stackRefs.length > 1) drawStackList(state.nearestPoint.point, stackRefs)
+    }
+    if (state.selectionMode === 'segment' || state.selectionMode === 'vertex') {
+        if (state.nearestLine && state.nearestLine.firstPoint && state.nearestLine.secondPoint) {
+            const s1 = modelToScreen(state.nearestLine.firstPoint)
+            const s2 = modelToScreen(state.nearestLine.secondPoint)
+            state._ctx.setLineDash([])
+            state._ctx.strokeStyle = COLOR_HOVER_NEAREST_LINE
+            state._ctx.lineWidth = LINE_WIDTH_HOVER_NEAREST_LINE
+            state._ctx.beginPath()
+            state._ctx.moveTo(s1.x, s1.y)
+            state._ctx.lineTo(s2.x, s2.y)
+            state._ctx.stroke()
+            state._ctx.lineWidth = 1
+        }
+    }
+    if (state.selectionMode === 'triangle') {
+        if (state.nearestTriangle) {
+            const t = state.nearestTriangle.triangle
+            const shape = state.shapes[state.activeShapeIndex]
+            const pointList = shape && Array.isArray(shape.pointList) ? shape.pointList : []
+            const p1 = pointList[t.p1], p2 = pointList[t.p2], p3 = pointList[t.p3]
+            if (p1 && p2 && p3) {
+                const s1 = modelToScreen(p1)
+                const s2 = modelToScreen(p2)
+                const s3 = modelToScreen(p3)
+                state._ctx.setLineDash([])
+                state._ctx.strokeStyle = COLOR_HOVER_NEAREST_TRIANGLE_STROKE
+                state._ctx.fillStyle = COLOR_HOVER_NEAREST_TRIANGLE_FILL
+                state._ctx.beginPath()
+                state._ctx.moveTo(s1.x, s1.y)
+                state._ctx.lineTo(s2.x, s2.y)
+                state._ctx.lineTo(s3.x, s3.y)
+                state._ctx.closePath()
+                state._ctx.fill()
+                state._ctx.stroke()
+            }
+        }
+    }
 }
 
 // ===== Previews transitoires de creation (cercle + formes) =====
@@ -660,6 +735,22 @@ export const drawShapes = () => {
     drawShape(state.shapes[state.activeShapeIndex], true)
 }
 
+// ===== Rendu zéro-allocation (opt #4) =====
+// Scratch de coordonnées écran partagé par toutes les passes (fill, stroke,
+// points) : 1 projection par sommet au lieu de 2-3 par tri. drawShape est
+// synchrone et mono-contexte (renderSceneToOffscreen swap le ctx mais ne
+// se ré-entre pas) — un scratch module suffit, jamais alloué par frame.
+let screenXScratch = new Float32Array(0)
+let screenYScratch = new Float32Array(0)
+let usedScratch = new Uint8Array(0)
+
+const ensureScreenScratch = (n) => {
+    if (screenXScratch.length >= n) return
+    screenXScratch = new Float32Array(n)
+    screenYScratch = new Float32Array(n)
+    usedScratch = new Uint8Array(n)
+}
+
 // tris = indices dans pointList ; resolution en coords, slots undefined
 // (triangles partiels) filtres.
 // `forceFill` (mode « toutes couleurs » §7.18) : remplit le plan meme
@@ -669,55 +760,82 @@ export const drawShapes = () => {
 export const drawShape = (shape, isActive, forceFill = false) => {
     if (!shape || !Array.isArray(shape.tris) || shape.tris.length === 0) return
     const pointList = Array.isArray(shape.pointList) ? shape.pointList : []
+    const tris = shape.tris
+    const pointCount = pointList.length
     let lineColor = isActive ? COLOR_LINES : COLOR_LINES_INACTIVE
     let linePattern = isActive ? PATTERN_LINES : PATTERN_LINES_INACTIVE
     let pointColor = isActive ? POINT_COLOR_ACTIVE : POINT_COLOR_INACTIVE
     const filled = isActive || forceFill
 
-    // 3 passes au lieu d'un drawTriangle par tri (opt #3) : fill par
-    // groupe de couleur (active shape), stroke global unique, vertex
-    // en batch. resolvedTris = resolution unique des indices en coords.
-    const vertexPoints = []
-    const resolvedTris = []
-    shape.tris.forEach((t) => {
-        const p1 = Number.isInteger(t.p1) ? pointList[t.p1] : undefined
-        const p2 = Number.isInteger(t.p2) ? pointList[t.p2] : undefined
-        const p3 = Number.isInteger(t.p3) ? pointList[t.p3] : undefined
-        const fill = filled ? (t.fill !== undefined ? t.fill : COLOR_TRIANGLE_FILL_ACTIVE) : undefined
-        if (p1) vertexPoints.push(p1)
-        if (p2) vertexPoints.push(p2)
-        if (p3) vertexPoints.push(p3)
-        resolvedTris.push({ p1, p2, p3, fill })
-    })
+    // Projection unique de tout le pointList (1 transform par sommet).
+    ensureScreenScratch(pointCount)
+    const { center, viewCenter, zoomLevel } = state.ctx
+    const cx = center.x, cy = center.y
+    const vx = viewCenter.x, vy = viewCenter.y
+    const z = zoomLevel
+    for (let i = 0; i < pointCount; i++) {
+        const p = pointList[i]
+        if (!p) {
+            screenXScratch[i] = NaN
+            screenYScratch[i] = NaN
+            continue
+        }
+        screenXScratch[i] = cx + (p.x - vx) * z
+        screenYScratch[i] = cy - (p.y - vy) * z
+    }
+
+    // Sommets effectivement references (batch points deduplique : 1 arc
+    // par sommet au lieu d'un par slot tri). usedScratch est zeroed par
+    // les boucles (pas de reset O(n) separe).
+    const used = usedScratch
+    for (let i = 0; i < pointCount; i++) used[i] = 0
+    for (let i = 0; i < tris.length; i++) {
+        const t = tris[i]
+        // Ref verifiee : un trou (indice valide, entree undefined) ne doit
+        // pas produire d'arc NaN dans le batch points ci-dessous.
+        if (Number.isInteger(t.p1) && t.p1 < pointCount && pointList[t.p1]) used[t.p1] = 1
+        if (Number.isInteger(t.p2) && t.p2 < pointCount && pointList[t.p2]) used[t.p2] = 1
+        if (Number.isInteger(t.p3) && t.p3 < pointCount && pointList[t.p3]) used[t.p3] = 1
+    }
 
     // === Fill pass (active shape, tris completes) ===
     // fill() applique le fillStyle courant a TOUS les sub-paths du
     // beginPath courant : un beginPath par groupe de couleur distinct.
+    // Resolution des slots INLINE (indices -> refs pointList courante) :
+    // AUCUNE allocation objet par tri — le cache par identite de tableau
+    // est proscrit car tris/pointList sont mutes EN PLACE par undo/redo
+    // (length=0 + push, histoire.js) — des refs en cache deviendraient
+    // perimes sans changement d'identite.
     if (filled) {
         const fillGroups = new Map()
-        for (let i = 0; i < resolvedTris.length; i++) {
-            const r = resolvedTris[i]
-            if (!r.fill || !r.p3) continue
-            const arr = fillGroups.get(r.fill) || []
-            arr.push(r)
-            fillGroups.set(r.fill, arr)
+        for (let i = 0; i < tris.length; i++) {
+            const t = tris[i]
+            if (!Number.isInteger(t.p1) || !Number.isInteger(t.p2) || !Number.isInteger(t.p3)) continue
+            // Gardes def. : l'original lisait des coords undefined et
+            // crashait sur un slot invalide (p1 absent, p3 present).
+            if (!pointList[t.p1] || !pointList[t.p2] || !pointList[t.p3]) continue
+            const fill = t.fill !== undefined ? t.fill : COLOR_TRIANGLE_FILL_ACTIVE
+            let arr = fillGroups.get(fill)
+            if (!arr) {
+                arr = []
+                fillGroups.set(fill, arr)
+            }
+            arr.push(i)
         }
-        for (const [color, tris] of fillGroups.entries()) {
+        for (const [color, indices] of fillGroups.entries()) {
             // SAFE-BELT : des windings heterogenes en screen-space (apres
             // le Y-flip de modelToScreen) ou un tri degenere (cross = 0)
             // feraient un trou sous fillRule=nonzero -> fallback per-tri.
-            const screenTris = tris.map((r) => {
-                const s1 = modelToScreen(r.p1)
-                const s2 = modelToScreen(r.p2)
-                const s3 = modelToScreen(r.p3)
-                return { r, s1, s2, s3 }
-            })
+            // Cross produits lus dans le scratch, aucune allocation.
             let uniformSign = true
             let firstSign = null
             let hasDegenerate = false
-            for (let i = 0; i < screenTris.length; i++) {
-                const t = screenTris[i]
-                const cp = (t.s2.x - t.s1.x) * (t.s3.y - t.s1.y) - (t.s2.y - t.s1.y) * (t.s3.x - t.s1.x)
+            for (let k = 0; k < indices.length; k++) {
+                const t = tris[indices[k]]
+                const x1 = screenXScratch[t.p1], y1 = screenYScratch[t.p1]
+                const x2 = screenXScratch[t.p2], y2 = screenYScratch[t.p2]
+                const x3 = screenXScratch[t.p3], y3 = screenYScratch[t.p3]
+                const cp = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
                 if (cp === 0) { hasDegenerate = true; continue }
                 const sign = cp > 0
                 if (firstSign === null) firstSign = sign
@@ -727,22 +845,22 @@ export const drawShape = (shape, isActive, forceFill = false) => {
             state._ctx.fillStyle = color
             if (uniformSign) {
                 state._ctx.beginPath()
-                for (let i = 0; i < screenTris.length; i++) {
-                    const t = screenTris[i]
-                    state._ctx.moveTo(t.s1.x, t.s1.y)
-                    state._ctx.lineTo(t.s2.x, t.s2.y)
-                    state._ctx.lineTo(t.s3.x, t.s3.y)
+                for (let k = 0; k < indices.length; k++) {
+                    const t = tris[indices[k]]
+                    state._ctx.moveTo(screenXScratch[t.p1], screenYScratch[t.p1])
+                    state._ctx.lineTo(screenXScratch[t.p2], screenYScratch[t.p2])
+                    state._ctx.lineTo(screenXScratch[t.p3], screenYScratch[t.p3])
                     state._ctx.closePath()
                 }
                 state._ctx.fill()
             } else {
                 // Fallback : un path par tri, rendu identique a l'ancien drawTriangle.
-                for (let i = 0; i < screenTris.length; i++) {
-                    const t = screenTris[i]
+                for (let k = 0; k < indices.length; k++) {
+                    const t = tris[indices[k]]
                     state._ctx.beginPath()
-                    state._ctx.moveTo(t.s1.x, t.s1.y)
-                    state._ctx.lineTo(t.s2.x, t.s2.y)
-                    state._ctx.lineTo(t.s3.x, t.s3.y)
+                    state._ctx.moveTo(screenXScratch[t.p1], screenYScratch[t.p1])
+                    state._ctx.lineTo(screenXScratch[t.p2], screenYScratch[t.p2])
+                    state._ctx.lineTo(screenXScratch[t.p3], screenYScratch[t.p3])
                     state._ctx.closePath()
                     state._ctx.fill()
                 }
@@ -753,29 +871,39 @@ export const drawShape = (shape, isActive, forceFill = false) => {
     // === Stroke pass (tous les tris) ===
     // 1 beginPath + 1 stroke global ; setLineDash/setStrokeStyle fixes
     // une fois par shape. Les tris partiels (p3 absent) ne ferment pas
-    // leur sub-path.
+    // leur sub-path. Resolution inline identique au fill pass.
     state._ctx.setLineDash(linePattern)
     state._ctx.strokeStyle = lineColor
     state._ctx.beginPath()
-    for (let i = 0; i < resolvedTris.length; i++) {
-        const r = resolvedTris[i]
-        if (!r.p1) continue
-        const s1 = modelToScreen(r.p1)
-        state._ctx.moveTo(s1.x, s1.y)
-        if (r.p2) {
-            const s2 = modelToScreen(r.p2)
-            state._ctx.lineTo(s2.x, s2.y)
-            if (r.p3) {
-                const s3 = modelToScreen(r.p3)
-                state._ctx.lineTo(s3.x, s3.y)
+    for (let i = 0; i < tris.length; i++) {
+        const t = tris[i]
+        if (!Number.isInteger(t.p1)) continue
+        if (!pointList[t.p1]) continue
+        state._ctx.moveTo(screenXScratch[t.p1], screenYScratch[t.p1])
+        if (Number.isInteger(t.p2) && pointList[t.p2]) {
+            state._ctx.lineTo(screenXScratch[t.p2], screenYScratch[t.p2])
+            if (Number.isInteger(t.p3) && pointList[t.p3]) {
+                state._ctx.lineTo(screenXScratch[t.p3], screenYScratch[t.p3])
                 state._ctx.closePath()
             }
         }
     }
     state._ctx.stroke()
 
-    // Points de controle sautes en preview (seule la geometrie reste visible).
-    if (!state.previewMode) drawPointsBatch(vertexPoints, 2, pointColor)
+    // Points de controle sautes en preview (seule la geometrie reste
+    // visible). Batch unique depuis le scratch : 1 arc par sommet
+    // reference (les doublons multi-refs disparaissent, rendu identique).
+    if (!state.previewMode) {
+        state._ctx.setLineDash([])
+        state._ctx.strokeStyle = pointColor
+        state._ctx.beginPath()
+        for (let i = 0; i < pointCount; i++) {
+            if (!used[i]) continue
+            state._ctx.moveTo(screenXScratch[i], screenYScratch[i])
+            state._ctx.arc(screenXScratch[i], screenYScratch[i], 2, 0, TAU)
+        }
+        state._ctx.stroke()
+    }
 }
 
 // ===== Kiosque de sélection des plans (cf. EVOLUTIONS.md) =====

@@ -1,4 +1,4 @@
-import { state } from './state.js'
+import { state, boardOffset } from './state.js'
 import {
     MIN_ZOOM, MAX_ZOOM, ZOOM_STEP_FACTOR, ROTATE_STEP,
     DEFAULT_GRID_STEP, MIN_GRID_STEP, MAX_GRID_STEP,
@@ -14,7 +14,7 @@ import {
 import { drawBoard, requestDraw, consumeDrawStats } from './draw.js'
 import { screenToModel } from './geometry.js'
 import { updateGridButtonText, updateReticleButton, updateSelectionModeButton, updateSelectionHud, updateConsoleButton, updateColorButtonState, updateShapesButton, updateMergeButtonState, updateAllFillsButton, showActionComment } from './hud.js'
-import { persistState, snapZoom } from './io.js'
+import { persistState, persistStateDebounced, snapZoom } from './io.js'
 import { log } from './log.js'
 import {
     rotateEachShapeAroundPivot,
@@ -637,7 +637,7 @@ export const onBoardWheel = (e) => {
     if (!state.board) return
     // Kiosque : la molette ne fait rien (selection par clic uniquement).
     if (state.kioskMode) return
-    const boardRect = state.board.getBoundingClientRect()
+    const boardRect = boardOffset()
     const cursorScreen = { x: e.x - boardRect.x, y: e.y - boardRect.y }
     // Mode cercle/anneau (hors preview) : la molette regle les cotes au lieu de zoomer.
     if ((state.circleMode || state.annulusMode) && !state.previewMode) {
@@ -675,7 +675,9 @@ export const zoomCenteredOnCursor = (cursorScreen, deltaY) => {
     requestDraw()
     if (state.lastMousePos) updateMouseHover(state.lastMousePos)
     updateZoomDisplay()
-    persistState()
+    // Debounce : la molette/trackpad emet des dizaines d'evenements/s —
+    // pas de stringify+setItem a chaque cran (perf, cf. io.js).
+    persistStateDebounced()
 }
 
 export const wireBoardWheel = () => {

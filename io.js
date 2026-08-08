@@ -184,6 +184,21 @@ export const persistState = () => {
     }
 }
 
+// ===== Persist debounce (perf zoom haute frequence) =====
+// persistState() serialise TOUTE la scene (validateShape + stringify +
+// localStorage.setItem) : sur un chemin continu (molette/trackpad), un
+// write par evenement coute des ms et casse le 60 fps. Debounce
+// TRAILING — seule la derniere valeur gagne ; wireBeforeUnload persiste
+// au depart, donc un zoom non encore flush est capture au reload.
+let persistTimer = 0
+export const persistStateDebounced = () => {
+    if (persistTimer) clearTimeout(persistTimer)
+    persistTimer = setTimeout(() => {
+        persistTimer = 0
+        persistState()
+    }, 300)
+}
+
 // ===== Restore (read from localStorage) =====
 
 // Valide les indices tris ∈ [0, pointList.length), drop les tris invalides.
@@ -489,7 +504,10 @@ const restoreUndoHistory = () => {
 }
 
 const onBeforeUnload = () => {
-    clearTimeout(state.persistTimer)
+    // Annule le debounce pending (persistStateDebounced) : le flush
+    // direct ci-dessous capture l'etat courant, le timer ne doit pas
+    // re-ecrire apres.
+    clearTimeout(persistTimer)
     try {
         const sceneJson = serializeState()
         localStorage.setItem(SCENE_STORAGE_KEY, sceneJson)

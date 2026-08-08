@@ -1,6 +1,6 @@
 // Rationale : voir DESIGN.md §4.1
 
-import { state, initDomRefs } from './state.js'
+import { state, initDomRefs, boardOffset } from './state.js'
 import { drawBoard, requestDraw, getDevicePixelRatio, kioskSelectedIndex } from './draw.js'
 import { CANVAS_BACKGROUND } from './constants.js'
 import {
@@ -63,6 +63,8 @@ state.board.style.height = '99vh'
 // Bitmap en pixels PHYSIQUES (CSS x dpr) ; coords internes en CSS px —
 // conversion ici (taille) et dans draw.js (transform dpr).
 const bootRect = state.board.getBoundingClientRect()
+// Cache du rect pour les handlers souris (perf, cf. boardOffset).
+state._boardRect = bootRect
 const bootDpr = getDevicePixelRatio()
 state.board.width = Math.round(bootRect.width * bootDpr)
 state.board.height = Math.round(bootRect.height * bootDpr)
@@ -85,6 +87,8 @@ state._ctx.fillRect(0, 0, state.board.width, state.board.height)
 // ecrans de densites differentes). cf. DESIGN.md §2.7.
 const resizeCanvasToFitBrowser = () => {
     const rect = state.board.getBoundingClientRect()
+    // Le rect peut changer sans changer la taille du bitmap (garde ci-dessous).
+    state._boardRect = rect
     const dpr = getDevicePixelRatio()
     const w = Math.round(rect.width * dpr)
     const h = Math.round(rect.height * dpr)
@@ -260,8 +264,8 @@ document.addEventListener('mousedown', (e) => {
     if (state.kioskMode) {
         if (e.button === 0) {
             const mousePos = {
-                x: e.x - state.board.getBoundingClientRect().x,
-                y: e.y - state.board.getBoundingClientRect().y,
+                x: e.x - boardOffset().x,
+                y: e.y - boardOffset().y,
             }
             const idx = kioskSelectedIndex(mousePos.x)
             if (idx !== -1) goToShape(idx)
@@ -354,8 +358,8 @@ document.addEventListener('mousedown', (e) => {
         return
     }
     const mousePos = {
-        x: e.x - state.board.getBoundingClientRect().x,
-        y: e.y - state.board.getBoundingClientRect().y,
+        x: e.x - boardOffset().x,
+        y: e.y - boardOffset().y,
     }
     if (e.button === 2) {
         beginGrabbing(e)
@@ -372,8 +376,8 @@ document.addEventListener('mousedown', (e) => {
 document.addEventListener('mousemove', (e) => {
     if (state.isPanning) {
         const mouseScreen = {
-            x: e.x - state.board.getBoundingClientRect().x,
-            y: e.y - state.board.getBoundingClientRect().y,
+            x: e.x - boardOffset().x,
+            y: e.y - boardOffset().y,
         }
         updatePan(mouseScreen)
     }

@@ -155,9 +155,6 @@ export const state = {
     historyStack: [],
     redoStack: [],
 
-    // ===== Persist debounce timer =====
-    persistTimer: undefined,
-
     // ===== Wheel rotations timers =====
     isWheelRotating: false,
     wheelRotateTimer: undefined,
@@ -224,6 +221,23 @@ export const state = {
     body: undefined,
     messageBoard: undefined,
     messageLog: undefined,
+
+    // ===== Cache du rect du board (perf mousemove/wheel) =====
+    // getBoundingClientRect() par evenement souris force un read layout ;
+    // le board est 99vw×99vh fixe (overflow hidden, pas de scroll) : le
+    // rect ne change qu'au resize — recalculé au boot + au resize (main.js),
+    // lu via boardOffset() par les handlers. Transitoire, jamais persisté.
+    _boardRect: undefined,
+}
+
+// Position du board en coords viewport (CSS px), mise en cache : les
+// handlers souris convertissent e.x/e.y en coords canvas via ce rect.
+// Fallback lecture live si jamais pose (défensif).
+export const boardOffset = () => {
+    if (!state._boardRect) {
+        state._boardRect = state.board ? state.board.getBoundingClientRect() : undefined
+    }
+    return state._boardRect
 }
 
 export const initDomRefs = () => {
