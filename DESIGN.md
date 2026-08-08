@@ -295,13 +295,17 @@ anti-thrash). Boucle permanente : coût en idle = 1 callback rAF/frame +
 1 textContent/500 ms — négligeable, et le navigateur suspend
 automatiquement rAF quand l'onglet est masqué.
 
-**État ambre sous le seuil** : quand la fréquence lissée passe sous
-`FPS_COUNTER_WARN_THRESHOLD = 45`, la pilule passe en
+**État ambre sous le seuil, avec hystérésis** : la pilule passe en
 `data-perf="warn"` (texte + bordure ambre, fond teinté — même langage
 visuel que la règle `#fpsDisplay[data-perf="warn"]`, historiquement
-dormante, qui sert de référence de couleur). Au-dessus,
-`data-perf="good"`. L'attribut n'est écrit qu'au changement (pas de
-style recalc par tick) ; la base verte de la pilule reste le défaut.
+dormante, qui sert de référence de couleur) quand la fréquence lissée
+descend sous `FPS_COUNTER_WARN_LOW = 42`, et revient en `"good"`
+quand elle remonte au-dessus de `FPS_COUNTER_WARN_HIGH = 48`. Entre les
+deux (bande morte de 6 fps), **l'état précédent est conservé**
+(`fpsCounterPerf`, transitoire de session) — sans cette hystérésis, une
+fréquence oscillant autour du seuil ferait clignoter la pilule verte ↔
+ambre. L'attribut n'est écrit qu'au changement (pas de style recalc par
+tick) ; la base verte de la pilule reste le défaut.
 
 Masquage : la pilule vit dans le groupe « canvas ops » de la toolbar —
 les règles `:has()` de `body.preview-mode` / `body.kiosk-mode` (§2.6.1)

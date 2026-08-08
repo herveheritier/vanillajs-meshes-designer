@@ -647,9 +647,9 @@
                 border-radius: 14px;
                 white-space: nowrap;
             }
-            /* Etat warn du compteur : frequence sous le seuil
-               (FPS_COUNTER_WARN_THRESHOLD = 45, viewport.js) — meme
-               langage visuel que #fpsDisplay[data-perf="warn"]
+            /* Etat warn du compteur : frequence sous le seuil bas de
+               l'hysteresis (FPS_COUNTER_WARN_LOW = 42, viewport.js) —
+               meme langage visuel que #fpsDisplay[data-perf="warn"]
                (texte + bordure ambre, fond teinte). Pose par la boucle
                rAF (el.dataset.perf), cf. DESIGN.md §2.4.1. */
             #toolbar #fpsCounter[data-perf="warn"] {

@@ -135,10 +135,17 @@ let fpsCounterLastDisplay = 0
 const FPS_COUNTER_EMA = 0.1
 // Throttle DOM : 2 mises a jour/s suffisent pour un indicateur discret.
 const FPS_COUNTER_DISPLAY_INTERVAL_MS = 500
-// Seuil de fluidite : sous cette frequence, la pilule passe en ambre
-// (data-perf="warn", meme langage visuel que #fpsDisplay[data-perf="warn"]
-// — cf. DESIGN.md §2.4.1).
-const FPS_COUNTER_WARN_THRESHOLD = 45
+// Hysteresis autour du seuil de fluidite : la pilule passe en ambre
+// (data-perf="warn", meme langage visuel que #fpsDisplay[data-perf="warn"])
+// quand la frequence lissee descend sous FPS_COUNTER_WARN_LOW, et
+// revient en "good" quand elle remonte au-dessus de FPS_COUNTER_WARN_HIGH ;
+// entre les deux (bande morte), l'etat precedent est conserve — pas de
+// clignotement quand la frequence oscille autour du seuil (cf. DESIGN.md
+// §2.4.1).
+const FPS_COUNTER_WARN_LOW = 42
+const FPS_COUNTER_WARN_HIGH = 48
+// Etat hysteresis courant (transitoire de session, jamais persiste).
+let fpsCounterPerf = 'good'
 
 const fpsCounterLoop = (now) => {
     if (fpsCounterLastTime > 0) {
@@ -158,10 +165,12 @@ const fpsCounterLoop = (now) => {
                 const el = document.querySelector('#fpsCounter')
                 if (el) {
                     el.textContent = `${Math.round(fpsCounterSmooth)} fps`
-                    // Etat ambre sous le seuil : attribute pose seulement
-                    // au changement (pas de style recalc par tick).
-                    const perf = fpsCounterSmooth < FPS_COUNTER_WARN_THRESHOLD ? 'warn' : 'good'
-                    if (el.dataset.perf !== perf) el.dataset.perf = perf
+                    // Bascule aux bornes de la bande morte seulement
+                    // (hysteresis) ; attribute pose au changement (pas de
+                    // style recalc par tick).
+                    if (fpsCounterSmooth < FPS_COUNTER_WARN_LOW) fpsCounterPerf = 'warn'
+                    else if (fpsCounterSmooth > FPS_COUNTER_WARN_HIGH) fpsCounterPerf = 'good'
+                    if (el.dataset.perf !== fpsCounterPerf) el.dataset.perf = fpsCounterPerf
                 }
                 fpsCounterLastDisplay = now
             }
